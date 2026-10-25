@@ -1,17 +1,31 @@
+// 本机离线 Maven 缓存（可选）：目录存在才启用，不存在自动跳过。
+// 这样别人 clone 下来只要有网就能构建，不依赖任何私有路径。
+// 要指向别处时设环境变量 NEBULA_LOCAL_MAVEN。
+// 注：两处 repositories 都必须各自声明，因为 pluginManagement 必须是脚本第一个块，
+//     前面不能放变量定义。
+
 pluginManagement {
     repositories {
-        maven { url 'file:///opt/maven-repo' }
+        def dir = new File(System.getenv('NEBULA_LOCAL_MAVEN') ?: '/opt/maven-repo')
+        if (dir.isDirectory()) {
+            maven { url dir.toURI() }
+        }
         google()
         mavenCentral()
     }
 }
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
-        maven { url 'file:///opt/maven-repo' }
+        def dir = new File(System.getenv('NEBULA_LOCAL_MAVEN') ?: '/opt/maven-repo')
+        if (dir.isDirectory()) {
+            maven { url dir.toURI() }
+        }
         google()
         mavenCentral()
     }
 }
+
 rootProject.name = "NebulaAI"
 include ':app'

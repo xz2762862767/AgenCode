@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0F1218</color>
+    <color name="surface">#161B24</color>
+    <color name="surface2">#1E2530</color>
+    <color name="stroke">#2A3240</color>
+    <color name="text">#E8EDF6</color>
+    <color name="text_dim">#8B97A9</color>
+    <color name="accent">#5B93FF</color>
+    <color name="accent_dim">#1E3A6B</color>
+    <color name="code_bg">#0B0E14</color>
+    <color name="bubble_ai">#1E2634</color>
+    <color name="white">#FFFFFF</color>
+    <color name="icon_bg">#0F1218</color>
+
+    <!-- ===== 纯黑（OLED）主题 ===== -->
+    <color name="bg_black">#000000</color>
+    <color name="surface_black">#0A0A0D</color>
+    <color name="surface2_black">#111116</color>
+    <color name="stroke_black">#202028</color>
+    <color name="code_black">#000000</color>
+
+    <!-- ===== 强调色可选档 ===== -->
+    <color name="accent_blue">#5B93FF</color>
+    <color name="accent_purple">#A97BFF</color>
+    <color name="accent_green">#3DDC97</color>
+    <color name="accent_orange">#FFA85C</color>
+    <color name="accent_cyan">#4CD7E8</color>
+</resources>

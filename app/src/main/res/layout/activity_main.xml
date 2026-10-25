@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?attr/neb_bg"
+    android:fitsSystemWindows="true">
+
+    <FrameLayout
+        android:id="@+id/contentHost"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:id="@+id/pageChat"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+    <!-- 顶栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <ImageButton
+            android:id="@+id/btnMenu"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="@drawable/icon_btn_bg"
+            android:src="@drawable/ic_menu"
+            android:scaleType="centerInside"
+            android:tint="?attr/neb_text"
+            android:contentDescription="会话列表" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingStart="4dp">
+
+            <TextView
+                android:id="@+id/tvTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="@string/app_name"
+                android:textColor="?attr/neb_text"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:id="@+id/ivModelIcon"
+                    android:layout_width="17dp"
+                    android:layout_height="12.51dp"
+                    android:layout_marginEnd="5dp"
+                    android:src="@drawable/ic_deepseek"
+                    android:contentDescription="模型标识"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tvSub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxWidth="120dp"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="DeepSeek"
+                    android:textColor="?attr/neb_dim"
+                    android:textSize="11sp" />
+
+                <!-- DeepSeek 余额：只在 baseUrl 指向 deepseek.com 时出现，点一下看明细 -->
+                <TextView
+                    android:id="@+id/tvBalance"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="7dp"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="1dp"
+                    android:paddingBottom="1dp"
+                    android:maxLines="1"
+                    android:gravity="center_vertical"
+                    android:text=""
+                    android:textColor="?attr/neb_dim"
+                    android:textSize="10.5sp"
+                    android:visibility="gone"
+                    android:contentDescription="账户余额" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvThink"
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:gravity="center"
+            android:paddingStart="9dp"
+            android:paddingEnd="9dp"
+            android:maxLines="1"
+            android:text="🧠 默认"
+            android:textSize="11.5sp"
+            android:textColor="?attr/neb_dim"
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="10dp"
+            android:contentDescription="思考强度" />
+
+        <ImageButton
+            android:id="@+id/btnSettings"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="@drawable/icon_btn_bg"
+            android:src="@drawable/ic_ai_chip"
+            android:scaleType="centerInside"
+            android:tint="?attr/neb_text"
+            android:contentDescription="选择模型（长按进设置）" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/neb_stroke" />
+
+    <!-- 消息区 -->
+    <ScrollView
+        android:id="@+id/scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none"
+        android:clipToPadding="false"
+        android:paddingBottom="8dp">
+
+        <LinearLayout
+            android:id="@+id/chatContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="12dp" />
+    </ScrollView>
+
+    <!-- 输入区 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/neb_stroke" />
+
+    <!-- 输入框上方功能栏（文件 / 图片 / 技能 / MCP / 联网） -->
+    <LinearLayout
+        android:id="@+id/composerBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="7dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="bottom"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="10dp">
+
+        <EditText
+            android:id="@+id/etInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/input_bg"
+            android:minHeight="46dp"
+            android:maxLines="6"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            android:hint="@string/hint_input"
+            android:textColor="?attr/neb_text"
+            android:textColorHint="?attr/neb_dim"
+            android:textSize="15sp"
+            android:gravity="top|start"
+            android:inputType="textCapSentences|textMultiLine"
+            android:imeOptions="flagNoExtractUi" />
+
+        <FrameLayout
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp">
+
+            <ImageButton
+                android:id="@+id/btnSend"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/btn_round"
+                android:src="@drawable/ic_send"
+                android:scaleType="centerInside"
+                android:padding="13dp"
+                android:tint="?attr/neb_text"
+                android:contentDescription="@string/send" />
+        </FrameLayout>
+    </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/neb_stroke" />
+
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:orientation="horizontal"
+        android:baselineAligned="false"
+        android:background="?attr/neb_surface" />
+</LinearLayout>

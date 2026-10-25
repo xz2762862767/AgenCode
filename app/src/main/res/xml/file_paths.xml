@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 手机公共目录（下载/文档等），产物卡片里的 APK 基本都在这里 -->
+    <external-path name="sdcard" path="." />
+    <external-files-path name="extfiles" path="." />
+    <!-- 需要时把文件复制到应用私有目录再共享 -->
+    <files-path name="files" path="." />
+    <cache-path name="cache" path="." />
+</paths>

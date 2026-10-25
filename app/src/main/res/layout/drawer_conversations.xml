@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/drawer_bg"
+    android:paddingTop="10dp">
+
+    <!-- 头部：标题 + 新建 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="10dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="会话"
+            android:textColor="?attr/neb_text"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/btnDrawerNew"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/icon_btn_bg"
+            android:src="@drawable/ic_plus"
+            android:scaleType="centerInside"
+            android:tint="?attr/neb_accent"
+            android:contentDescription="新建会话" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvDrawerSub"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="2dp"
+        android:text="按最近使用排列"
+        android:textColor="?attr/neb_dim"
+        android:textSize="11.5sp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="12dp"
+        android:background="?attr/neb_stroke" />
+
+    <ScrollView
+        android:id="@+id/drawerScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:id="@+id/listContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="10dp" />
+    </ScrollView>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/neb_stroke" />
+
+    <!-- 底部：齿轮 + 设置 -->
+    <LinearLayout
+        android:id="@+id/rowDrawerSettings"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="16dp"
+        android:background="?android:attr/selectableItemBackground">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:src="@drawable/ic_settings"
+            android:tint="?attr/neb_dim"
+            android:contentDescription="设置" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:text="设置"
+            android:textColor="?attr/neb_text"
+            android:textSize="14.5sp" />
+
+        <TextView
+            android:id="@+id/tvDrawerVer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="?attr/neb_dim"
+            android:textSize="11sp" />
+    </LinearLayout>
+</LinearLayout>

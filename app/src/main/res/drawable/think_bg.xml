@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 思考过程块：四边统统一道 1dp 细绿框（不再用左右粗侧条），靠提高不透明度保证细线也看得清 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#0F1C14" />
+            <stroke android:width="1dp" android:color="#CC3FB950" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+</layer-list>

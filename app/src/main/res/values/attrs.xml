@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 可换肤的语义色：布局与 drawable 一律引用 ?attr/neb_*，主题里再赋值 -->
+    <attr name="neb_bg" format="color" />
+    <attr name="neb_surface" format="color" />
+    <attr name="neb_surface2" format="color" />
+    <attr name="neb_stroke" format="color" />
+    <attr name="neb_text" format="color" />
+    <attr name="neb_dim" format="color" />
+    <attr name="neb_accent" format="color" />
+    <attr name="neb_code" format="color" />
+</resources>

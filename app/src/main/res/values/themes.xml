@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="colorPrimary">@color/bg</item>
+        <item name="colorPrimaryDark">@color/bg</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="android:textColorHint">@color/text_dim</item>
+
+        <!-- 语义色（默认：深色 + 蓝） -->
+        <item name="neb_bg">@color/bg</item>
+        <item name="neb_surface">@color/surface</item>
+        <item name="neb_surface2">@color/surface2</item>
+        <item name="neb_stroke">@color/stroke</item>
+        <item name="neb_text">@color/text</item>
+        <item name="neb_dim">@color/text_dim</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_bg</item>
+    </style>
+
+    <!-- 纯黑 OLED：只压暗背景层，卡片/描边改用近黑，省电且不刺眼 -->
+    <style name="AppTheme.Black">
+        <item name="colorPrimary">@color/bg_black</item>
+        <item name="colorPrimaryDark">@color/bg_black</item>
+        <item name="android:windowBackground">@color/bg_black</item>
+        <item name="android:statusBarColor">@color/bg_black</item>
+        <item name="android:navigationBarColor">@color/bg_black</item>
+
+        <item name="neb_bg">@color/bg_black</item>
+        <item name="neb_surface">@color/surface_black</item>
+        <item name="neb_surface2">@color/surface2_black</item>
+        <item name="neb_stroke">@color/stroke_black</item>
+        <item name="neb_code">@color/code_black</item>
+    </style>
+
+    <!-- 强调色覆盖（运行时 applyStyle 叠加到当前主题上） -->
+    <style name="AccentBlue">
+        <item name="neb_accent">@color/accent_blue</item>
+        <item name="colorAccent">@color/accent_blue</item>
+    </style>
+
+    <style name="AccentPurple">
+        <item name="neb_accent">@color/accent_purple</item>
+        <item name="colorAccent">@color/accent_purple</item>
+    </style>
+
+    <style name="AccentGreen">
+        <item name="neb_accent">@color/accent_green</item>
+        <item name="colorAccent">@color/accent_green</item>
+    </style>
+
+    <style name="AccentOrange">
+        <item name="neb_accent">@color/accent_orange</item>
+        <item name="colorAccent">@color/accent_orange</item>
+    </style>
+
+    <style name="AccentCyan">
+        <item name="neb_accent">@color/accent_cyan</item>
+        <item name="colorAccent">@color/accent_cyan</item>
+    </style>
+
+    <style name="DialogTheme" parent="Theme.AppCompat.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="neb_bg">@color/bg</item>
+        <item name="neb_surface">@color/surface</item>
+        <item name="neb_surface2">@color/surface2</item>
+        <item name="neb_stroke">@color/stroke</item>
+        <item name="neb_text">@color/text</item>
+        <item name="neb_dim">@color/text_dim</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_bg</item>
+    </style>
+
+    <!-- 侧滑抽屉：从左滑入 / 滑出 -->
+    <style name="DrawerAnim">
+        <item name="android:windowEnterAnimation">@anim/drawer_in</item>
+        <item name="android:windowExitAnimation">@anim/drawer_out</item>
+    </style>
+</resources>

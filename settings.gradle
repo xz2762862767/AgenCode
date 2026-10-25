@@ -1,0 +1,17 @@
+pluginManagement {
+    repositories {
+        maven { url 'file:///opt/maven-repo' }
+        google()
+        mavenCentral()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        maven { url 'file:///opt/maven-repo' }
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "NebulaAI"
+include ':app'

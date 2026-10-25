@@ -1,0 +1,36 @@
+# ---- Gradle / 构建产物 ----
+.gradle/
+.gradle-tmp/
+build/
+app/build/
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.hprof
+
+# ---- 本机专属路径 ----
+local.properties
+
+# ---- 签名与密钥：绝不入库 ----
+keystore/
+keystore.properties
+*.jks
+*.keystore
+*.p12
+
+# ---- 运行期产物 ----
+*.log
+diag/
+out/
+
+# ---- 系统垃圾 ----
+.DS_Store
+Thumbs.db
+
+# ---- deb 解包临时目录（构建期生成，不入库）----
+env-assets/x/
+env-assets/y/

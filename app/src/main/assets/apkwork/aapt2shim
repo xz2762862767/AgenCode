@@ -1,0 +1,14 @@
+#!/bin/sh
+# apktool 调用 aapt2 时会传它定制版才有的 -e <file>（emit ids），
+# 官方 aapt2 对应的长参数是 --emit-ids。这里做一次等价转换后再交给真正的 aapt2。
+n=$#
+i=0
+while [ $i -lt $n ]; do
+  a=$1; shift
+  case "$a" in
+    -e) set -- "$@" --emit-ids ;;
+    *)  set -- "$@" "$a" ;;
+  esac
+  i=$((i+1))
+done
+exec /exchange/apkwork/bin/aapt2.real "$@"

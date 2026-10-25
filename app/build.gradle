@@ -1,0 +1,151 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.nebula.aichat'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.nebula.aichat"
+        // 代码里用了 java.nio.file / Process.isAlive（API 26）解压与进程管理，
+        // 24/25 上会 NoSuchMethodError，所以底线定在 Android 8.0
+        minSdk 26
+        targetSdk 34
+        versionCode 169
+        versionName "1.8.45"
+
+        // 内置 proot 仅提供 arm64 版本
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // 发布签名：口令与密钥文件都不进仓库。
+    // 优先读 keystore.properties（本地文件，已 .gitignore），
+    // 其次读环境变量（方便 CI），两者都没有就跳过 release 签名，
+    // 此时只能出 debug 包——这对开源使用者是合理的默认行为。
+    // ---------------------------------------------------------------
+    signingConfigs {
+        def ksProps = new Properties()
+        def ksPropsFile = rootProject.file('keystore.properties')
+        if (ksPropsFile.exists()) {
+            ksPropsFile.withInputStream { ksProps.load(it) }
+        }
+        def ksStore = System.getenv('NEBULA_KEYSTORE') ?: ksProps.getProperty('storeFile')
+        def ksStorePass = System.getenv('NEBULA_STORE_PASSWORD') ?: ksProps.getProperty('storePassword')
+        def ksAlias = System.getenv('NEBULA_KEY_ALIAS') ?: ksProps.getProperty('keyAlias')
+        def ksKeyPass = System.getenv('NEBULA_KEY_PASSWORD') ?: ksProps.getProperty('keyPassword')
+        def ksFileObj = ksStore ? rootProject.file(ksStore) : null
+        if (ksFileObj != null && ksFileObj.exists()) {
+            release {
+                storeFile ksFileObj
+                storePassword ksStorePass
+                keyAlias ksAlias
+                keyPassword ksKeyPass
+                // v2 是 Android 7+ 的安装门槛，v3 让新系统能做密钥轮换与更强的完整性校验
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            // 没配置密钥时（纯开源使用者）就不挂签名，避免配置阶段直接报错
+            if (signingConfigs.findByName('release') != null) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs {
+            // 必须真解压到 lib 目录，否则 nativeLibraryDir 指向 APK 内部无法 exec
+            useLegacyPackaging = true
+            // proot / loader / talloc 不能被 strip，否则无法运行
+            keepDebugSymbols += ['**/libproot.so', '**/libprootloader.so', '**/libtalloc.so', '**/libandroid-shmem.so']
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+configurations.all {
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.core:core:1.12.0'
+    // 纯 Java 的 APK V1/V2 签名实现（无 Android 依赖）
+    implementation 'com.android.tools.build:apksig:8.2.0'
+}
+
+// ── 把本应用源码树打进 assets，供 App 内「本应用工程」页浏览自身源码 ──
+android {
+    sourceSets {
+        main {
+            assets.srcDirs += ["$buildDir/generated/selfsrc"]
+        }
+    }
+}
+
+def selfSrcRoot = file("$buildDir/generated/selfsrc")
+
+tasks.register('genSelfSrc') {
+    def javaDir = file('src/main/java')
+    def resDir = file('src/main/res')
+    def gradleFile = file('build.gradle')
+    def manifestFile = file('src/main/AndroidManifest.xml')
+    inputs.dir(javaDir)
+    inputs.dir(resDir)
+    inputs.files(gradleFile, manifestFile)
+    outputs.dir(selfSrcRoot)
+    doLast {
+        delete(selfSrcRoot)
+        def dst = new File(selfSrcRoot, 'selfsrc')
+        dst.mkdirs()
+        def sb = new StringBuilder("kind\tpath\tlines\tbytes\n")
+        def textish = ['.java', '.xml', '.gradle', '.json', '.txt', '.properties', '.md']
+        def add = { String kind, File base, File f, String name ->
+            String rel = base == null ? name : base.toPath().relativize(f.toPath()).toString()
+            File out = new File(dst, kind + "/" + rel)
+            out.parentFile.mkdirs()
+            out.bytes = f.bytes
+            int lineCount = 0
+            if (textish.any { rel.toLowerCase().endsWith(it) }) {
+                try { lineCount = f.readLines().size() } catch (Throwable ignored) { lineCount = 0 }
+            }
+            sb.append(kind).append('\t').append(rel).append('\t').append(lineCount)
+              .append('\t').append(f.length()).append('\n')
+        }
+        fileTree(javaDir).include('**/*.java').files.sort { it.absolutePath }.each { add('java', javaDir, it, null) }
+        if (resDir.exists()) {
+            fileTree(resDir).files.sort { it.absolutePath }.each { add('res', resDir, it, null) }
+        }
+        add('build', null, gradleFile, 'build.gradle')
+        add('build', null, manifestFile, 'AndroidManifest.xml')
+        new File(dst, 'index.tsv').text = sb.toString()
+        println "genSelfSrc -> " + dst + " (index ${sb.length()} chars)"
+    }
+}
+
+tasks.configureEach { t ->
+    if (t.name == 'preBuild') t.dependsOn 'genSelfSrc'
+}

@@ -1,0 +1,12 @@
+translate-bilingual	双语翻译	中英互译，保留语气与术语一致，输出对照格式
+polish-writing	文字润色	让表达更简洁有力，保留原意与事实
+doc-summary	长文摘要	把长文压成结论、要点、行动项三层
+meeting-notes	会议纪要	把零散记录整理成决议、待办与责任人
+weekly-report	周报生成	把流水账整理成有结果的周报
+sql-tuner	SQL 调优	定位慢查询原因，给出索引与改写方案
+regex-craft	正则构造	按需求写出可读正则，附解释与测试用例
+explain-code	代码讲解	把陌生代码讲成结构图与关键路径
+license-hardening	授权校验加固	以服务端为准保护自家会员不被绕过，附加固清单
+subscription-page	会员订阅页	会员页结构与价格卡文案，含自动续费合规
+iap-troubleshoot	内购排查	买了没到账、掉单、订阅异常的定位顺序
+reverse-analysis	逆向分析	理解APK与协议结构、排查自家App异常、分析样本与解CTF

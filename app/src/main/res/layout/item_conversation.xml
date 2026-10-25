@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="?android:attr/selectableItemBackground"
+        android:paddingStart="18dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="11dp"
+        android:paddingBottom="11dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvConvTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="?attr/neb_text"
+                android:textSize="14.5sp" />
+
+            <TextView
+                android:id="@+id/tvConvMeta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="?attr/neb_dim"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/btnDel"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/icon_btn_bg"
+            android:src="@drawable/ic_delete"
+            android:scaleType="centerInside"
+            android:tint="?attr/neb_dim"
+            android:contentDescription="删除会话" />
+    </LinearLayout>
+
+    <!-- 会话之间的横线分隔（颜色随主题） -->
+    <View
+        android:id="@+id/convDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="18dp"
+        android:layout_marginEnd="18dp"
+        android:background="?attr/neb_stroke" />
+</LinearLayout>

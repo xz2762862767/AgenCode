@@ -1,0 +1,424 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?attr/neb_bg"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="12dp">
+
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:background="@drawable/icon_btn_bg"
+            android:src="@drawable/ic_back"
+            android:scaleType="centerInside"
+            android:tint="?attr/neb_text"
+            android:contentDescription="返回" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="设置"
+            android:textColor="?attr/neb_text"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/neb_stroke" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/contentList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <!-- 模型接入 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/card_bg"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="模型接入"
+                    android:textColor="?attr/neb_accent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="API Key"
+                    android:textColor="?attr/neb_dim"
+                    android:textSize="11.5sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/field_bg">
+
+                    <EditText
+                        android:id="@+id/etKey"
+                        android:layout_width="0dp"
+                        android:layout_height="46dp"
+                        android:layout_weight="1"
+                        android:background="@android:color/transparent"
+                        android:hint="sk-..."
+                        android:paddingStart="12dp"
+                        android:paddingEnd="4dp"
+                        android:singleLine="true"
+                        android:textColor="?attr/neb_text"
+                        android:textColorHint="?attr/neb_dim"
+                        android:textSize="13.5sp"
+                        android:inputType="textPassword"
+                        android:imeOptions="flagNoExtractUi" />
+
+                    <TextView
+                        android:id="@+id/tvToggleKey"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="12dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
+                        android:text="显示"
+                        android:textColor="?attr/neb_accent"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Base URL（OpenAI 兼容地址）"
+                    android:textColor="?attr/neb_dim"
+                    android:textSize="11.5sp" />
+
+                <EditText
+                    android:id="@+id/etBase"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/field_bg"
+                    android:hint="https://api.deepseek.com/v1"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:singleLine="true"
+                    android:textColor="?attr/neb_text"
+                    android:textColorHint="?attr/neb_dim"
+                    android:textSize="13.5sp"
+                    android:inputType="textUri"
+                    android:imeOptions="flagNoExtractUi" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="模型名称"
+                        android:textColor="?attr/neb_dim"
+                        android:textSize="11.5sp" />
+
+                    <TextView
+                        android:id="@+id/tvPickModel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:text="拉取列表 ▾"
+                        android:textColor="?attr/neb_accent"
+                        android:textSize="11.5sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/field_bg">
+
+                    <EditText
+                        android:id="@+id/etModel"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:background="@android:color/transparent"
+                        android:hint="deepseek-chat"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="4dp"
+                        android:singleLine="true"
+                        android:textColor="?attr/neb_text"
+                        android:textColorHint="?attr/neb_dim"
+                        android:textSize="13.5sp"
+                        android:inputType="text"
+                        android:imeOptions="flagNoExtractUi" />
+
+                    <TextView
+                        android:id="@+id/tvModelHint"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="6dp"
+                        android:paddingEnd="12dp"
+                        android:text="点右上角拉取"
+                        android:textColor="?attr/neb_dim"
+                        android:textSize="10.5sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 对话行为 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:background="@drawable/card_bg"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="对话行为"
+                    android:textColor="?attr/neb_accent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="系统提示词（决定它的性格和回答风格）"
+                    android:textColor="?attr/neb_dim"
+                    android:textSize="11.5sp" />
+
+                <EditText
+                    android:id="@+id/etSystem"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/field_bg"
+                    android:gravity="top|start"
+                    android:minLines="4"
+                    android:maxLines="10"
+                    android:padding="12dp"
+                    android:textColor="?attr/neb_text"
+                    android:textColorHint="?attr/neb_dim"
+                    android:textSize="13sp"
+                    android:inputType="textMultiLine|textCapSentences"
+                    android:imeOptions="flagNoExtractUi" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="温度（越低越稳定，越高越发散）"
+                        android:textColor="?attr/neb_dim"
+                        android:textSize="11.5sp" />
+
+                    <TextView
+                        android:id="@+id/tvTemp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0.7"
+                        android:textColor="?attr/neb_text"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <SeekBar
+                    android:id="@+id/sbTemp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:max="20"
+                    android:progress="7" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="消息字号（聊天正文大小）"
+                        android:textColor="?attr/neb_dim"
+                        android:textSize="11.5sp" />
+
+                    <TextView
+                        android:id="@+id/tvFont"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="16"
+                        android:textColor="?attr/neb_text"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <SeekBar
+                    android:id="@+id/sbFont"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:max="11"
+                    android:progress="3" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="最大回复 tokens"
+                    android:textColor="?attr/neb_dim"
+                    android:textSize="11.5sp" />
+
+                <EditText
+                    android:id="@+id/etMaxTokens"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/field_bg"
+                    android:hint="4096"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:singleLine="true"
+                    android:textColor="?attr/neb_text"
+                    android:textColorHint="?attr/neb_dim"
+                    android:textSize="13.5sp"
+                    android:inputType="number"
+                    android:imeOptions="flagNoExtractUi" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/swStream"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="流式输出（逐字显示，可中途停止）"
+                    android:textColor="?attr/neb_text"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnSave"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/btn_primary"
+                android:text="保存设置"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnTest"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/btn_ghost"
+                android:text="测试连接"
+                android:textAllCaps="false"
+                android:textColor="?attr/neb_text"
+                android:textSize="14sp" />
+
+<LinearLayout
+                android:id="@+id/cardAbout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="vertical"
+                android:background="@drawable/card_bg"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="关于"
+                    android:textColor="?attr/neb_accent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvAboutVer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textColor="?attr/neb_text"
+                    android:textSize="12.5sp" />
+
+                <TextView
+                    android:id="@+id/tvAboutModel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:textColor="?attr/neb_dim"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/btnAboutPage"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/btn_ghost"
+                    android:gravity="center"
+                    android:text="打开关于页 · 版本与许可"
+                    android:textColor="?attr/neb_text"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:layout_marginBottom="20dp"
+                android:text="提示：API Key 只保存在本机应用私有目录，不会上传到任何第三方服务器。默认已配好 DeepSeek 官方地址，只需填 Key 即可使用。"
+                android:textColor="?attr/neb_dim"
+                android:textSize="11sp"
+                android:lineSpacingExtra="3dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

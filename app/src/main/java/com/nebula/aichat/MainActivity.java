@@ -1680,7 +1680,7 @@ public class MainActivity extends AppCompatActivity {
         statusIcon.setImageResource(R.drawable.ic_spark);
         statusIcon.setColorFilter(0xFF5B93FF);
         statusIcon.setContentDescription("思考中");
-        row.addView(statusIcon, new LinearLayout.LayoutParams(dp(15), dp(15)));
+        row.addView(statusIcon, new LinearLayout.LayoutParams(dp(16), dp(16)));
 
         statusText = new TextView(this);
         statusText.setText("正在思考…");
@@ -1688,7 +1688,7 @@ public class MainActivity extends AppCompatActivity {
         statusText.setTextColor(0xFF8A97AA);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tlp.leftMargin = dp(5);
+        tlp.leftMargin = dp(7);
         row.addView(statusText, tlp);
 
         parent.addView(row, lp);
@@ -1735,8 +1735,10 @@ public class MainActivity extends AppCompatActivity {
             spinAnim = null;
         }
         if (statusIcon != null) {
+            statusIcon.setImageResource(R.drawable.ic_tool_stop);
+            statusIcon.setColorFilter(C_OK);
             statusIcon.setRotation(0f);
-            statusIcon.setAlpha(0.45f);
+            statusIcon.setAlpha(0.55f);
         }
     }
 
@@ -1766,6 +1768,10 @@ public class MainActivity extends AppCompatActivity {
         statusText.setTextColor(C_RUN);
         setStatusTint(C_RUN);
         if (statusIcon != null) {
+            // 执行态换成 3/4 圆环：星形图标读起来是「在想」，
+            // 圆环配旋转才是「在跑」，两种状态一眼分得开
+            statusIcon.setImageResource(R.drawable.ic_tool_arc);
+            statusIcon.setColorFilter(C_RUN);
             statusIcon.setVisibility(View.VISIBLE);
             statusIcon.setAlpha(1f);
             statusIcon.setRotation(0f);
@@ -1795,6 +1801,8 @@ public class MainActivity extends AppCompatActivity {
         if (statusIcon != null) {
             statusIcon.setRotation(0f);
             statusIcon.setAlpha(ok ? 0.55f : 0.9f);
+            statusIcon.setImageResource(ok ? R.drawable.ic_tool_stop
+                    : R.drawable.ic_tool_abort);
             statusIcon.setColorFilter(ok ? C_OK : C_ABORT);
             statusIcon.setVisibility(View.VISIBLE);
         }

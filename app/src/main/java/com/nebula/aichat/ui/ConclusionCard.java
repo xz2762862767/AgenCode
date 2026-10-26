@@ -1,12 +1,9 @@
 package com.nebula.aichat.ui;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
-import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -18,54 +15,41 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * 结论区：回答最结尾那块「结论 + 详述」。
+ * 一轮回答收尾时的「结论卡」。
  *
- * <p>观感目标：<b>洁亮</b>——干净、通透、提亮，但绝不能变成一块发光牌。
- * 做法是「背景色 + 主题强调色」按比例混出底色，再整体提一档亮度：
- * 卡片因此永远和当前主题（深色 / 纯黑 OLED / 五档强调色）自动同源，
- * 用户换强调色时结论卡跟着换，不用在这里再维护一套写死的色值。</p>
+ * <p>排版按「白纸便签」的思路重做，不再是深色渐变玻璃：
+ * 底色是近乎纯白的净面（只掺 3% 强调色保住色系关联），文字用深墨色，
+ * 左侧一条 3dp 强调色竖条负责身份识别，最上面一行小字「对话已结束」标明本轮到此为止。</p>
  *
- * <p>明亮感来自三样叠加的层次，而不是靠纯白垫底：
- * ① 左上到右下的三段渐隐（上亮下沉，玻璃厚度感）；
- * ② 左上角一道强调色的斜向受光；
- * ③ 覆盖上半部分的一层极淡白高光（模拟玻璃反光，这一层最出「洁」的感觉）。
- * 纯白卡在深色流里滚动会刺眼，所以亮度上限压在「比气泡亮一档、比白低很多」的位置。</p>
+ * <p>为什么反过来用浅底深字：深色卡片在深色对话流里只能靠提亮区分层级，
+ * 一提亮就发灰、发闷，怎么调都像脏；换成浅底后对比度天然拉满，
+ * 「洁亮」是靠对比度得到的，不靠堆高光，纯黑 OLED 主题下也不会糊成一块。</p>
  *
- * <p>文字仍用子 View（可换行、可长按选中），所以不用 Canvas 画文本。</p>
+ * <p>层次只靠字号与颜色三档拉开：结束标记 11sp 灰 → 结论 16.5sp 粗墨 → 详述 13.5sp 中灰。
+ * 没有任何描边、发光、渐变高光，卡片因此不会在滚动时抢注意力。</p>
  */
 public class ConclusionCard extends LinearLayout {
 
-    /** 文字色：近白偏冷，压在彩色底上依然干净 */
-    private static final int TEXT_TITLE = 0xFFF8FBFF;
-    private static final int TEXT_DETAIL = 0xFFE4EDF9;
+    /** 标题：近黑墨蓝，压在浅底上干净利落 */
+    private static final int TEXT_TITLE = 0xFF101725;
+    /** 详述：比标题浅两档，读起来不抢主线 */
+    private static final int TEXT_DETAIL = 0xFF3E4B62;
+    /** 结束标记：最淡，只是提示「这轮完了」，不该被读到 */
+    private static final int TEXT_END = 0xFF8592A6;
 
-    /** 三段底色 + 受光色 + 顶部高光，构造时按当前主题算出来 */
     private final int cTop;
-    private final int cMid;
     private final int cBottom;
-    private final int cGlow;
-    private final int cSheen;
+    private final int cBar;
 
     private final Paint pBg = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint pGlow = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint pSheen = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint pGlint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+    private final Paint pBar = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     private final RectF rf = new RectF();
+    private final RectF rfBar = new RectF();
 
     private final float radius;
+    private final float barW;
 
-    /** 银光扫掠进度：0 = 从左侧进场，1 = 已扫出右侧 */
-    private float sweep = 1f;
-    /** 只有正在扫的时候才画高光，静态卡（历史消息）永远不画 */
-    private boolean sweeping;
-    private ValueAnimator sweepAnim;
-
-    // 扫光用的颜色/位置提到常量，避免 onDraw 每帧重新分配数组
-    private static final int[] GLINT_COLORS = {0x00FFFFFF, 0x3AFFFFFF, 0x00FFFFFF};
-    private static final float[] GLINT_POS = {0f, 0.5f, 1f};
-    private LinearGradient glintShader;
-    private final Matrix glintM = new Matrix();
-    private float glintBand;
+    private ValueAnimator appearAnim;
 
     public ConclusionCard(Context c, String title, String detail) {
         super(c);
@@ -73,38 +57,50 @@ public class ConclusionCard extends LinearLayout {
         setWillNotDraw(false);   // ViewGroup 默认不调 onDraw，必须打开
 
         radius = Ui.dp(c, 14);
-        setPadding(Ui.dp(c, 16), Ui.dp(c, 14), Ui.dp(c, 16), Ui.dp(c, 15));
+        barW = Ui.dp(c, 3);
 
-        // 底色全部由当前主题推导：背景混强调色（上多下少）+ 提亮，得到通透的玻璃面
-        int bgc = Palette.bg(c);
         int accent = Palette.accent(c);
-        cTop = lighten(mix(bgc, accent, 0.30f), 0.16f);
-        cMid = lighten(mix(bgc, accent, 0.17f), 0.09f);
-        cBottom = lighten(mix(bgc, accent, 0.07f), 0.02f);
-        cGlow = (accent & 0x00FFFFFF) | 0x3A000000;   // 左上受光：强调色压到很淡
-        cSheen = 0x2CFFFFFF;                          // 顶部白高光：洁净感的来源
+        // 净面：白里只掺一丝强调色，换强调色时整卡跟着微微变色，但永远不脏
+        cTop = lighten(mix(0xFFFFFFFF, accent, 0.03f), 0.55f);
+        cBottom = mix(0xFFFFFFFF, accent, 0.09f);
+        cBar = accent;
+        pBar.setColor(cBar);
 
-        // 一句话结论直接当卡片第一行：原来上面还有一行「结 论」眉标，
-        // 证过一轮发现它只是把已经写着结论的东西再说一遍，白占高度，去掉。
+        // 左内边距 = 常规 16 + 竖条 3 + 呼吸 11，正文不会压在竖条上
+        int padLeft = Ui.dp(c, 16) + (int) barW + Ui.dp(c, 11);
+        setPadding(padLeft, Ui.dp(c, 13), Ui.dp(c, 16), Ui.dp(c, 15));
 
+        // ① 结束标记：写在卡片最上面，一眼知道这轮对话到此结束
+        TextView tvEnd = new TextView(c);
+        tvEnd.setText("对话已结束");
+        tvEnd.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        tvEnd.setTextColor(TEXT_END);
+        tvEnd.setIncludeFontPadding(false);
+        tvEnd.setLetterSpacing(0.08f);
+        LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        elp.bottomMargin = Ui.dp(c, 7);
+        addView(tvEnd, elp);
+
+        // ② 一句话结论：整卡唯一的粗体，字号拉到 16.5，和详述拉开明确层级
         TextView tvTitle = new TextView(c);
         tvTitle.setText(title == null ? "" : title.trim());
-        tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+        tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16.5f);
         tvTitle.setTypeface(Typeface.DEFAULT_BOLD);
         tvTitle.setTextColor(TEXT_TITLE);
-        tvTitle.setLineSpacing(Ui.dp(c, 4), 1.32f);
+        tvTitle.setLineSpacing(Ui.dp(c, 3), 1.28f);
         tvTitle.setIncludeFontPadding(false);
         tvTitle.setTextIsSelectable(true);
         addView(tvTitle, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        // ③ 详细说明：白但略收，靠字号与行距和标题分层
+        // ③ 详细说明：中灰常规体，行距放宽到 1.62，长段落也不挤
         if (detail != null && !detail.trim().isEmpty()) {
             TextView tvDetail = new TextView(c);
             tvDetail.setText(detail.trim());
-            tvDetail.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+            tvDetail.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
             tvDetail.setTextColor(TEXT_DETAIL);
-            tvDetail.setLineSpacing(Ui.dp(c, 4), 1.58f);
+            tvDetail.setLineSpacing(Ui.dp(c, 4), 1.62f);
             tvDetail.setIncludeFontPadding(false);
             tvDetail.setTextIsSelectable(true);
             tvDetail.setGravity(Gravity.START);
@@ -116,57 +112,37 @@ public class ConclusionCard extends LinearLayout {
     }
 
     /**
-     * 收尾动画：一道白光从左扫到右，扫完就停。
-     * 只给「刚生成完」的那条调用——历史里几十条同时扫纯属浪费。
+     * 收尾入场：整卡淡入并轻轻托起 6dp。
+     * 只给「刚生成完」的那一条调用——历史里几十条同时动纯属浪费。
+     * 方法名沿用 playSweep（调用方不用改），但已经不再画扫光了：
+     * 净面卡片上打一道白光会显脏，动效收在透明度上更安静。
      */
     public void playSweep() {
-        if (sweepAnim != null) sweepAnim.cancel();
-        sweeping = true;
-        sweep = 0f;
-        invalidate();
-        sweepAnim = ValueAnimator.ofFloat(0f, 1f);
-        sweepAnim.setDuration(520);
-        sweepAnim.setInterpolator(new DecelerateInterpolator(1.5f));
-        sweepAnim.addUpdateListener(a -> {
+        if (appearAnim != null) appearAnim.cancel();
+        final int rise = Ui.dp(getContext(), 6);
+        setAlpha(0f);
+        setTranslationY(rise);
+        appearAnim = ValueAnimator.ofFloat(0f, 1f);
+        appearAnim.setDuration(240);
+        appearAnim.setInterpolator(new DecelerateInterpolator(1.5f));
+        appearAnim.addUpdateListener(a -> {
             Object v = a.getAnimatedValue();
-            sweep = v instanceof Float ? (Float) v : 1f;
-            invalidate();
+            float f = v instanceof Float ? (Float) v : 1f;
+            setAlpha(f);
+            setTranslationY(rise * (1f - f));
         });
-        sweepAnim.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator a) {
-                sweeping = false;
-                invalidate();
-            }
-        });
-        sweepAnim.start();
+        appearAnim.start();
     }
 
     @Override
     protected void onSizeChanged(int w, int h, int ow, int oh) {
         super.onSizeChanged(w, h, ow, oh);
         if (w <= 0 || h <= 0) return;
-
-        // 斜向渐变：左上最亮、右下收到接近背景，做出玻璃的厚度
-        pBg.setShader(new LinearGradient(0, 0, w * 0.78f, h,
-                new int[]{cTop, cMid, cBottom},
-                new float[]{0f, 0.55f, 1f},
+        // 上下几乎同色的极淡垂直渐变：只为了不是一块死平色，肉眼几乎看不出过渡
+        pBg.setShader(new LinearGradient(0, 0, 0, h,
+                new int[]{cTop, cBottom},
+                new float[]{0f, 1f},
                 Shader.TileMode.CLAMP));
-
-        // 左上角受光：强调色的淡光从角上铺开，卡片才有「被照亮」的方向感
-        pGlow.setShader(new LinearGradient(0, 0, w * 0.62f, h * 0.85f,
-                new int[]{cGlow, 0x00000000},
-                null, Shader.TileMode.CLAMP));
-
-        // 顶部白高光：垂直方向铺到一半就没了，模拟玻璃反光（「洁」就靠它）
-        pSheen.setShader(new LinearGradient(0, 0, 0, h * 0.70f,
-                new int[]{cSheen, 0x00FFFFFF},
-                null, Shader.TileMode.CLAMP));
-
-        // 扫光条预先建好，onDraw 里只平移矩阵不重建
-        glintBand = w * 0.55f;
-        glintShader = new LinearGradient(-glintBand, 0, glintBand, h,
-                GLINT_COLORS, GLINT_POS, Shader.TileMode.CLAMP);
     }
 
     @Override
@@ -175,21 +151,15 @@ public class ConclusionCard extends LinearLayout {
         int h = getHeight();
         if (w <= 0 || h <= 0) return;
 
-        // ① 底色（上亮下沉）+ 左上受光 + 顶部白高光，三层叠出洁亮的玻璃面
+        // ① 净面底
         rf.set(0, 0, w, h);
         cv.drawRoundRect(rf, radius, radius, pBg);
-        cv.drawRoundRect(rf, radius, radius, pGlow);
-        cv.drawRoundRect(rf, radius, radius, pSheen);
 
-        // ② 扫掠高光：一条斜着的白光带，跟着 sweep 走。
-        // Shader 在 onSizeChanged 里建好，这里只平移矩阵，不再每帧 new 对象（避免 GC 抖动）
-        if (sweeping && glintShader != null) {
-            float band = glintBand;
-            float cx = -band + (w + band * 2f) * clamp01(sweep);
-            glintM.setTranslate(cx, 0);
-            glintShader.setLocalMatrix(glintM);
-            pGlint.setShader(glintShader);
-            cv.drawRoundRect(rf, radius, radius, pGlint);
+        // ② 左侧强调竖条：y 从圆角之后起、到圆角之前止，正好贴在卡片轮廓内侧，
+        //    不会在四角探出去（这也是不画整圈描边的原因——只留一条，信息量足够且不吵）
+        if (h > radius * 2f) {
+            rfBar.set(0, radius, barW, h - radius);
+            cv.drawRoundRect(rfBar, barW / 2f, barW / 2f, pBar);
         }
 
         super.onDraw(cv);
@@ -198,11 +168,10 @@ public class ConclusionCard extends LinearLayout {
     @Override
     protected void onDetachedFromWindow() {
         // 列表回收/清空时把动画停掉，别让它在没有窗口的地方继续跑
-        if (sweepAnim != null) {
-            sweepAnim.cancel();
-            sweepAnim = null;
+        if (appearAnim != null) {
+            appearAnim.cancel();
+            appearAnim = null;
         }
-        sweeping = false;
         super.onDetachedFromWindow();
     }
 

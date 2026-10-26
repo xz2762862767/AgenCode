@@ -44,7 +44,10 @@ public class SkillStore {
         SharedPreferences sp0 = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
         // 已经初始化过就直接返回：这一步过去每次打开面板都要 list 目录、查文件，
         // 技能一多就全压在点击那一下上
-        if (sp0.getBoolean("samples_ready", false)) return;
+        if (sp0.getBoolean("samples_ready", false)) {
+            dedupeOnce(c);
+            return;
+        }
 
         File dir = skillsDir(c);
         String[] existing = dir.list();
@@ -72,20 +75,44 @@ public class SkillStore {
                         + "- 边界条件与空输入\n"
                         + "- 明显的性能问题（循环内 IO、重复计算）\n");
 
-        writeSample(dir, "tighten-writing", "文本精修",
-                "当用户要求把文字改得更简洁、更专业或更正式时使用。保留原意，压缩冗余。",
-                "# 文本精修\n\n"
-                        + "## 规则\n"
-                        + "- 先删冗余：副词、重复修饰、无信息量的开场句\n"
-                        + "- 长句拆分：一句话只表达一个意思\n"
-                        + "- 动词优先：把「进行…的处理」改为具体动词\n"
-                        + "- 保持术语与事实不变，不改数字与专有名词\n\n"
-                        + "## 输出\n"
-                        + "先给最终版本，再用两三行说明改了什么。\n");
+        // 说明：这里原来还硬编码了一个「文本精修」技能，和 assets/skills 里的
+        // 「文字润色」(polish-writing) 是同一个东西，装完等于同功能两份。
+        // 现在只留内置库那一份，示例技能不再重复造。
 
         sp0.edit().putBoolean("samples_ready", true).apply();
         invalidate(c);
         seedDefaultsOnce(c, dir);
+        installBuiltinQuiet(c, "polish-writing");
+    }
+
+    /** 静默安装一个内置技能（已存在就跳过），用于补齐默认能力 */
+    private static void installBuiltinQuiet(Context c, String id) {
+        try {
+            if (new File(skillsDir(c), id).isDirectory()) return;
+            for (Builtin b : builtins(c)) {
+                if (id.equals(b.id)) {
+                    installBuiltin(c, b);
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * 一次性去重：老版本把「文本精修」和「文字润色」各装了一份，
+     * 升级后删掉重复的那份，并从内置库补回唯一的一份，功能不减、上下文变干净。
+     */
+    private static void dedupeOnce(Context c) {
+        SharedPreferences sp = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
+        if (sp.getBoolean("dedupe_skills_v2", false)) return;
+        File dir = skillsDir(c);
+        File dup = new File(dir, "tighten-writing");
+        boolean had = dup.isDirectory();
+        deleteRecursive(dup);
+        if (had) installBuiltinQuiet(c, "polish-writing");
+        invalidate(c);
+        sp.edit().putBoolean("dedupe_skills_v2", true).apply();
     }
 
     /**
@@ -95,7 +122,7 @@ public class SkillStore {
     private static void seedDefaultsOnce(Context c, File dir) {
         SharedPreferences sp = c.getSharedPreferences(PREF, Context.MODE_PRIVATE);
         if (sp.getBoolean("seeded_defaults", false)) return;
-        for (String id : new String[]{"code-review", "tighten-writing"}) {
+        for (String id : new String[]{"code-review"}) {
             File md = new File(new File(dir, id), "SKILL.md");
             if (md.isFile()) setEnabled(c, id, true);
         }

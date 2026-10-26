@@ -6,6 +6,7 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -59,6 +60,13 @@ public class ConclusionCard extends LinearLayout {
     /** 只有正在扫的时候才画高光，静态卡（历史消息）永远不画 */
     private boolean sweeping;
     private ValueAnimator sweepAnim;
+
+    // 扫光用的颜色/位置提到常量，避免 onDraw 每帧重新分配数组
+    private static final int[] GLINT_COLORS = {0x00FFFFFF, 0x2EFFFFFF, 0x00FFFFFF};
+    private static final float[] GLINT_POS = {0f, 0.5f, 1f};
+    private LinearGradient glintShader;
+    private final Matrix glintM = new Matrix();
+    private float glintBand;
 
     public ConclusionCard(Context c, String title, String detail) {
         super(c);
@@ -141,6 +149,11 @@ public class ConclusionCard extends LinearLayout {
         pGlow.setShader(new LinearGradient(0, 0, w * 0.62f, h * 0.85f,
                 new int[]{GLOW_HEAD, GLOW_TAIL},
                 null, Shader.TileMode.CLAMP));
+
+        // 扫光条预先建好，onDraw 里只平移矩阵不重建
+        glintBand = w * 0.55f;
+        glintShader = new LinearGradient(-glintBand, 0, glintBand, h,
+                GLINT_COLORS, GLINT_POS, Shader.TileMode.CLAMP);
     }
 
     @Override
@@ -154,14 +167,14 @@ public class ConclusionCard extends LinearLayout {
         cv.drawRoundRect(rf, radius, radius, pBg);
         cv.drawRoundRect(rf, radius, radius, pGlow);
 
-        // ② 扫掠高光：一条斜着的白光带，跟着 sweep 走
-        if (sweeping) {
-            float band = w * 0.55f;
+        // ② 扫掠高光：一条斜着的白光带，跟着 sweep 走。
+        // Shader 在 onSizeChanged 里建好，这里只平移矩阵，不再每帧 new 对象（避免 GC 抖动）
+        if (sweeping && glintShader != null) {
+            float band = glintBand;
             float cx = -band + (w + band * 2f) * clamp01(sweep);
-            pGlint.setShader(new LinearGradient(cx - band, 0, cx + band, h,
-                    new int[]{0x00FFFFFF, 0x2EFFFFFF, 0x00FFFFFF},
-                    new float[]{0f, 0.5f, 1f},
-                    Shader.TileMode.CLAMP));
+            glintM.setTranslate(cx, 0);
+            glintShader.setLocalMatrix(glintM);
+            pGlint.setShader(glintShader);
             cv.drawRoundRect(rf, radius, radius, pGlint);
         }
 

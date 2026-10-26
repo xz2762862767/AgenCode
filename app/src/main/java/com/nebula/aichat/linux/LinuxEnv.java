@@ -134,7 +134,7 @@ public final class LinuxEnv {
         try {
             File f = new File(rootfs(), "etc/alpine-release");
             if (f.isFile()) {
-                byte[] b = TarGz.readAll(new FileInputStream(f));
+                byte[] b = TarGz.readAll(f);
                 return "Alpine " + new String(b, StandardCharsets.UTF_8).trim();
             }
         } catch (Throwable ignored) {
@@ -336,7 +336,7 @@ public final class LinuxEnv {
                 + "alias ll='ls -alF'\nalias apk-up='apk update && apk upgrade'\n";
         String old = "";
         if (profile.isFile()) {
-            old = new String(TarGz.readAll(new FileInputStream(profile)), StandardCharsets.UTF_8);
+            old = new String(TarGz.readAll(profile), StandardCharsets.UTF_8);
         }
         if (!old.contains("nebula")) {
             TarGz.writeFile(profile, (old + add).getBytes(StandardCharsets.UTF_8));

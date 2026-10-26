@@ -1023,7 +1023,7 @@ public class MarkdownRenderer {
             codeRow.setVisibility(View.VISIBLE);
             divider.setVisibility(View.VISIBLE);
             refreshCode();
-            tvLang.setText((lang.isEmpty() ? "text" : lang.toLowerCase())
+            tvLang.setText((lang.isEmpty() ? "text" : lang.toLowerCase(java.util.Locale.ROOT))
                     + " · " + lineCount + " 行");
             tvToggle.setText(expanded ? "\u25b4 收起" : "\u25be 展开");
             gutter.setTotalLines(expanded ? lineCount : Math.min(lineCount, CODE_PREVIEW_LINES));

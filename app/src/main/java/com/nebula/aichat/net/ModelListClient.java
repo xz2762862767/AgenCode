@@ -81,24 +81,42 @@ public class ModelListClient {
 
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         conn = c;
-        c.setRequestMethod("GET");
-        c.setConnectTimeout(15000);
-        c.setReadTimeout(20000);
-        c.setRequestProperty("Authorization", "Bearer " + (s.apiKey == null ? "" : s.apiKey.trim()));
-        c.setRequestProperty("Accept", "application/json");
-        c.setRequestProperty("User-Agent", "NebulaAI/1.0");
+        try {
+            c.setRequestMethod("GET");
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(20000);
+            c.setRequestProperty("Authorization", "Bearer " + (s.apiKey == null ? "" : s.apiKey.trim()));
+            c.setRequestProperty("Accept", "application/json");
+            c.setRequestProperty("User-Agent", "NebulaAI/1.0");
 
-        int code = c.getResponseCode();
-        InputStream in = (code >= 200 && code < 300) ? c.getInputStream() : c.getErrorStream();
-        String body = readAll(in);
-        c.disconnect();
-        conn = null;
+            int code = c.getResponseCode();
+            InputStream in = (code >= 200 && code < 300) ? c.getInputStream() : c.getErrorStream();
+            String body;
+            try {
+                body = readAll(in);
+            } finally {
+                if (in != null) {
+                    try {
+                        in.close();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
 
-        if (code < 200 || code >= 300) {
-            String detail = extractError(body);
-            throw new RuntimeException("HTTP " + code + (detail.isEmpty() ? "" : " · " + detail));
+            if (code < 200 || code >= 300) {
+                String detail = extractError(body);
+                throw new RuntimeException("HTTP " + code + (detail.isEmpty() ? "" : " · " + detail));
+            }
+            return parse(body);
+        } finally {
+            // 关键：getResponseCode 超时/断网会直接抛异常，原先那条路径走不到 disconnect，
+            // 连接就悬着不放（每拉一次列表漏一个），所以必须放 finally
+            try {
+                c.disconnect();
+            } catch (Exception ignored) {
+            }
+            conn = null;
         }
-        return parse(body);
     }
 
     private List<String> parse(String body) throws Exception {

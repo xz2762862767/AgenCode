@@ -137,7 +137,7 @@ public class WebSearch {
             InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
             if (in == null) return "";
             String enc = c.getContentEncoding();
-            if (enc != null && enc.toLowerCase().contains("gzip")) in = new GZIPInputStream(in);
+            if (enc != null && enc.toLowerCase(java.util.Locale.ROOT).contains("gzip")) in = new GZIPInputStream(in);
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[8192];
             int n;

@@ -337,7 +337,7 @@ public class SandboxPage {
     }
 
     private String iconOf(String name) {
-        String n = name.toLowerCase();
+        String n = name.toLowerCase(java.util.Locale.ROOT);
         if (n.endsWith(".apk")) return "📦";
         if (n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".webp")) return "🖼";
         if (n.endsWith(".md")) return "📝";
@@ -610,7 +610,7 @@ public class SandboxPage {
 
     private void openExternal(File f) {
         try {
-            String mime = f.getName().toLowerCase().endsWith(".apk")
+            String mime = f.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".apk")
                     ? "application/vnd.android.package-archive" : "*/*";
             Intent i = new Intent(Intent.ACTION_VIEW);
             // 私有目录必须用 FileProvider 才能共享给其他应用，这里退化为提示

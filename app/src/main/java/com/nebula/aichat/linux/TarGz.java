@@ -3,6 +3,7 @@ package com.nebula.aichat.linux;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -370,5 +371,16 @@ public final class TarGz {
         int r;
         while ((r = in.read(buf)) > 0) bos.write(buf, 0, r);
         return bos.toByteArray();
+    }
+
+    /**
+     * 读整个文件，由本方法负责关闭流。
+     * 调用方直接传 new FileInputStream(f) 会漏文件句柄（fd 耗尽后所有 IO 都会失败），
+     * 统一走这个重载可以避免再犯。
+     */
+    public static byte[] readAll(File f) throws IOException {
+        try (InputStream in = new FileInputStream(f)) {
+            return readAll(in);
+        }
     }
 }

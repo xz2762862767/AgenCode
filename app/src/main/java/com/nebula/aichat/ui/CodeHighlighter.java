@@ -128,7 +128,7 @@ public final class CodeHighlighter {
         if (code.equals(lastCode) && key.equals(lastLang)) {
             return lastResult;
         }
-        CharSequence result = doHighlight(code, key.trim().toLowerCase());
+        CharSequence result = doHighlight(code, key.trim().toLowerCase(java.util.Locale.ROOT));
         lastCode = code;
         lastLang = key;
         lastResult = result;
@@ -262,7 +262,7 @@ public final class CodeHighlighter {
                 int j = i + 1;
                 while (j < n && isIdentPart(code.charAt(j))) j++;
                 String w = code.substring(i, j);
-                String probe = caseInsensitive ? w.toLowerCase() : w;
+                String probe = caseInsensitive ? w.toLowerCase(java.util.Locale.ROOT) : w;
                 if (kw.contains(probe)) {
                     mark(sb, i, j, C_KEYWORD, false);
                 } else if ("true".equals(probe) || "false".equals(probe) || "null".equals(probe)

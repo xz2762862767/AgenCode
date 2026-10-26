@@ -28,6 +28,8 @@ public class ChatStore {
 
     private static final String TAG = "ChatStore";
     private static final String FILE_NAME = "chats.json";
+    /** 流式生成中的半成品，独立于会话文件存，避免高频保存把会话文件写得千疮百孔 */
+    private static final String DRAFT_NAME = "draft.json";
     private static ChatStore INSTANCE;
 
     private final File file;
@@ -60,14 +62,38 @@ public class ChatStore {
             JSONArray arr = new JSONArray(sb.toString());
             synchronized (lock) {
                 conversations.clear();
+                int bad = 0;
                 for (int i = 0; i < arr.length(); i++) {
                     JSONObject o = arr.optJSONObject(i);
-                    if (o != null) conversations.add(Conversation.fromJson(o));
+                    if (o == null) continue;
+                    try {
+                        conversations.add(Conversation.fromJson(o));
+                    } catch (Exception one) {
+                        // 一条坏了就跳过，不能让一条烂数据带走整段历史
+                        bad++;
+                    }
                 }
                 sortLocked();
+                if (bad > 0) Log.w(TAG, "跳过 " + bad + " 条损坏的会话");
             }
+            loadDraft();
         } catch (Exception e) {
-            Log.w(TAG, "解析会话失败", e);
+            // 整个文件坏了（多半是写盘过程中进程被杀，文件只剩半截）。
+            // 必须先备份再继续，否则下一次保存会把它覆盖掉，用户历史就永久没了。
+            Log.w(TAG, "解析会话失败，已备份损坏文件", e);
+            backupCorrupt();
+        }
+    }
+
+    /** 把无法解析的存档改名保留，留给用户/后续版本抢救 */
+    private void backupCorrupt() {
+        try {
+            File bad = new File(file.getParentFile(), FILE_NAME + ".bad");
+            if (bad.exists() && !bad.delete()) return;
+            if (!file.renameTo(bad)) {
+                Log.w(TAG, "损坏存档改名失败");
+            }
+        } catch (Exception ignored) {
         }
     }
 
@@ -146,6 +172,93 @@ public class ChatStore {
                 writeAtomic(data);
             }
         });
+    }
+
+    /**
+     * 流式生成中把已收到的内容落到盘上。
+     *
+     * <p>切后台久了被系统回收是很常见的事，以前那样只在收尾时入库，
+     * 回来时整段回答就凭空消失了；现在至少能接回半成品。</p>
+     */
+    public void saveDraft(String convId, String text) {
+        if (convId == null || text == null || text.isEmpty()) return;
+        final String payload;
+        try {
+            JSONObject o = new JSONObject();
+            o.put("convId", convId);
+            o.put("text", text);
+            payload = o.toString();
+        } catch (Exception e) {
+            return;
+        }
+        io.execute(() -> {
+            File tmp = new File(file.getParentFile(), DRAFT_NAME + ".tmp");
+            try (OutputStreamWriter w = new OutputStreamWriter(
+                    new FileOutputStream(tmp), StandardCharsets.UTF_8)) {
+                w.write(payload);
+                w.flush();
+            } catch (Exception e) {
+                Log.w(TAG, "写草稿失败", e);
+                return;
+            }
+            if (!tmp.renameTo(draftFile())) tmp.delete();
+        });
+    }
+
+    /** 一轮正常收尾：草稿使命结束 */
+    public void clearDraft() {
+        io.execute(() -> {
+            File f = draftFile();
+            if (f.exists() && !f.delete()) Log.w(TAG, "清理草稿失败");
+        });
+    }
+
+    private File draftFile() {
+        return new File(file.getParentFile(), DRAFT_NAME);
+    }
+
+    /** 启动时把上次没写完的半截回答接回它所属的会话 */
+    private void loadDraft() {
+        File f = draftFile();
+        if (!f.exists()) return;
+        String raw = readAll(f);
+        //noinspection ResultOfMethodCallIgnored
+        f.delete();
+        if (raw == null || raw.trim().isEmpty()) return;
+        try {
+            JSONObject o = new JSONObject(raw);
+            final String convId = o.optString("convId");
+            String text = o.optString("text");
+            if (text == null || text.trim().isEmpty()) return;
+            synchronized (lock) {
+                for (Conversation c : conversations) {
+                    if (c.id != null && c.id.equals(convId)) {
+                        Message m = new Message(Message.ROLE_ASSISTANT, text
+                                + "\n\n⚠️ 这条回答写到一半 App 被系统回收了，上面是已经收到的部分。"
+                                + "要完整答案的话，把问题再发一次。");
+                        m.error = true;
+                        c.messages.add(m);
+                        c.touch();
+                        break;
+                    }
+                }
+                sortLocked();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "读取草稿失败", e);
+        }
+    }
+
+    private static String readAll(File f) {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) sb.append(line);
+        } catch (Exception e) {
+            return null;
+        }
+        return sb.toString();
     }
 
     private void writeAtomic(String data) {

@@ -103,7 +103,7 @@ public final class Toolchain {
     /** 输出里出现 TLS/证书类错误 → 说明 HTTPS 走不通，改用 HTTP 源 */
     private static boolean tlsProblem(String out) {
         if (out == null) return false;
-        String s = out.toLowerCase();
+        String s = out.toLowerCase(java.util.Locale.ROOT);
         return s.contains("tls") || s.contains("certificate") || s.contains("handshake")
                 || s.contains("ssl") || s.contains("bad address") || s.contains("unable to connect");
     }

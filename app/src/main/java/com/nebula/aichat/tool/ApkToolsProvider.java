@@ -336,7 +336,7 @@ final class ApkToolsProvider {
             File[] fs = dir.listFiles();
             if (fs == null) continue;
             for (File f : fs) {
-                if (f.isFile() && f.getName().toLowerCase().endsWith(".apk") && f.length() > 4096) {
+                if (f.isFile() && f.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".apk") && f.length() > 4096) {
                     found.put(f.getAbsolutePath(), f);
                 }
             }
@@ -417,7 +417,7 @@ final class ApkToolsProvider {
 
         // 路径猜错了但文件名对得上：到上传/产物/下载等目录里按同名找
         String name = new File(p).getName();
-        String lower = name.toLowerCase();
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
         String[] tries = lower.endsWith(".apk") ? new String[]{name} : new String[]{name, name + ".apk"};
         String[] dirs = uploadDirs(c);
         for (String d : dirs) {
@@ -582,7 +582,7 @@ final class ApkToolsProvider {
             if (fs == null) continue;
             for (File f : fs) {
                 if (f == null || !f.isFile()) continue;
-                if (!f.getName().toLowerCase().endsWith(".apk")) continue;
+                if (!f.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".apk")) continue;
                 String ap = f.getAbsolutePath();
                 if (out.contains(ap)) continue;
                 out.add(ap);
@@ -616,7 +616,7 @@ final class ApkToolsProvider {
             }
             return;
         }
-        String name = f.getName().toLowerCase();
+        String name = f.getName().toLowerCase(java.util.Locale.ROOT);
         if (!(name.endsWith(".xml") || name.endsWith(".smali") || name.endsWith(".yml")
                 || name.endsWith(".txt") || name.endsWith(".json") || name.endsWith(".properties"))) {
             return;

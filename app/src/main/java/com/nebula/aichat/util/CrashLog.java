@@ -46,7 +46,10 @@ public final class CrashLog {
 
     private static final String DIR = "NebulaAI";
     private static final String DIAG_NAME = "diag.txt";
-    private static final SimpleDateFormat TS = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US);
+    // SimpleDateFormat 不是线程安全的，而这个类被主线程和多个工作线程同时调用，
+    // 共享一个实例会偶发 ArrayIndexOutOfBoundsException 或写出错乱的时间
+    private static final ThreadLocal<SimpleDateFormat> TS =
+            ThreadLocal.withInitial(() -> new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US));
 
     private static final String SP = "crashlog";
     private static final String K_URI = "diag_uri";
@@ -172,7 +175,7 @@ public final class CrashLog {
 
     /** 关键节点记录一行（异步落盘，主线程安全） */
     public static void d(String tag, String msg) {
-        String line = TS.format(new Date()) + " [" + tag + "] " + msg;
+        String line = TS.get().format(new Date()) + " [" + tag + "] " + msg;
         Log.d("NebulaAI", line);
         lastAction = "[" + tag + "] " + msg;
         try {

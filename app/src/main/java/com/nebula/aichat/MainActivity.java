@@ -107,6 +107,11 @@ public class MainActivity extends AppCompatActivity {
     /** 单个文本附件上限 */
     private static final int MAX_FILE_CHARS = 60_000;
 
+    /** 上一轮纯文本提问：出错时用来做「一键重试」。带附件的那轮不记，避免重发丢图 */
+    private String lastUserAsk;
+    /** 半成品落盘的节流时间戳 */
+    private long lastDraftAt;
+
     private ChatStore store;
     private Settings settings;
     private Conversation current;
@@ -364,6 +369,10 @@ public class MainActivity extends AppCompatActivity {
         }
         chatContainer = findViewById(R.id.chatContainer);
         etInput = findViewById(R.id.etInput);
+        // 极端保护：粘贴几十万字符时 EditText 布局会直接卡死（ANR），
+        // 这里硬性截断到上限的 4 倍；正常超长内容由 sendMessage 给出明确提示
+        etInput.setFilters(new android.text.InputFilter[]{
+                new android.text.InputFilter.LengthFilter(MAX_FILE_CHARS * 4)});
         btnSend = findViewById(R.id.btnSend);
 
         findViewById(R.id.btnMenu).setOnClickListener(v -> showConversationList());
@@ -766,6 +775,87 @@ public class MainActivity extends AppCompatActivity {
             scrollLockForExpand = false;   // 展开更早的消息：位置由 expandHistory 自己恢复
         } else {
             scrollToBottom(true);
+        }
+        // 空会话：给几条点一下就填好的入口，省得新用户对着空屏猜这货能干什么
+        if (!scrollLockForExpand && current != null
+                && (current.messages == null || current.messages.isEmpty()) && !busy) {
+            addEmptyGuide();
+        }
+    }
+
+    /** 新会话的能力引导：点一下就把半成品问题填进输入框，用户接着补就行 */
+    private void addEmptyGuide() {
+        try {
+            String[][] items = {
+                    {"\uD83D\uDCC4", "整理长文", "贴材料 → 要点 + 结论",
+                            "把下面这段内容整理成要点，先给结论再列条目：\n"},
+                    {"\uD83D\uDCBB", "写或改代码", "说目标 → 直接出能跑的代码", "帮我写一个"},
+                    {"\uD83D\uDD0D", "联网查最新", "要带来源的最新信息", "联网查一下最近的"},
+                    {"\uD83D\uDDC2", "看文件", "左下角附件传进来再问",
+                            "我上传了一份文件，先确认它是什么，再告诉我能怎么处理"},
+            };
+            LinearLayout box = new LinearLayout(this);
+            box.setOrientation(LinearLayout.VERTICAL);
+            box.setPadding(dp(4), dp(10), dp(4), dp(10));
+
+            TextView head = new TextView(this);
+            head.setText("直接说要做的事就行，也可以点下面的例子");
+            head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+            head.setTextColor(0xFF8A97A6);
+            head.setPadding(dp(10), 0, dp(10), dp(10));
+            box.addView(head);
+
+            for (final String[] it : items) {
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(12), dp(11), dp(12), dp(11));
+                row.setBackground(Ui.roundRect(this, 0x0EFFFFFF, 0, 14f));
+
+                TextView icon = new TextView(this);
+                icon.setText(it[0]);
+                icon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+                row.addView(icon);
+
+                LinearLayout col = new LinearLayout(this);
+                col.setOrientation(LinearLayout.VERTICAL);
+                LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                clp.leftMargin = dp(10);
+                col.setLayoutParams(clp);
+
+                TextView title = new TextView(this);
+                title.setText(it[1]);
+                title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+                title.setTextColor(0xFFE6EDF3);
+                title.setTypeface(Typeface.DEFAULT_BOLD);
+                col.addView(title);
+
+                TextView desc = new TextView(this);
+                desc.setText(it[2]);
+                desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+                desc.setTextColor(0xFF8A97A6);
+                desc.setPadding(0, dp(2), 0, 0);
+                col.addView(desc);
+                row.addView(col);
+
+                row.setOnClickListener(v -> {
+                    etInput.setText(it[3]);
+                    EditText e = etInput;
+                    e.setSelection(e.getText().length());
+                    e.requestFocus();
+                    showKeyboard();
+                });
+
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.bottomMargin = dp(8);
+                box.addView(row, lp);
+            }
+            chatContainer.addView(box, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        } catch (Throwable e) {
+            android.util.Log.w("nebula", "空会话引导渲染失败", e);
         }
     }
 
@@ -2501,6 +2591,13 @@ public class MainActivity extends AppCompatActivity {
         boolean hasAttach = composer != null && composer.attachmentCount() > 0;
         if (text.isEmpty() && !hasAttach) return;
 
+        if (text.length() > MAX_FILE_CHARS) {
+            Toast.makeText(this, "输入太长了（" + text.length() + " 字，上限 " + MAX_FILE_CHARS
+                    + " 字）。长文档请用左下角附件发送，直接粘贴进输入框会拖慢界面。",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
         if (!settings.isConfigured()) {
             Toast.makeText(this, "请先在设置里填写 API Key", Toast.LENGTH_SHORT).show();
             startActivityForResult(new Intent(this, SettingsActivity.class), REQ_SETTINGS);
@@ -2531,6 +2628,9 @@ public class MainActivity extends AppCompatActivity {
                     ? "我上传了文件到沙箱（见附件路径），请先确认文件信息，再告诉我可以怎么处理"
                     : "请阅读并总结我上传的文件内容";
         }
+
+        // 纯文本才记重试原文：带附件/图片的那轮重发会丢内容，宁可让用户自己再来一次
+        lastUserAsk = (files.isEmpty() && images.isEmpty()) ? text : null;
 
         etInput.setText("");
         if (composer != null) composer.clearAttachments();
@@ -2788,6 +2888,15 @@ public class MainActivity extends AppCompatActivity {
                 streamBuf.append(piece);
                 if (streamBuf.length() <= piece.length()) {
                     com.nebula.aichat.util.CrashLog.d("stream", "首块到达 len=" + piece.length());
+                }
+                // 每 1.5 秒把半成品落一次盘：切后台被系统回收也能把回答接回来
+                long nowUp = SystemClock.uptimeMillis();
+                if (current != null && current.id != null && nowUp - lastDraftAt > 1500) {
+                    lastDraftAt = nowUp;
+                    try {
+                        store.saveDraft(current.id, streamBuf.toString());
+                    } catch (Throwable ignored) {
+                    }
                 }
                 scheduleRender(renderer);
             }
@@ -4609,6 +4718,28 @@ public class MainActivity extends AppCompatActivity {
         tv.setPadding(dp(2), dp(7), dp(2), dp(3));
         streamContent.addView(tv, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // 断网/超时/服务端 5xx 之后最常见的动作就是「再试一次」，
+        // 直接把入口放这儿，不用用户把问题重打一遍
+        final String retryText = lastUserAsk;
+        if (retryText != null && !retryText.trim().isEmpty()) {
+            final TextView retry = new TextView(this);
+            retry.setText("↻ 重试");
+            retry.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            retry.setTextColor(0xFF7FD4A8);
+            retry.setPadding(dp(2), dp(2), dp(2), dp(6));
+            retry.setOnClickListener(v -> {
+                if (busy || searching) {
+                    Toast.makeText(this, "正在生成中，稍后再试", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                retry.setEnabled(false);
+                retry.setText("重发中…");
+                sendAsUser(retryText);
+            });
+            streamContent.addView(retry, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
     }
 
     /**
@@ -4748,6 +4879,8 @@ public class MainActivity extends AppCompatActivity {
         }
         current.touch();
         store.save();
+        // 正常收尾，草稿已无意义（异常中断的那条会留在草稿里，等下次启动接回来）
+        if (store != null) store.clearDraft();
         updateSubtitle();
         scrollToBottom(true);
         streamContent = null;
@@ -5189,6 +5322,15 @@ public class MainActivity extends AppCompatActivity {
             int target = Math.max(0, child.getHeight() - scroll.getHeight());
             if (Math.abs(scroll.getScrollY() - target) > dp(2)) scroll.scrollTo(0, target);
         });
+    }
+
+    private void showKeyboard() {
+        try {
+            InputMethodManager imm =
+                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(etInput, InputMethodManager.SHOW_IMPLICIT);
+        } catch (Throwable ignored) {
+        }
     }
 
     private void hideKeyboard() {

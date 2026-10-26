@@ -26,7 +26,7 @@ public final class JsonOpt {
     /** 整段内容只由 null 堆成（历史脏数据）时返回 true */
     public static boolean isNullNoise(String s) {
         if (s == null) return true;
-        String t = s.toLowerCase().replace("nul" + "l", "").trim();
+        String t = s.toLowerCase(java.util.Locale.ROOT).replace("nul" + "l", "").trim();
         return t.isEmpty();
     }
 }

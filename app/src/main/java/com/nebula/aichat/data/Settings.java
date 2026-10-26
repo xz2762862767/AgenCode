@@ -153,7 +153,7 @@ public class Settings {
 
     /** 模型名是否属于「自带思维链」的推理模型（不认 reasoning_effort，也不支持工具调用） */
     public static boolean isReasonerModel(String model) {
-        return model != null && model.toLowerCase().contains("reasoner");
+        return model != null && model.toLowerCase(java.util.Locale.ROOT).contains("reasoner");
     }
 
     /** 基础模型名 */

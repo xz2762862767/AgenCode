@@ -395,9 +395,9 @@ public class SkillStore {
             }
         }
         if (hit == null) {
-            String lk = k.toLowerCase();
+            String lk = k.toLowerCase(java.util.Locale.ROOT);
             for (Skill s : all) {
-                String sid = s.id.toLowerCase();
+                String sid = s.id.toLowerCase(java.util.Locale.ROOT);
                 if (sid.contains(lk) || (s.name != null && s.name.contains(k))) { hit = s; break; }
             }
         }

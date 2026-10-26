@@ -148,7 +148,7 @@ public class McpClient {
             }
             if (text.trim().isEmpty()) return null; // 通知类请求无响应体
 
-            if (ctype != null && ctype.toLowerCase().contains("event-stream")) {
+            if (ctype != null && ctype.toLowerCase(java.util.Locale.ROOT).contains("event-stream")) {
                 JSONObject fromSse = parseSse(text);
                 if (fromSse != null) return fromSse;
                 throw new Exception("SSE 响应中未找到 JSON-RPC 结果");

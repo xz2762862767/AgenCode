@@ -303,7 +303,7 @@ public class ApkTools {
             zip = new ZipFile(apk);
             Enumeration<? extends ZipEntry> en = zip.entries();
             while (en.hasMoreElements()) {
-                String n = en.nextElement().getName().toUpperCase();
+                String n = en.nextElement().getName().toUpperCase(java.util.Locale.ROOT);
                 if (n.startsWith("META-INF/") && n.endsWith(".SF")) return true;
             }
         } catch (Throwable ignored) {
@@ -341,7 +341,7 @@ public class ApkTools {
 
     private static boolean isOldSignature(String name) {
         if (!name.startsWith("META-INF/")) return false;
-        String u = name.toUpperCase();
+        String u = name.toUpperCase(java.util.Locale.ROOT);
         return u.endsWith(".SF") || u.endsWith(".RSA") || u.endsWith(".DSA")
                 || u.endsWith(".EC") || u.endsWith("MANIFEST.MF");
     }
@@ -362,7 +362,7 @@ public class ApkTools {
             // 1) 自适应图标 xml 引用的资源名
             for (String n : all) {
                 if (!n.startsWith("res/") || !n.endsWith(".xml")) continue;
-                String ln = n.toLowerCase();
+                String ln = n.toLowerCase(java.util.Locale.ROOT);
                 if (!(ln.contains("mipmap-anydpi") || ln.contains("drawable-anydpi"))) continue;
                 if (!ln.contains("launcher") && !ln.contains("icon")) continue;
                 try {
@@ -375,7 +375,7 @@ public class ApkTools {
             // 2) 直接命名的图片条目
             for (String n : all) {
                 if (!n.startsWith("res/")) continue;
-                String ln = n.toLowerCase();
+                String ln = n.toLowerCase(java.util.Locale.ROOT);
                 boolean img = ln.endsWith(".png") || ln.endsWith(".webp");
                 if (!img) continue;
                 String file = ln.substring(ln.lastIndexOf('/') + 1);

@@ -89,12 +89,26 @@ public final class CrashLog {
         // 先判定上一轮进程是怎么没的，再记本次启动，顺序不能反
         checkLastRun();
         d("app", "启动 pid=" + android.os.Process.myPid()
+                + " ver=" + verName()
                 + " sdk=" + Build.VERSION.SDK_INT
                 + " 机型=" + Build.MANUFACTURER + " " + Build.MODEL
                 + " 内存=" + usedMemMb() + "/" + maxMemMb() + "MB"
                 + " oom_adj=" + oomAdj());
         startBeat();
         installHandler();
+    }
+
+    /** 写进日志的版本号：排查「装了新版却没变化」时，先看日志确认设备上到底是哪个版本 */
+    private static String verName() {
+        try {
+            if (app == null) return "?";
+            android.content.pm.PackageInfo pi = app.getPackageManager()
+                    .getPackageInfo(app.getPackageName(), 0);
+            long vc = Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
+            return pi.versionName + "(" + vc + ")";
+        } catch (Throwable t) {
+            return "?";
+        }
     }
 
     // ------------------------------------------------------------ 生命周期痕迹

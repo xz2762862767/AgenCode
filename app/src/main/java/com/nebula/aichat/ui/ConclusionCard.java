@@ -37,7 +37,7 @@ public class ConclusionCard extends LinearLayout {
 
     /** 文字色：近白偏冷，压在彩色底上依然干净 */
     private static final int TEXT_TITLE = 0xFFF8FBFF;
-    private static final int TEXT_DETAIL = 0xFFD7E3F4;
+    private static final int TEXT_DETAIL = 0xFFE4EDF9;
 
     /** 三段底色 + 受光色 + 顶部高光，构造时按当前主题算出来 */
     private final int cTop;
@@ -78,11 +78,11 @@ public class ConclusionCard extends LinearLayout {
         // 底色全部由当前主题推导：背景混强调色（上多下少）+ 提亮，得到通透的玻璃面
         int bgc = Palette.bg(c);
         int accent = Palette.accent(c);
-        cTop = lighten(mix(bgc, accent, 0.24f), 0.07f);
-        cMid = lighten(mix(bgc, accent, 0.12f), 0.03f);
-        cBottom = mix(bgc, accent, 0.05f);
-        cGlow = (accent & 0x00FFFFFF) | 0x30000000;   // 左上受光：强调色压到很淡
-        cSheen = 0x18FFFFFF;                          // 顶部白高光：洁净感的来源
+        cTop = lighten(mix(bgc, accent, 0.30f), 0.16f);
+        cMid = lighten(mix(bgc, accent, 0.17f), 0.09f);
+        cBottom = lighten(mix(bgc, accent, 0.07f), 0.02f);
+        cGlow = (accent & 0x00FFFFFF) | 0x3A000000;   // 左上受光：强调色压到很淡
+        cSheen = 0x2CFFFFFF;                          // 顶部白高光：洁净感的来源
 
         // 一句话结论直接当卡片第一行：原来上面还有一行「结 论」眉标，
         // 证过一轮发现它只是把已经写着结论的东西再说一遍，白占高度，去掉。
@@ -159,7 +159,7 @@ public class ConclusionCard extends LinearLayout {
                 null, Shader.TileMode.CLAMP));
 
         // 顶部白高光：垂直方向铺到一半就没了，模拟玻璃反光（「洁」就靠它）
-        pSheen.setShader(new LinearGradient(0, 0, 0, h * 0.62f,
+        pSheen.setShader(new LinearGradient(0, 0, 0, h * 0.70f,
                 new int[]{cSheen, 0x00FFFFFF},
                 null, Shader.TileMode.CLAMP));
 

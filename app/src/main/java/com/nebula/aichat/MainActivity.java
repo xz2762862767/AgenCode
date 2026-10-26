@@ -5374,7 +5374,12 @@ public class MainActivity extends AppCompatActivity {
                 if (!t.isEmpty()) set.add(t);
             }
         }
-        for (String m : BUILTIN_MODELS) set.add(m);
+        // 内置 DeepSeek 模型只在地址确实指向 DeepSeek 时才补进来，
+        // 否则换了服务商，列表里还混着 deepseek-chat，切过去必然 404
+        String nb = normBase(settings.baseUrl);
+        if (nb.isEmpty() || nb.contains("deepseek")) {
+            for (String m : BUILTIN_MODELS) set.add(m);
+        }
         return new java.util.ArrayList<>(set);
     }
 
@@ -5475,7 +5480,7 @@ public class MainActivity extends AppCompatActivity {
         row.addView(plus, plp);
 
         TextView tv = new TextView(this);
-        tv.setText("添加自定义模型");
+        tv.setText("添加模型（内置 6 家服务商，选完就能用）");
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         tv.setTextColor(0xFF7FB0FF);
         tv.setTypeface(Typeface.DEFAULT_BOLD);
@@ -5486,7 +5491,83 @@ public class MainActivity extends AppCompatActivity {
         modelListBox.addView(row);
     }
 
-    /** 添加自定义模型：只填模型名，添加后立刻切过去并存在本地 */
+    /** 内置服务商：{显示名, OpenAI 兼容地址, 模型…}，地址都支持 /chat/completions */
+    private static final String[][] MODEL_PROVIDERS = {
+            {"DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat", "deepseek-reasoner"},
+            {"通义千问", "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "qwen-max", "qwen-plus", "qwen-turbo"},
+            {"Kimi", "https://api.moonshot.cn/v1",
+                    "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"},
+            {"智谱 GLM", "https://open.bigmodel.cn/api/paas/v4",
+                    "glm-4-plus", "glm-4-flash", "glm-4-air"},
+            {"OpenAI", "https://api.openai.com/v1", "gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"},
+            {"硅基流动", "https://api.siliconflow.cn/v1",
+                    "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"},
+    };
+
+    /** 去掉首尾空白与尾部斜杠，只用来判断两个地址是不是同一家 */
+    private static String normBase(String b) {
+        String t = b == null ? "" : b.trim();
+        while (t.endsWith("/")) t = t.substring(0, t.length() - 1);
+        return t;
+    }
+
+    /** 当前设置落在哪个内置服务商上，匹配不到就用第一个 */
+    private int providerIndexOfCurrent() {
+        String cur = normBase(settings.baseUrl);
+        if (cur.isEmpty()) cur = normBase(Settings.DEFAULT_BASE_URL);
+        for (int i = 0; i < MODEL_PROVIDERS.length; i++) {
+            String b = normBase(MODEL_PROVIDERS[i][1]);
+            if (!b.isEmpty() && (cur.equals(b) || cur.startsWith(b))) return i;
+        }
+        return 0;
+    }
+
+    /** 某个服务商下的模型名 */
+    private String[] modelsOf(int idx) {
+        String[] p = MODEL_PROVIDERS[idx];
+        String[] out = new String[Math.max(0, p.length - 2)];
+        System.arraycopy(p, 2, out, 0, out.length);
+        return out;
+    }
+
+    private String shortHost(String u) {
+        String t = normBase(u).replace("https://", "").replace("http://", "");
+        int s = t.indexOf('/');
+        return s > 0 ? t.substring(0, s) : t;
+    }
+
+    /** 单选列表，点一下就回调并关掉 */
+    private void pickOne(String title, String[] items, int checked,
+                         android.content.DialogInterface.OnClickListener l) {
+        if (items == null || items.length == 0) return;
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(items, Math.max(0, checked), l)
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 一行「标签   值 ▾」，整行可点 */
+    private TextView valueRow(String label, String value) {
+        TextView tv = new TextView(this);
+        tv.setText(label + "    " + value + "  \u25be");
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        tv.setTextColor(0xFF9CC2FF);
+        tv.setSingleLine(true);
+        tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        tv.setGravity(Gravity.CENTER_VERTICAL);
+        tv.setPadding(dp(12), dp(12), dp(12), dp(12));
+        tv.setBackground(Ui.pressable(this, Ui.roundRect(this, 0xFF0F151D, 0xFF2E3A49, 10f)));
+        return tv;
+    }
+
+    /**
+     * 添加模型：选服务商 → 选模型，接口地址自动配好，Key 填一次以后复用。
+     *
+     * <p>以前这里只让手打模型名，地址和 Key 还得自己进设置页配，
+     * 结果加了个名字却用不了。现在三件事在同一个框里一次做完。</p>
+     */
     private void showAddModelDialog() {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -5496,71 +5577,133 @@ public class MainActivity extends AppCompatActivity {
         root.setBackground(Ui.roundRect(this, 0xFF161C26, 0xFF2A3240, 18f));
         root.setPadding(dp(18), dp(16), dp(18), dp(14));
 
-        TextView title = new TextView(this);
-        title.setText("添加模型");
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-        title.setTextColor(0xFFE6EDF7);
+        TextView title = Ui.text(this, "添加模型", 15f, 0xFFE6EDF7);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title);
 
-        TextView tip = new TextView(this);
-        tip.setText("填服务商文档里的模型名，一字不差。添加后立即切换，也会留在列表里下次直接用。");
-        tip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        tip.setTextColor(0xFF7F8C9F);
+        TextView tip = Ui.text(this,
+                "选服务商、选模型，接口地址自动配好；Key 填一次，以后加同一家的模型不用再填。",
+                11.5f, 0xFF7F8C9F);
         tip.setLineSpacing(dp(2), 1.25f);
-        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        tl.topMargin = dp(5);
-        tl.bottomMargin = dp(10);
-        root.addView(tip, tl);
+        tlp.topMargin = dp(5);
+        tlp.bottomMargin = dp(12);
+        root.addView(tip, tlp);
 
-        final EditText et = new EditText(this);
-        et.setHint("例如 qwen-max");
-        et.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        et.setTextColor(0xFFE6EDF7);
-        et.setHintTextColor(0xFF66707F);
-        et.setTypeface(Typeface.MONOSPACE);
-        et.setSingleLine(true);
-        et.setBackground(Ui.roundRect(this, 0xFF0F151D, 0xFF2E3A49, 10f));
-        et.setPadding(dp(12), dp(10), dp(12), dp(10));
-        root.addView(et, new LinearLayout.LayoutParams(
+        final int[] sel = new int[]{providerIndexOfCurrent()};
+        final String[] mdl = new String[]{modelsOf(sel[0])[0]};
+
+        final TextView rowProv = valueRow("服务商", MODEL_PROVIDERS[sel[0]][0]);
+        root.addView(rowProv, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        // 常见模型快捷填入：省得手打一长串还容易错
-        final String[] QUICK = {"qwen-max", "gpt-4o-mini", "claude-3-5-sonnet-latest",
-                "glm-4-plus", "moonshot-v1-8k", "deepseek-chat"};
-        LinearLayout chips = new LinearLayout(this);
-        chips.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams chl = new LinearLayout.LayoutParams(
+        final TextView rowModel = valueRow("模型", mdl[0]);
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        chl.topMargin = dp(8);
-        root.addView(chips, chl);
-        for (int i = 0; i < QUICK.length; i += 2) {
-            LinearLayout line = new LinearLayout(this);
-            line.setOrientation(LinearLayout.HORIZONTAL);
-            for (int j = i; j < Math.min(i + 2, QUICK.length); j++) {
-                final String q = QUICK[j];
-                TextView c = new TextView(this);
-                c.setText(q);
-                c.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-                c.setTypeface(Typeface.MONOSPACE);
-                c.setTextColor(0xFF8FA6C4);
-                c.setPadding(dp(9), dp(5), dp(9), dp(6));
-                c.setBackground(Ui.roundRect(this, 0x14FFFFFF, 0, 6f));
-                c.setOnClickListener(v -> {
-                    et.setText(q);
-                    et.setSelection(q.length());
-                });
-                LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                clp.rightMargin = dp(6);
-                clp.topMargin = dp(6);
-                line.addView(c, clp);
+        mlp.topMargin = dp(8);
+        root.addView(rowModel, mlp);
+
+        final EditText etManual = new EditText(this);
+        etManual.setHint("列表里没有？在这儿填模型名（可留空）");
+        etManual.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        etManual.setTextColor(0xFFE6EDF7);
+        etManual.setHintTextColor(0xFF66707F);
+        etManual.setTypeface(Typeface.MONOSPACE);
+        etManual.setSingleLine(true);
+        etManual.setBackground(Ui.roundRect(this, 0xFF0F151D, 0xFF2E3A49, 10f));
+        etManual.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout.LayoutParams mlp2 = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        mlp2.topMargin = dp(8);
+        root.addView(etManual, mlp2);
+
+        final EditText etKey = new EditText(this);
+        etKey.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        etKey.setTextColor(0xFFE6EDF7);
+        etKey.setHintTextColor(0xFF66707F);
+        etKey.setHint("sk-...");
+        etKey.setTypeface(Typeface.MONOSPACE);
+        etKey.setSingleLine(true);
+        etKey.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        etKey.setBackground(Ui.roundRect(this, 0xFF0F151D, 0xFF2E3A49, 10f));
+        etKey.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        klp.topMargin = dp(8);
+        root.addView(etKey, klp);
+
+        final TextView keyHint = Ui.text(this, "", 10.5f, 0xFF66707F);
+        keyHint.setLineSpacing(dp(2), 1.2f);
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        hlp.topMargin = dp(5);
+        root.addView(keyHint, hlp);
+
+        final Runnable refresh = new Runnable() {
+            @Override
+            public void run() {
+                rowProv.setText("服务商    " + MODEL_PROVIDERS[sel[0]][0] + "  \u25be");
+                rowModel.setText("模型    " + mdl[0] + "  \u25be");
+                boolean same = normBase(MODEL_PROVIDERS[sel[0]][1]).equals(normBase(settings.baseUrl));
+                String old = settings.apiKey == null ? "" : settings.apiKey.trim();
+                if (same && !old.isEmpty()) {
+                    keyHint.setText("这一家的 Key 已经存过，留空就直接用它。");
+                    keyHint.setTextColor(0xFF5FD08A);
+                    etKey.setHint("留空 = 用已保存的 Key");
+                } else if (!old.isEmpty()) {
+                    keyHint.setText("换服务商要填这一家的 Key；填了会替换现在用的（当前 "
+                            + shortHost(settings.baseUrl) + "）");
+                    keyHint.setTextColor(0xFFE0A642);
+                    etKey.setHint("sk-...");
+                } else {
+                    keyHint.setText("还没有 Key：去服务商后台建一个粘进来，只存在这台手机上。");
+                    keyHint.setTextColor(0xFF66707F);
+                    etKey.setHint("sk-...");
+                }
             }
-            LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            chips.addView(line, llp);
-        }
+        };
+        refresh.run();
+
+        final String[] provNames = new String[MODEL_PROVIDERS.length];
+        for (int i = 0; i < MODEL_PROVIDERS.length; i++) provNames[i] = MODEL_PROVIDERS[i][0];
+
+        rowProv.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pickOne("选择服务商", provNames, sel[0],
+                        new android.content.DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(android.content.DialogInterface dd, int which) {
+                                dd.dismiss();
+                                if (which == sel[0]) return;
+                                sel[0] = which;
+                                mdl[0] = modelsOf(which)[0];
+                                etKey.setText("");
+                                refresh.run();
+                            }
+                        });
+            }
+        });
+
+        rowModel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                final String[] ms = modelsOf(sel[0]);
+                int checked = 0;
+                for (int i = 0; i < ms.length; i++) if (ms[i].equals(mdl[0])) checked = i;
+                pickOne("选择模型", ms, checked,
+                        new android.content.DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(android.content.DialogInterface dd, int which) {
+                                dd.dismiss();
+                                mdl[0] = ms[which];
+                                refresh.run();
+                            }
+                        });
+            }
+        });
 
         LinearLayout foot = new LinearLayout(this);
         foot.setOrientation(LinearLayout.HORIZONTAL);
@@ -5572,53 +5715,74 @@ public class MainActivity extends AppCompatActivity {
 
         TextView ok = Ui.pill(this, "添加并使用");
         foot.addView(ok);
-        View sp = new View(this);
-        foot.addView(sp, new LinearLayout.LayoutParams(0, 1, 1f));
+        View spacer = new View(this);
+        foot.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
         TextView cancel = Ui.pillGhost(this, "取消");
-        cancel.setOnClickListener(v -> d.dismiss());
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                d.dismiss();
+            }
+        });
         foot.addView(cancel);
 
-        Runnable submit = () -> {
-            String v = et.getText().toString().trim();
-            if (v.isEmpty()) {
-                Toast.makeText(this, "先填模型名", Toast.LENGTH_SHORT).show();
-                return;
+        final Runnable submit = new Runnable() {
+            @Override
+            public void run() {
+                String manual = etManual.getText().toString().trim();
+                String v = manual.isEmpty() ? mdl[0] : manual;
+                if (v.isEmpty()) {
+                    Toast.makeText(MainActivity.this, "先选一个模型", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (v.indexOf(' ') >= 0 || v.indexOf('\n') >= 0) {
+                    Toast.makeText(MainActivity.this, "模型名不能带空格", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                String base = MODEL_PROVIDERS[sel[0]][1];
+                String keyIn = etKey.getText().toString().trim();
+                String old = settings.apiKey == null ? "" : settings.apiKey.trim();
+                String key = keyIn.isEmpty()
+                        ? (normBase(base).equals(normBase(settings.baseUrl)) ? old : "")
+                        : keyIn;
+                if (key.isEmpty()) {
+                    Toast.makeText(MainActivity.this,
+                            MODEL_PROVIDERS[sel[0]][0] + " 还没有 Key，填一个马上就能用",
+                            Toast.LENGTH_SHORT).show();
+                    etKey.requestFocus();
+                    return;
+                }
+                settings.baseUrl = base;
+                settings.apiKey = key;
+                boolean added = settings.addCustomModel(v);
+                settings.model = v;
+                settings.save(MainActivity.this);
+                // 换了接口地址，之前从旧服务商拉到的模型列表就作废了，必须清掉
+                lastServerModels = null;
+                updateSubtitle();
+                syncBalance(true);
+                rebuildModelList(composeModelList(null), Settings.effectiveModel(settings), null);
+                Toast.makeText(MainActivity.this,
+                        (added ? "已添加 " : "已切换 ") + v + " · " + MODEL_PROVIDERS[sel[0]][0],
+                        Toast.LENGTH_SHORT).show();
+                d.dismiss();
             }
-            if (v.contains(" ") || v.contains("\n")) {
-                Toast.makeText(this, "模型名不能带空格", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            boolean added = settings.addCustomModel(v);
-            settings.model = v;
-            settings.save(this);
-            updateSubtitle();
-            syncBalance(true);
-            rebuildModelList(composeModelList(lastServerModels),
-                    Settings.effectiveModel(settings), null);
-            Toast.makeText(this, added ? "已添加并切换到 " + v : "已切换到 " + v,
-                    Toast.LENGTH_SHORT).show();
-            d.dismiss();
         };
-        ok.setOnClickListener(v -> submit.run());
-        et.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+        ok.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
                 submit.run();
-                return true;
             }
-            return false;
         });
-        et.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
 
         d.setContentView(root);
         d.show();
-        et.requestFocus();
         Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
-            w.setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.88f),
+            w.setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.92f),
                     android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
-            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
-                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
     }
 

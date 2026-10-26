@@ -25,7 +25,7 @@ import android.widget.TextView;
  *
  * <p>底色刻意压暗：整片高饱和的亮绿在深色主题里就是一块发光牌，
  * 每轮回答末尾闪一次，眼睛受不了。现在底色是近乎背景的深墨绿，
- * 绿色只留在两处——左上角一道很淡的斜向光晕，和那行「结 论」小标。
+ * 绿色只留在左上角一道很淡的斜向光晕上。
  * 卡片靠色相区分而不是靠亮度，安静地把正文收住。</p>
  *
  * <p>文字仍用子 View（可换行、可长按选中），所以不用 Canvas 画文本。</p>
@@ -44,7 +44,6 @@ public class ConclusionCard extends LinearLayout {
     private static final int GLOW_TAIL = 0x00000000;
 
     /** 文字色：近白微绿，比纯白柔和，和绿底同源 */
-    private static final int TEXT_LABEL = 0xFF4ADE80;   // 亮绿，唯一的强色
     private static final int TEXT_TITLE = 0xFFF1FDF7;
     private static final int TEXT_DETAIL = 0xFFCEE8DC;
 
@@ -69,18 +68,9 @@ public class ConclusionCard extends LinearLayout {
         radius = Ui.dp(c, 14);
         setPadding(Ui.dp(c, 16), Ui.dp(c, 14), Ui.dp(c, 16), Ui.dp(c, 15));
 
-        // ① 眉标：白字压暗一档，只做提示，不抢标题
-        TextView label = new TextView(c);
-        label.setText("结  论");
-        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
-        label.setTextColor(TEXT_LABEL);
-        label.setIncludeFontPadding(false);
-        label.setLetterSpacing(0.30f);
-        addView(label, new LinearLayout.LayoutParams(
-                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        // 一句话结论直接当卡片第一行：原来上面还有一行「结 论」眉标，
+        // 证过一轮发现它只是把已经写着结论的东西再说一遍，白占高度，去掉。
 
-        // ② 一句话结论：金句位，纯白最亮
         TextView tvTitle = new TextView(c);
         tvTitle.setText(title == null ? "" : title.trim());
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
@@ -89,10 +79,8 @@ public class ConclusionCard extends LinearLayout {
         tvTitle.setLineSpacing(Ui.dp(c, 4), 1.32f);
         tvTitle.setIncludeFontPadding(false);
         tvTitle.setTextIsSelectable(true);
-        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        tlp.topMargin = Ui.dp(c, 7);
-        addView(tvTitle, tlp);
+        addView(tvTitle, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         // ③ 详细说明：白但略收，靠字号与行距和标题分层
         if (detail != null && !detail.trim().isEmpty()) {

@@ -4967,6 +4967,11 @@ public class MainActivity extends AppCompatActivity {
                 awaitingExecution = true;
                 sendAsUser(text);
             }
+
+            @Override
+            public void onStop() {
+                endTurnByUser();
+            }
         });
     }
 
@@ -4986,11 +4991,30 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "AI 还在生成，等它停下来再点确认", Toast.LENGTH_SHORT).show();
             return false;
         }
+        // 正文里的确认卡拿不到结构化选项，只能看拼好的文本：
+        // 里面写着「不用继续」就按收尾处理，别再发回模型
+        if (ConfirmSheet.textMeansStop(message)) {
+            endTurnByUser();
+            return true;
+        }
         lastConfirmMsg = message;
         lastConfirmAt = now;
         awaitingExecution = true;   // 与面板路径一致：这一轮是被用户拍板打断的
         sendAsUser(message);
         return true;
+    }
+
+    /**
+     * 用户在确认框里选了「不用继续」：就地收尾。
+     *
+     * <p>不发消息给模型——发了它只会再解释一遍「好的那我就不继续了」，
+     * 白跑一轮 token。同时把续跑计数顶到上限，本轮之后不会再被自动拉起。</p>
+     */
+    private void endTurnByUser() {
+        awaitingExecution = false;
+        autoContinueCount = 3;
+        markStatusFinal(false);
+        Toast.makeText(this, "已结束本轮", Toast.LENGTH_SHORT).show();
     }
 
     /** 把一段文本当作输入直接发出（确认结果回传用） */

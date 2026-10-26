@@ -70,6 +70,12 @@ public class ConfirmSheet {
     public interface Callback {
         /** 用户点了「确认并继续」，text 是可以直接发回模型的完整消息 */
         void onConfirmed(String text);
+
+        /**
+         * 用户选了「不用继续」那一项并点了确认：本轮到此结束。
+         * 不强求每个调用方都实现，默认什么也不做（弹窗关掉即可）。
+         */
+        default void onStop() { }
     }
 
     // ---- 配色，跟聊天区保持一致 ----
@@ -181,6 +187,40 @@ public class ConfirmSheet {
     /** 直接用候选行弹窗（卡片按钮走这里） */
     public static void showRows(Activity act, List<String> rows, Callback cb) {
         show(act, parseRows(rows), cb);
+    }
+
+    /** 「不用继续」这类收尾选项的判定词。只认明确的否定式，
+     *  不放单独的「停止」——它可能是「停止某个服务」，会误伤。 */
+    private static final String[] STOP_WORDS = {
+            "不用继续", "不需要继续", "不再继续", "不继续了", "不继续",
+            "不用了", "到此为止", "就到这里", "就此结束", "结束本轮", "收工"
+    };
+
+    /** 一段文本是不是在说「这事到此为止」 */
+    public static boolean textMeansStop(String t) {
+        if (t == null) return false;
+        String v = t.replaceAll("\\s+", "");
+        if (v.isEmpty()) return false;
+        for (String w : STOP_WORDS) {
+            if (v.contains(w)) return true;
+        }
+        return false;
+    }
+
+    /** 已经选中的答案里，有没有「不用继续」 */
+    public static boolean isStopChoice(List<Item> items) {
+        if (items == null) return false;
+        for (Item it : items) {
+            if (it == null) continue;
+            if (it.isText()) {
+                if (it.input != null && textMeansStop(it.input.getText().toString())) return true;
+            } else if (it.answers != null) {
+                for (String a : it.answers) {
+                    if (textMeansStop(a)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** 把用户的选择拼成一条可直接发送的消息 */
@@ -339,14 +379,19 @@ public class ConfirmSheet {
                         return;
                     }
                 }
+                // 选了「不用继续」并确认：本轮就地结束，不拼消息、不发给模型，
+                // 否则模型收到「不用继续」还会再解释一遍，等于没停
+                boolean stop = isStopChoice(items);
                 String text = buildResult(items);
-                if (text == null) {
+                if (text == null && !stop) {
                     android.widget.Toast.makeText(act, "还没有任何选择",
                             android.widget.Toast.LENGTH_SHORT).show();
                     return;
                 }
                 dialog.dismiss();
-                if (cb != null) cb.onConfirmed(text);
+                if (cb == null) return;
+                if (stop) cb.onStop();
+                else cb.onConfirmed(text);
             }
         });
         bar.addView(ok, okLp);

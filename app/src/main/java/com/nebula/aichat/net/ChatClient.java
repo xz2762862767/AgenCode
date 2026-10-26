@@ -120,15 +120,20 @@ public class ChatClient {
     private boolean summarizeMode = false;
     /** 同一批工具调用连续重复这么多次，就当作在原地打转 */
     private static final int MAX_SAME_CALL = 5;
-    /** 单个工具结果回传给模型时的最大长度 */
-    private static final int MAX_TOOL_RESULT = 8000;
+    /**
+     * 单个工具结果回传给模型时的最大长度。
+     * 原来是 8000 字符（≈4000 token），一轮调 5 个工具就是 2 万 token 起步，
+     * 而且这些内容在后续每轮工具调用里都会重复回传，这是「余额掉得比别家快」的头号原因。
+     * 现在收到 4000 字符，并且保留头部 60% + 尾部 40%（报错和结论基本都在尾部）。
+     */
+    private static final int MAX_TOOL_RESULT = 4000;
     private int toolRound = 0;
     /**
      * 被 max_tokens 截断后的自动续写次数。
      * 长 smali/长代码很容易撞到 max_tokens，原来 App 不解析 finish_reason，
      * 把「说到一半被砍断」当成正常结束，用户看到的就是「一堆英文代码然后突然停了」。
      */
-    private static final int MAX_CONTINUE = 3;
+    private static final int MAX_CONTINUE = 2;
     private int contCount = 0;
     /** 续写前已经输出的内容，续写成功后要拼回去，否则界面上只剩后半段 */
     private String contPrefix = "";
@@ -138,6 +143,14 @@ public class ChatClient {
     private int ctxShrink = 0;
     /** 大于 0 时只带最后 N 条历史，用于上下文超限时的紧急瘦身 */
     private int ctxHistoryKeep = -1;
+    /**
+     * 历史消息的总字符预算（中文约 1 字≈0.7 token）。
+     * 原来 ctxHistoryKeep=-1 意味着「每次请求都把全部历史重发一遍」：
+     * 聊到第 30 轮，第 30 次请求光历史就是几万 token，累计是 O(n²)，
+     * 这才是「同样问法在这儿比别家掉得快」的真正根因，不是模型贵。
+     */
+    private static final int MAX_HISTORY_CHARS = 24000;
+    private int historyBudget = MAX_HISTORY_CHARS;
 
     /** 本次提问里第一次工具调用开始的时间戳，用于工具阶段时间预算 */
     private long toolPhaseStart = 0L;
@@ -188,6 +201,7 @@ public class ChatClient {
         ctxBudget = MAX_TOOL_CONTEXT_CHARS;
         ctxShrink = 0;
         ctxHistoryKeep = -1;
+        historyBudget = MAX_HISTORY_CHARS;
         toolPhaseStart = 0L;
         summarizeMode = false;
         lastCallSig = "";
@@ -305,8 +319,10 @@ public class ChatClient {
                     ctxShrink++;
                     if (ctxShrink == 1) {
                         ctxBudget = 12000;
+                        historyBudget = 12000;
                     } else {
                         ctxBudget = 2000;
+                        historyBudget = 6000;
                         ctxHistoryKeep = 4;
                     }
                     trimToolContext();
@@ -549,7 +565,7 @@ public class ChatClient {
      * 请求体越来越大、每轮越来越慢，最后容易超时或被网关拒掉（表现为「跑很久没结果」）。
      * tool 消息必须与 assistant.tool_calls 成对，不能删，所以只把较早结果的正文换成占位。
      */
-    private static final int MAX_TOOL_CONTEXT_CHARS = 60000;
+    private static final int MAX_TOOL_CONTEXT_CHARS = 24000;
 
     private void trimToolContext() {
         int total = 0;
@@ -570,6 +586,46 @@ public class ChatClient {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    /** 一条消息真正发给模型的文本（兼容旧会话的附件说明） */
+    private String apiText(Message m) {
+        if (m == null) return "";
+        if (m.apiContent != null && !m.apiContent.trim().isEmpty()) return m.apiContent;
+        if (m.attachNote != null && !m.attachNote.trim().isEmpty()) {
+            // 旧会话：完整内容没存盘，但附件路径还在，续接上下文仍能找到文件
+            return m.attachNote + "\n" + (m.content == null ? "" : m.content);
+        }
+        return m.content == null ? "" : m.content;
+    }
+
+    /** 从最新一条往回凑够 historyBudget，返回窗口起始下标 */
+    private int historyWindowStart(List<Message> history) {
+        if (history == null || history.isEmpty()) return 0;
+        int acc = 0;
+        int i = history.size() - 1;
+        for (; i >= 0; i--) {
+            Message m = history.get(i);
+            if (m == null || Message.ROLE_SYSTEM.equals(m.role)) continue;
+            int len = apiText(m).length();
+            // 至少留最后一条，避免预算算出来是空窗口
+            if (acc > 0 && acc + len > historyBudget) break;
+            acc += len;
+        }
+        int start = i + 1;
+        return Math.max(0, Math.min(start, history.size()));
+    }
+
+    /** 被裁掉的那段里最早的一条用户消息，用于当作任务锚点 */
+    private Message firstUserBefore(List<Message> history, int end) {
+        if (history == null) return null;
+        int lim = Math.min(end, history.size());
+        for (int i = 0; i < lim; i++) {
+            Message m = history.get(i);
+            if (m == null || !Message.ROLE_USER.equals(m.role)) continue;
+            if (!apiText(m).isEmpty()) return m;
+        }
+        return null;
     }
 
     private JSONObject buildBody(Settings s, List<Message> history) throws Exception {
@@ -643,21 +699,39 @@ public class ChatClient {
                 + "4. 只要还有能自己动手做的下一步，就继续调用工具做，不要写「建议你执行以下步骤」把活推回给用户。\n"
                 + "5. 收尾只有一个条件：任务真的完成，或确实无路可走。"
                 + "收尾必须用中文说明三件事：完成了什么、产物在哪（给完整路径）、还剩什么没做。");
+        // ===== 历史裁剪（省 token 的核心）=====
+        // 从最新一条往回凑预算，凑不下就丢掉更早的，保证单次请求的历史长度有上限。
+        int hFrom;
+        if (ctxHistoryKeep > 0) {
+            hFrom = Math.max(0, history.size() - ctxHistoryKeep);
+        } else {
+            hFrom = historyWindowStart(history);
+        }
+        if (history.size() > 2) hFrom = Math.min(hFrom, history.size() - 2);
+        if (hFrom < 0) hFrom = 0;
+        final boolean clipped = hFrom > 0;
+        if (clipped) {
+            // 固定文案（不带变化的条数）：system 是每次请求的前缀，
+            // 一旦这里带上轮次数字，DeepSeek 的前缀缓存就整段失效，等于白花钱。
+            sys.append("\n\n【历史裁剪】为控制开销，较早的中间对话没有带入上下文（最初的需求会单独保留）。\n")
+                    .append("1. 需要旧细节就调用工具重新查看当前文件/目录状态，不要凭记忆猜。\n")
+                    .append("2. 不要让用户重复已经确认过的信息。");
+        }
         if (sys.length() > 0) {
             msgs.put(new JSONObject().put("role", "system").put("content", sys.toString()));
         }
-        int hFrom = ctxHistoryKeep > 0 ? Math.max(0, history.size() - ctxHistoryKeep) : 0;
+        if (clipped) {
+            // 任务锚点：最早那条用户需求，防止长任务中忘掉最初目标
+            Message anchor = firstUserBefore(history, hFrom);
+            String ac = anchor == null ? "" : apiText(anchor);
+            if (!ac.isEmpty()) {
+                msgs.put(new JSONObject().put("role", "user")
+                        .put("content", "【最开始的需求】\n" + ac));
+            }
+        }
         for (int hi = hFrom; hi < history.size(); hi++) {
             Message m = history.get(hi);
-            String c;
-            if (m.apiContent != null && !m.apiContent.trim().isEmpty()) {
-                c = m.apiContent;
-            } else if (m.attachNote != null && !m.attachNote.trim().isEmpty()) {
-                // 旧会话：完整内容没存盘，但附件路径还在，续接上下文仍能找到文件
-                c = m.attachNote + "\n" + (m.content == null ? "" : m.content);
-            } else {
-                c = m.content;
-            }
+            String c = apiText(m);
             if (c == null || c.trim().isEmpty()) continue;
             if (Message.ROLE_SYSTEM.equals(m.role)) continue;
             if (m.imageUrls != null && !m.imageUrls.isEmpty()) {
@@ -1075,7 +1149,12 @@ public class ChatClient {
             }
 
             if (result.length() > MAX_TOOL_RESULT) {
-                result = result.substring(0, MAX_TOOL_RESULT) + "\n…（结果过长已截断）";
+                // 头部常是编译/运行的噪音，尾部才是报错和结论，所以头 60% + 尾 40%
+                int head = (int) (MAX_TOOL_RESULT * 0.6);
+                int tail = MAX_TOOL_RESULT - head;
+                result = result.substring(0, head)
+                        + "\n…（中间省略 " + (result.length() - MAX_TOOL_RESULT) + " 字）…\n"
+                        + result.substring(result.length() - tail);
             }
 
             final boolean fOk = ok;

@@ -139,13 +139,7 @@ public class SettingsActivity extends AppCompatActivity {
 
         btnTest.setOnClickListener(v -> testConnection());
 
-        tvPickModel.setOnClickListener(v -> {
-            if (cachedModels.isEmpty()) {
-                fetchModels();
-            } else {
-                showModelDialog();
-            }
-        });
+        tvPickModel.setOnClickListener(v -> showProviderDialog());
 
         // Key 或地址变更后，已拉取的列表失效
         android.text.TextWatcher invalidate = new android.text.TextWatcher() {
@@ -759,6 +753,89 @@ public class SettingsActivity extends AppCompatActivity {
                         .show();
             }
         });
+    }
+
+    /**
+     * 服务商预设：{名称, Base URL, 模型1, 模型2, ...}
+     * 选服务商 → 选模型，地址自动填好，用户只需要填一次 Key。
+     * 模型名只是常用项，可手改，也可用「从账号拉取」取该账号真实可用列表。
+     */
+    private static final String[][] PROVIDERS = {
+            {"DeepSeek", "https://api.deepseek.com/v1",
+                    "deepseek-chat", "deepseek-reasoner"},
+            {"通义千问（阿里云）", "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"},
+            {"Kimi（月之暗面）", "https://api.moonshot.cn/v1",
+                    "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k", "kimi-latest"},
+            {"智谱 GLM", "https://open.bigmodel.cn/api/paas/v4",
+                    "glm-4-plus", "glm-4-air", "glm-4-flash"},
+            {"OpenAI", "https://api.openai.com/v1",
+                    "gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini"},
+            {"硅基流动 SiliconFlow", "https://api.siliconflow.cn/v1",
+                    "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1",
+                    "Qwen/Qwen2.5-72B-Instruct"}
+    };
+
+    /** 一级：选服务商（末项为从账号拉取真实列表） */
+    private void showProviderDialog() {
+        final String[] items = new String[PROVIDERS.length + 1];
+        for (int i = 0; i < PROVIDERS.length; i++) {
+            items[i] = PROVIDERS[i][0] + "  ·  " + hostOf(PROVIDERS[i][1]);
+        }
+        items[PROVIDERS.length] = "从账号拉取模型列表（需先填 Key）";
+
+        new AlertDialog.Builder(this)
+                .setTitle("选择服务商")
+                .setItems(items, (dialog, which) -> {
+                    if (which == PROVIDERS.length) {
+                        fetchModels();
+                        return;
+                    }
+                    showProviderModels(PROVIDERS[which]);
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 二级：选该服务商的模型，选中即把地址和模型一起填好 */
+    private void showProviderModels(final String[] p) {
+        final String base = p[1];
+        final String[] models = new String[p.length - 2];
+        System.arraycopy(p, 2, models, 0, models.length);
+
+        String cur = etModel.getText().toString().trim();
+        int checked = -1;
+        for (int i = 0; i < models.length; i++) {
+            if (models[i].equals(cur)) {
+                checked = i;
+                break;
+            }
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(p[0] + " · 选择模型")
+                .setSingleChoiceItems(models, checked, (dialog, which) -> {
+                    etBase.setText(base);          // 地址自动填
+                    etModel.setText(models[which]); // 模型自动填
+                    if (TextUtils.isEmpty(etKey.getText().toString().trim())) {
+                        tvModelHint.setText("地址和模型已填好，只差上面的 Key");
+                        etKey.requestFocus();
+                    } else {
+                        tvModelHint.setText("已选好，点「保存设置」生效");
+                    }
+                    dialog.dismiss();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private static String hostOf(String url) {
+        try {
+            String h = android.net.Uri.parse(url).getHost();
+            return h == null ? url : h;
+        } catch (Exception e) {
+            return url;
+        }
     }
 
     /** 弹出模型单选列表 */

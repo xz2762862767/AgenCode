@@ -159,7 +159,7 @@
                         android:paddingStart="10dp"
                         android:paddingTop="4dp"
                         android:paddingBottom="4dp"
-                        android:text="拉取列表 ▾"
+                        android:text="选服务商 ▾"
                         android:textColor="?attr/neb_accent"
                         android:textSize="11.5sp"
                         android:textStyle="bold" />
@@ -195,7 +195,7 @@
                         android:layout_height="wrap_content"
                         android:paddingStart="6dp"
                         android:paddingEnd="12dp"
-                        android:text="点右上角拉取"
+                        android:text="点右上角选服务商"
                         android:textColor="?attr/neb_dim"
                         android:textSize="10.5sp" />
                 </LinearLayout>

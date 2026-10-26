@@ -151,6 +151,14 @@ public class MainActivity extends AppCompatActivity {
      * 所以用户看到的是一步一个 ✓ 地往前走，而不是等整轮结束才突然冒出来。
      */
     private TaskCardView streamTaskCard;
+
+    /**
+     * 正文上方那张「执行步骤」可勾选卡片是否启用。
+     * 关掉后整条链一起停：不解析步骤、不立卡、不自动勾选，
+     * 并且不再把清单行从正文里剥走——否则卡片没了、正文也被掏空，
+     * 步骤会整段消失。清单留在正文里按普通列表渲染即可。
+     */
+    private static final boolean TASK_CARD_ENABLED = false;
     /** 本轮时间线，收尾时写进 Message.steps */
     private java.util.List<com.nebula.aichat.data.Message.Step> tlSteps;
     /** 每个工具行对应的 Step，结果回来时回填 */
@@ -729,7 +737,12 @@ public class MainActivity extends AppCompatActivity {
                     LinearLayout content = addAiBubble(m, false);
                     ensureTasks(m);
                     String body = cleanBody(m.content);
-                    if (m.tasks != null && !m.tasks.isEmpty()) body = TaskParser.strip(body);
+                    if (TASK_CARD_ENABLED && m.tasks != null && !m.tasks.isEmpty()) {
+                        body = TaskParser.strip(body);
+                    } else {
+                        // 卡片关闭：清单留在正文，去掉点不动的复选框
+                        body = TaskParser.uncheck(body);
+                    }
                     if (hasPersistedTools(m.steps)) {
                         // 这轮跑过工具：按存下来的顺序把「文字 / 工具行」重新交错铺开
                         renderTimeline(content, m, body);
@@ -801,7 +814,7 @@ public class MainActivity extends AppCompatActivity {
      * 已经解析过（历史里存了 tasks）就不再重复解析，避免覆盖用户勾选出来的进度。
      */
     private void ensureTasks(Message m) {
-        if (m == null) return;
+        if (!TASK_CARD_ENABLED || m == null) return;
         if (m.tasks != null && !m.tasks.isEmpty()) return;
         try {
             java.util.List<String> t = TaskParser.parse(m.content);
@@ -820,7 +833,7 @@ public class MainActivity extends AppCompatActivity {
      * 所以插在 index 0，而不是像以前那样追加在结尾。
      */
     private void attachTasks(LinearLayout content, Message m) {
-        if (content == null || m == null) return;
+        if (!TASK_CARD_ENABLED || content == null || m == null) return;
         if (m.tasks == null || m.tasks.isEmpty()) return;
         try {
             // 流式中已经立过卡、且还挂在同一个气泡上：沿用那张，别再加第二张
@@ -898,6 +911,7 @@ public class MainActivity extends AppCompatActivity {
      * 只建一次，建过就不再解析——否则每个渲染帧都要跑一遍正则。
      */
     private void maybeBuildTaskCard(String full) {
+        if (!TASK_CARD_ENABLED) return;
         if (streamContent == null || streamStale || streamTaskCard != null) return;
         if (full == null || full.indexOf('[') < 0) return;
         try {
@@ -943,6 +957,8 @@ public class MainActivity extends AppCompatActivity {
      * 免得正文里闪一下再消失。
      */
     private static String stripListLines(String s) {
+        // 卡片关闭时不再剥清单行：正文里直接按列表显示，信息不丢
+        if (!TASK_CARD_ENABLED) return s;
         if (s == null || s.isEmpty() || s.indexOf('[') < 0) return s;
         StringBuilder sb = new StringBuilder(s.length());
         int n = s.length();
@@ -4682,6 +4698,8 @@ public class MainActivity extends AppCompatActivity {
                 streamMessage.conclusionDetail = cr.detail;
                 text = cr.body;
             }
+            // 定稿前抹掉 `- [ ]` 的复选框：卡片已停用，正文按普通列表显示
+            text = TaskParser.uncheck(text);
             boolean blank = (text == null || text.trim().isEmpty());
             streamMessage.content = blank ? "（没有返回内容，换个说法再试一次？）" : text;
             current.messages.add(streamMessage);

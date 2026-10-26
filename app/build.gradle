@@ -12,8 +12,8 @@ android {
         // 24/25 上会 NoSuchMethodError，所以底线定在 Android 8.0
         minSdk 26
         targetSdk 34
-        versionCode 170
-        versionName "1.8.46"
+        versionCode 171
+        versionName "1.8.47"
 
         // 内置 proot 仅提供 arm64 版本
         ndk {

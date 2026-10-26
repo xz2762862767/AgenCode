@@ -72,6 +72,46 @@ public final class TaskParser {
         return out.isEmpty() ? text : out;
     }
 
+
+    /**
+     * 把清单行里的复选框标记去掉，保留列表符本身：
+     * {@code - [ ] 改 A} → {@code - 改 A}。
+     *
+     * <p>卡片停用后正文里直接显示清单，复选框既点不动也没人同步它的状态，
+     * 留着只是个装饰性的空框，反而像没渲染完的控件，所以定稿时抹掉。</p>
+     */
+    public static String uncheck(String text) {
+        if (text == null || text.isEmpty() || text.indexOf('[') < 0) return text;
+        String[] lines = text.split("\n", -1);
+        StringBuilder sb = new StringBuilder(text.length());
+        boolean changed = false;
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) sb.append('\n');
+            String line = lines[i];
+            Matcher m = ITEM.matcher(line);
+            if (m.matches()) {
+                int br = line.indexOf('[');
+                String prefix = br > 0 ? line.substring(0, br) : "";
+                if (!prefix.trim().isEmpty()) {
+                    sb.append(prefix.endsWith(" ") ? prefix : prefix + " ");
+                    sb.append(m.group(2));
+                } else {
+                    sb.append(prefix).append(m.group(2));
+                }
+                changed = true;
+            } else {
+                Matcher b = BARE.matcher(line);
+                if (b.matches()) {
+                    sb.append(b.group(2));
+                    changed = true;
+                } else {
+                    sb.append(line);
+                }
+            }
+        }
+        return changed ? sb.toString() : text;
+    }
+
     /** 去掉行内残留的 Markdown 强调符与多余空白 */
     private static String clean(String s) {
         if (s == null) return "";

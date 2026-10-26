@@ -333,7 +333,9 @@ public class ProjectPage {
     private String appCode() {
         try {
             PackageInfo pi = act.getPackageManager().getPackageInfo(act.getPackageName(), 0);
-            return String.valueOf(pi.versionCode);
+            // API 28+ 上 versionCode 字段恒为 0，必须走 getLongVersionCode
+            long vc = android.os.Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
+            return String.valueOf(vc);
         } catch (Throwable t) {
             return "?";
         }

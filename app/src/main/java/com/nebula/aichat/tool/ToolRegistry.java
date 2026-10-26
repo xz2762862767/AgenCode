@@ -37,6 +37,7 @@ public class ToolRegistry {
         this.ctx = c.getApplicationContext();
         ApkToolsProvider.register(this, ctx);
         BuildToolsProvider.register(this, ctx);
+        SkillTools.register(this, ctx);
     }
 
     public void add(ToolDef d) {

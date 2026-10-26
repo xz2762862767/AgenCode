@@ -113,6 +113,19 @@ public class SkillStore {
         if (had) installBuiltinQuiet(c, "polish-writing");
         invalidate(c);
         sp.edit().putBoolean("dedupe_skills_v2", true).apply();
+        // v3：摘要 / 会议纪要 / 周报 三种技能已合并为「文本整理」，
+        // 老设备上把这三个旧目录清掉，避免技能列表里重复出现同类条目。
+        if (!sp.getBoolean("dedupe_skills_v3", false)) {
+            boolean hadOrganize = false;
+            for (String old : new String[]{"doc-summary", "meeting-notes", "weekly-report"}) {
+                File d = new File(dir, old);
+                if (d.isDirectory()) hadOrganize = true;
+                deleteRecursive(d);
+            }
+            if (hadOrganize) installBuiltinQuiet(c, "text-organize");
+            invalidate(c);
+            sp.edit().putBoolean("dedupe_skills_v3", true).apply();
+        }
     }
 
     /**
@@ -332,6 +345,74 @@ public class SkillStore {
         }
         if (sb.length() == 0) return "";
         return "以下是已启用的技能说明，请在实际回答中遵循：\n\n" + sb;
+    }
+
+    /**
+     * 渐进式注入：system 里只放「技能索引」（一行一个），技能正文由 read_skill 工具按需读取。
+     * 过去是把每个启用技能的正文整段塞进 system（上限 12000 字），每轮都要重发，
+     * 长对话下这是最大的一笔固定开销；改成索引后每轮只占几百字。
+     */
+    public static String buildIndex(Context c) {
+        ensureSamples(c);
+        List<Skill> all = load(c);
+        StringBuilder sb = new StringBuilder();
+        int n = 0;
+        for (Skill s : all) {
+            if (!s.enabled) continue;
+            String d = s.description == null ? "" : s.description.trim();
+            if (d.length() > 60) {
+                int cut = 60;
+                // 别把 emoji（代理对）劈成半个字符
+                if (Character.isHighSurrogate(d.charAt(cut - 1))) cut--;
+                d = d.substring(0, cut) + "…";
+            }
+            sb.append("- ").append(s.id).append('\uFF5C').append(s.name);
+            if (d.length() > 0) sb.append('\uFF1A').append(d);
+            sb.append('\n');
+            n++;
+        }
+        if (n == 0) return "";
+        return "可用技能（" + n + " 个，此处仅列索引，正文需用 read_skill 读取）\n" + sb
+                + "\n用户需求与上面某一项明确对应时，先调用 read_skill(技能id) 拿到完整做法再执行；"
+                + "不对应就直接回答，不要为了保险把不相关技能也读一遍。\n";
+    }
+
+    /** read_skill 工具的实现：按 id 或名称取技能全文 */
+    public static String readSkillBody(Context c, String key) {
+        ensureSamples(c);
+        String k = key == null ? "" : key.trim();
+        if (k.length() == 0) {
+            return "缺少技能标识。用法：read_skill(skill=\"技能id 或 名称\")";
+        }
+        List<Skill> all = load(c);
+        Skill hit = null;
+        for (Skill s : all) {
+            if (s.id.equalsIgnoreCase(k)) { hit = s; break; }
+        }
+        if (hit == null) {
+            for (Skill s : all) {
+                if (s.name != null && s.name.equals(k)) { hit = s; break; }
+            }
+        }
+        if (hit == null) {
+            String lk = k.toLowerCase();
+            for (Skill s : all) {
+                String sid = s.id.toLowerCase();
+                if (sid.contains(lk) || (s.name != null && s.name.contains(k))) { hit = s; break; }
+            }
+        }
+        if (hit == null) {
+            StringBuilder sb = new StringBuilder("没有找到技能「" + k + "」。当前可用技能：\n");
+            for (Skill s : all) sb.append("- ").append(s.id).append(' ').append(s.name).append('\n');
+            return sb.toString().trim();
+        }
+        String body = hit.body == null ? "" : hit.body;
+        if (body.length() > 3800) {
+            int cut = 3800;
+            if (Character.isHighSurrogate(body.charAt(cut - 1))) cut--;
+            body = body.substring(0, cut) + "\n…（已截断）";
+        }
+        return "### 技能：" + hit.name + "\n" + body;
     }
 
     public static void delete(Context c, Skill s) {

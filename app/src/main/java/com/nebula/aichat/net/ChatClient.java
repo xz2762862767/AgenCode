@@ -569,20 +569,37 @@ public class ChatClient {
 
     private void trimToolContext() {
         int total = 0;
+        int kept = 0;
         for (int i = toolMsgs.size() - 1; i >= 0; i--) {
             JSONObject o = toolMsgs.get(i);
             if (o == null) continue;
             if (!"tool".equals(o.optString("role"))) continue;
             String c = o.optString("content", "");
             int len = c.length();
-            if (total + len <= ctxBudget) {
+            // 最近 3 条一律原文；更早的只要还在预算内也原文
+            if (kept < 3 || total + len <= ctxBudget) {
                 total += len;
+                kept++;
                 continue;
             }
-            if (c.startsWith("【较早结果已省略")) continue;
+            if (c.startsWith("【较早结果已压缩")) continue;
             try {
-                o.put("content", "【较早结果已省略，共 " + len + " 字】"
-                        + "（这一步已经做完了，不要再重复执行；需要细节就重新查看当前文件状态）");
+                // 不要一刀切成一句占位：模型看不到细节就会把同一个工具重跑一遍，重跑比留着更贵。
+                // 保留头 700 + 尾 200 字（报错信息、结尾结论通常在尾部），中间省略。
+                String head;
+                if (len > 900) {
+                    String h = c.substring(0, 700);
+                    if (Character.isHighSurrogate(h.charAt(h.length() - 1))) {
+                        h = h.substring(0, h.length() - 1);
+                    }
+                    String t = c.substring(len - 200);
+                    if (Character.isLowSurrogate(t.charAt(0))) t = t.substring(1);
+                    head = h + "\n…（中间省略）…\n" + t;
+                } else {
+                    head = c;
+                }
+                o.put("content", "【较早结果已压缩，原 " + len + " 字】\n" + head
+                        + "\n（这一步已完成，不要重复执行；要看完整内容就重新读取当前文件）");
             } catch (Exception ignored) {
             }
         }
@@ -665,6 +682,17 @@ public class ChatClient {
             sys.append(hint);
         }
         // —— 以下两条放在最后：越靠后的指令权重越高 ——
+        if (sys.length() > 0) sys.append("\n\n");
+        sys.append("【先判断，再动手】\n"
+                + "1. 先判断用户这句话属于哪一类，然后只做这一类该做的事，不要把几套流程混着走：\n"
+                + "   · 直答（问知识/概念/建议）→ 直接答，不调工具；只有需要实时信息才联网查。\n"
+                + "   · 产出（要文案/代码/方案/整理结果）→ 按对应结构直接给成品，不讲方法论。\n"
+                + "   · 改东西（改代码/文件/App）→ 先看清现状再动手，改完必须验证。\n"
+                + "   · 排查（说不对/报错/为什么）→ 先定位原因再给修复，不要上来就列一堆可能原因。\n"
+                + "   · 对话（随口一问/确认/聊一句）→ 一两句回完，别铺开写。\n"
+                + "2. 说法就是需求边界：说「简单说」就简短，说「详细」才展开，没说就按上面分类的默认尺寸；不要自己加戏扩大范围。\n"
+                + "3. 做不对的原因是缺关键信息（缺文件、口径不清、目标模糊）时，一次问清 2-3 个关键点就停，不要边猜边做。\n"
+                + "4. 拿不准用户真实意图时，先给最可能的那一个答案，末尾用一句话确认，而不是先反问。");
         if (sys.length() > 0) sys.append("\n\n");
         sys.append("【表达：必须说中文】\n"
                 + "1. 每条回复的主体必须是中文，包括解释、结论、总结、报错分析、进度说明。"

@@ -2769,7 +2769,7 @@ public class MainActivity extends AppCompatActivity {
         int start = Math.max(0, limit - 24);
         for (int i = start; i < limit; i++) history.add(current.messages.get(i));
 
-        String skillInject = com.nebula.aichat.skill.SkillStore.buildInjection(this);
+        String skillInject = com.nebula.aichat.skill.SkillStore.buildIndex(this);
         client.extraSystem = STYLE_HINT + "\n\n" + TASK_HINT + "\n\n" + CONFIRM_HINT
                 + "\n\n" + CONCLUSION_HINT + "\n\n" + timeContext()
                 + (skillInject == null || skillInject.isEmpty() ? "" : "\n\n" + skillInject)

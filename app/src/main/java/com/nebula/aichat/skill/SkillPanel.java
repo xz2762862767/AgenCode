@@ -657,7 +657,7 @@ public class SkillPanel {
     }
 
     private void preview() {
-        String inject = SkillStore.buildInjection(act);
+        String inject = SkillStore.buildIndex(act);
         if (inject.isEmpty()) {
             Toast.makeText(act, "没有启用的技能", Toast.LENGTH_SHORT).show();
             return;

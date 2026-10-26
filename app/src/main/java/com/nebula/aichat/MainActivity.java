@@ -251,6 +251,11 @@ public class MainActivity extends AppCompatActivity {
     /** 连续工具调用共用的容器：只露最后一步，其余折叠，避免气泡被一行行撑长 */
     private LinearLayout toolGroupBox;
     private TextView toolGroupHead;
+    /**
+     * 本轮的过程组：[组头(可空), 组容器]。
+     * 一轮答完要整体收进「思考完成 ▾」，所以每建一组就登记一次。
+     */
+    private final java.util.List<View[]> procGroups = new java.util.ArrayList<>();
     private Message streamMessage;
     /** 流式请求已被作废（如切换/删除会话），回调结果一律丢弃 */
     private boolean streamStale = false;
@@ -962,11 +967,22 @@ public class MainActivity extends AppCompatActivity {
 
     /** 重开会话时按时间线还原过程：正文段与工具行按当时的顺序交错显示 */
     private void renderTimeline(LinearLayout host, Message m, String body) {
+        // 历史回放的工具记录也统一收进一条「思考完成 ▾」，和实时渲染保持一致
+        LinearLayout procBox = null;
+        int calls = 0;
         for (Message.Step st : m.steps) {
             if (st == null) continue;
             if (st.isTool()) {
+                if (procBox == null) {
+                    procBox = new LinearLayout(this);
+                    procBox.setOrientation(LinearLayout.VERTICAL);
+                    procBox.setClipChildren(false);
+                    host.addView(procBox, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+                calls++;
                 // 每次调用各自一个框，点行尾箭头展开它自己的详情
-                LinearLayout wrap = makeToolWrap(host);
+                LinearLayout wrap = makeToolWrap(procBox);
                 wrap.setTag(st);
                 TextView row = toolBodyOf(wrap);
                 if (row != null) {
@@ -990,6 +1006,11 @@ public class MainActivity extends AppCompatActivity {
                 // 历史回放：代码块只露预览，点开看全文
                 mr.collapseCodeBlocks();
             }
+        }
+        if (procBox != null) {
+            java.util.List<View[]> one = new java.util.ArrayList<>(1);
+            one.add(new View[]{null, procBox});
+            foldProcess(host, one, calls);
         }
         addConclusionCard(host, m, false);
         attachArtifacts(host, body);
@@ -2786,6 +2807,7 @@ public class MainActivity extends AppCompatActivity {
         toolScroll = null;
         toolTraceCount = null;
         toolRows.clear();
+        procGroups.clear();
         toolRowNames.clear();
         toolRowDone.clear();
         toolRowStart.clear();
@@ -4048,6 +4070,7 @@ public class MainActivity extends AppCompatActivity {
 
         toolGroupBox = box;
         toolGroupHead = head;
+        procGroups.add(new View[]{head, box});
         return box;
     }
 
@@ -4099,6 +4122,96 @@ public class MainActivity extends AppCompatActivity {
         if (toolGroupBox != null) refreshToolGroup();
         toolGroupBox = null;
         toolGroupHead = null;
+    }
+
+    // ------------------------------------------------------------ 过程收纳
+
+    /** 过程区折叠头：一轮答完只剩这一行，点箭头才摊开过程 */
+    private static final String TAG_PROC_FOLD = "proc_fold";
+
+    /**
+     * 把一组过程视图收进「思考完成 ▾」。
+     *
+     * <p>为什么收：工具行和翻译行是内联在正文流里的（不然看不到
+     * 「先说一句 → 跑个命令 → 接着说」这个顺序），代价是答案写完以后，
+     * 读者眼前还散着一堆执行记录。收起来之后气泡里就是干净的一段答案，
+     * 想复盘的人点开箭头，全都还在。</p>
+     *
+     * @param host   过程视图所在的容器（实时是 streamContent，历史是气泡内容区）
+     * @param groups 过程组，每项 = [组头(可空), 组容器]
+     * @param calls  本轮调用次数，写进折叠头给个量感
+     */
+    private void foldProcess(LinearLayout host, java.util.List<View[]> groups, int calls) {
+        if (host == null || groups == null || groups.isEmpty()) return;
+
+        // 组内先摊平并把状态位写回 tag：外层展开一次就能看全，也不会被后续 refresh 又收回去
+        for (View[] g : groups) {
+            if (g != null && g.length > 1 && g[1] instanceof LinearLayout) {
+                LinearLayout box = (LinearLayout) g[1];
+                box.setTag(Boolean.TRUE);
+                applyToolGroup(box, (TextView) g[0], true);
+            }
+        }
+
+        // 同一气泡只留一个折叠头（重试或补渲染会再调一次）
+        View stale = host.findViewWithTag(TAG_PROC_FOLD);
+        if (stale != null) host.removeView(stale);
+
+        final TextView head = new TextView(this);
+        head.setTag(TAG_PROC_FOLD);
+        head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        head.setTextColor(0xFF8A9CB4);
+        head.setPadding(dp(2), dp(4), dp(2), dp(6));
+        head.setIncludeFontPadding(false);
+        head.setClickable(true);
+        head.setSelected(false);          // selected 兼作「已展开」状态位
+        head.setText(procFoldLabel(calls, false));
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hlp.topMargin = dp(2);
+        hlp.bottomMargin = dp(2);
+
+        // 插到第一个过程视图之前：正文段不会被挤到折叠头上面去
+        int at = 0;
+        for (View[] g : groups) {
+            int i = (g != null && g.length > 1 && g[1] != null) ? host.indexOfChild(g[1]) : -1;
+            if (i >= 0) {
+                at = i;
+                break;
+            }
+        }
+        host.addView(head, at, hlp);
+
+        final java.util.List<View[]> gs = groups;
+        head.setOnClickListener(v -> {
+            boolean open = !v.isSelected();
+            v.setSelected(open);
+            ((TextView) v).setText(procFoldLabel(calls, open));
+            for (View[] g : gs) setProcVisible(g, open);
+            if (!open) scrollToBottom(false);   // 收起后高度变矮，贴回底部不跳
+        });
+
+        // 默认收起：一轮答完，读者要看的是答案
+        for (View[] g : gs) setProcVisible(g, false);
+    }
+
+    private static String procFoldLabel(int calls, boolean open) {
+        String arrow = open ? "\u25b4" : "\u25be";   // ▴ / ▾
+        return calls > 0 ? "思考完成 \u00b7 " + calls + " 次调用 " + arrow
+                : "思考完成 " + arrow;
+    }
+
+    private void setProcVisible(View[] g, boolean visible) {
+        if (g == null || g.length < 2) return;
+        if (g[1] != null) g[1].setVisibility(visible ? View.VISIBLE : View.GONE);
+        // 组头（「前面还有 N 步」那条）收起时一并藏掉；展开时交回 applyToolGroup 决定
+        if (!visible && g[0] != null) g[0].setVisibility(View.GONE);
+    }
+
+    /** 本轮答完：把过程整体收进「思考完成 ▾」 */
+    private void collapseStreamProcess() {
+        if (streamContent == null || procGroups.isEmpty()) return;
+        foldProcess(streamContent, new java.util.ArrayList<>(procGroups), toolRows.size());
     }
 
     private TextView newToolRow() {
@@ -4882,6 +4995,8 @@ public class MainActivity extends AppCompatActivity {
         // 正常收尾，草稿已无意义（异常中断的那条会留在草稿里，等下次启动接回来）
         if (store != null) store.clearDraft();
         updateSubtitle();
+        // 过程（工具行 / 翻译行）全部收进「思考完成 ▾」，气泡里只留答案
+        collapseStreamProcess();
         scrollToBottom(true);
         streamContent = null;
         streamMessage = null;

@@ -20,36 +20,35 @@ import android.widget.TextView;
 /**
  * 结论区：回答最结尾那块「结论 + 详述」。
  *
- * <p>一整块墨绿玻璃底 + 微绿白文字。原先那三样描边装饰——顶部通栏粗线、
- * 线下发光、左侧竖条——全部去掉了：它们本质都在「给一块区域画边框」，
- * 而结论是正文的收束，不该看起来像个被框起来的附件。</p>
+ * <p>观感目标：<b>洁亮</b>——干净、通透、提亮，但绝不能变成一块发光牌。
+ * 做法是「背景色 + 主题强调色」按比例混出底色，再整体提一档亮度：
+ * 卡片因此永远和当前主题（深色 / 纯黑 OLED / 五档强调色）自动同源，
+ * 用户换强调色时结论卡跟着换，不用在这里再维护一套写死的色值。</p>
  *
- * <p>底色刻意压暗：整片高饱和的亮绿在深色主题里就是一块发光牌，
- * 每轮回答末尾闪一次，眼睛受不了。现在底色是近乎背景的深墨绿，
- * 绿色只留在左上角一道很淡的斜向光晕上。
- * 卡片靠色相区分而不是靠亮度，安静地把正文收住。</p>
+ * <p>明亮感来自三样叠加的层次，而不是靠纯白垫底：
+ * ① 左上到右下的三段渐隐（上亮下沉，玻璃厚度感）；
+ * ② 左上角一道强调色的斜向受光；
+ * ③ 覆盖上半部分的一层极淡白高光（模拟玻璃反光，这一层最出「洁」的感觉）。
+ * 纯白卡在深色流里滚动会刺眼，所以亮度上限压在「比气泡亮一档、比白低很多」的位置。</p>
  *
  * <p>文字仍用子 View（可换行、可长按选中），所以不用 Canvas 画文本。</p>
  */
 public class ConclusionCard extends LinearLayout {
 
-    /** 左上：墨绿，比正文背景只绿一点点 */
-    private static final int GREEN_LIGHT = 0xFF17392C;
-    /** 中段：过渡 */
-    private static final int GREEN_MID = 0xFF102C22;
-    /** 右下：几乎融进背景，卡片自带下沉感 */
-    private static final int GREEN_DARK = 0xFF0B2019;
+    /** 文字色：近白偏冷，压在彩色底上依然干净 */
+    private static final int TEXT_TITLE = 0xFFF8FBFF;
+    private static final int TEXT_DETAIL = 0xFFD7E3F4;
 
-    /** 左上角斜向光晕：整张卡唯一的「亮」，只占一角 */
-    private static final int GLOW_HEAD = 0x2444E08C;
-    private static final int GLOW_TAIL = 0x00000000;
-
-    /** 文字色：近白微绿，比纯白柔和，和绿底同源 */
-    private static final int TEXT_TITLE = 0xFFF1FDF7;
-    private static final int TEXT_DETAIL = 0xFFCEE8DC;
+    /** 三段底色 + 受光色 + 顶部高光，构造时按当前主题算出来 */
+    private final int cTop;
+    private final int cMid;
+    private final int cBottom;
+    private final int cGlow;
+    private final int cSheen;
 
     private final Paint pBg = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     private final Paint pGlow = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+    private final Paint pSheen = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     private final Paint pGlint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     private final RectF rf = new RectF();
 
@@ -62,7 +61,7 @@ public class ConclusionCard extends LinearLayout {
     private ValueAnimator sweepAnim;
 
     // 扫光用的颜色/位置提到常量，避免 onDraw 每帧重新分配数组
-    private static final int[] GLINT_COLORS = {0x00FFFFFF, 0x2EFFFFFF, 0x00FFFFFF};
+    private static final int[] GLINT_COLORS = {0x00FFFFFF, 0x3AFFFFFF, 0x00FFFFFF};
     private static final float[] GLINT_POS = {0f, 0.5f, 1f};
     private LinearGradient glintShader;
     private final Matrix glintM = new Matrix();
@@ -75,6 +74,15 @@ public class ConclusionCard extends LinearLayout {
 
         radius = Ui.dp(c, 14);
         setPadding(Ui.dp(c, 16), Ui.dp(c, 14), Ui.dp(c, 16), Ui.dp(c, 15));
+
+        // 底色全部由当前主题推导：背景混强调色（上多下少）+ 提亮，得到通透的玻璃面
+        int bgc = Palette.bg(c);
+        int accent = Palette.accent(c);
+        cTop = lighten(mix(bgc, accent, 0.24f), 0.07f);
+        cMid = lighten(mix(bgc, accent, 0.12f), 0.03f);
+        cBottom = mix(bgc, accent, 0.05f);
+        cGlow = (accent & 0x00FFFFFF) | 0x30000000;   // 左上受光：强调色压到很淡
+        cSheen = 0x18FFFFFF;                          // 顶部白高光：洁净感的来源
 
         // 一句话结论直接当卡片第一行：原来上面还有一行「结 论」眉标，
         // 证过一轮发现它只是把已经写着结论的东西再说一遍，白占高度，去掉。
@@ -139,15 +147,20 @@ public class ConclusionCard extends LinearLayout {
         super.onSizeChanged(w, h, ow, oh);
         if (w <= 0 || h <= 0) return;
 
-        // 斜向渐变：左上稍亮、右下更深
+        // 斜向渐变：左上最亮、右下收到接近背景，做出玻璃的厚度
         pBg.setShader(new LinearGradient(0, 0, w * 0.78f, h,
-                new int[]{GREEN_LIGHT, GREEN_MID, GREEN_DARK},
+                new int[]{cTop, cMid, cBottom},
                 new float[]{0f, 0.55f, 1f},
                 Shader.TileMode.CLAMP));
 
-        // 左上角光晕：从角上铺开又很快消失，让卡片有个「受光面」
+        // 左上角受光：强调色的淡光从角上铺开，卡片才有「被照亮」的方向感
         pGlow.setShader(new LinearGradient(0, 0, w * 0.62f, h * 0.85f,
-                new int[]{GLOW_HEAD, GLOW_TAIL},
+                new int[]{cGlow, 0x00000000},
+                null, Shader.TileMode.CLAMP));
+
+        // 顶部白高光：垂直方向铺到一半就没了，模拟玻璃反光（「洁」就靠它）
+        pSheen.setShader(new LinearGradient(0, 0, 0, h * 0.62f,
+                new int[]{cSheen, 0x00FFFFFF},
                 null, Shader.TileMode.CLAMP));
 
         // 扫光条预先建好，onDraw 里只平移矩阵不重建
@@ -162,10 +175,11 @@ public class ConclusionCard extends LinearLayout {
         int h = getHeight();
         if (w <= 0 || h <= 0) return;
 
-        // ① 墨绿底 + 左上受光
+        // ① 底色（上亮下沉）+ 左上受光 + 顶部白高光，三层叠出洁亮的玻璃面
         rf.set(0, 0, w, h);
         cv.drawRoundRect(rf, radius, radius, pBg);
         cv.drawRoundRect(rf, radius, radius, pGlow);
+        cv.drawRoundRect(rf, radius, radius, pSheen);
 
         // ② 扫掠高光：一条斜着的白光带，跟着 sweep 走。
         // Shader 在 onSizeChanged 里建好，这里只平移矩阵，不再每帧 new 对象（避免 GC 抖动）
@@ -194,5 +208,26 @@ public class ConclusionCard extends LinearLayout {
 
     private static float clamp01(float v) {
         return v < 0f ? 0f : (v > 1f ? 1f : v);
+    }
+
+    /** base 里掺 f 比例的 over（f=0 取 base，f=1 取 over） */
+    private static int mix(int base, int over, float f) {
+        float k = clamp01(f);
+        int br = (base >> 16) & 0xFF, bg = (base >> 8) & 0xFF, bb = base & 0xFF;
+        int or = (over >> 16) & 0xFF, og = (over >> 8) & 0xFF, ob = over & 0xFF;
+        int r = (int) (br + (or - br) * k);
+        int g = (int) (bg + (og - bg) * k);
+        int b = (int) (bb + (ob - bb) * k);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    /** 朝白色提亮 f，亮了但不会糊成一片 */
+    private static int lighten(int color, float f) {
+        float k = clamp01(f);
+        int r = (color >> 16) & 0xFF, g = (color >> 8) & 0xFF, b = color & 0xFF;
+        r = Math.min(255, (int) (r + (255 - r) * k));
+        g = Math.min(255, (int) (g + (255 - g) * k));
+        b = Math.min(255, (int) (b + (255 - b) * k));
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 }

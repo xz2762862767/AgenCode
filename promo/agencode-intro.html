@@ -1,0 +1,533 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;800&family=Noto+Sans+SC:wght@300;400;600;900&display=swap" rel="stylesheet">
+<style>html,body{margin:0;overflow:hidden;background:#07080A}canvas{display:block}</style>
+</head><body><canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+let ctx, W, H;
+const FPS = 30;
+
+const TOTAL = Math.round(27.5 * FPS);   // 825 帧
+window.__totalFrames = TOTAL;
+
+const C = {
+  bg:     '#07080A',
+  fg:     '#E6E2D8',
+  dim:    '#78837D',
+  dim2:   '#4A5450',
+  accent: '#F2A33C',
+};
+const MONO = '"JetBrains Mono", "Roboto Mono", monospace';
+const SANS = '"Noto Sans SC", "PingFang SC", sans-serif';
+
+window.__init = function () {
+  canvas.width  = window.__exportWidth  || 1920;
+  canvas.height = window.__exportHeight || 1080;
+  W = canvas.width; H = canvas.height;
+  ctx = canvas.getContext('2d');
+};
+try { window.__init(); } catch (e) {}
+
+const lerp  = (a,b,t) => a + (b-a)*t;
+const clamp = (v,lo,hi) => Math.max(lo, Math.min(hi, v));
+const seg   = (t,s,e) => clamp((t-s)/(e-s), 0, 1);
+
+const Ease = {
+  inOutCubic: t => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2,
+  outCubic:   t => 1 - Math.pow(1-t,3),
+  inCubic:    t => t*t*t,
+  outQuart:   t => 1 - Math.pow(1-t,4),
+  inOutSine:  t => -(Math.cos(Math.PI*t)-1)/2,
+  outExpo:    t => t === 1 ? 1 : 1 - Math.pow(2,-10*t),
+  outBack:    t => { const c1=1.70158, c3=c1+1; return 1 + c3*Math.pow(t-1,3) + c1*Math.pow(t-1,2); },
+};
+
+// ── 通用绘制 ──────────────────────────────
+function T(text, x, y, o) {
+  o = o || {};
+  ctx.save();
+  ctx.globalAlpha = o.a === undefined ? 1 : o.a;
+  ctx.font = (o.w || 400) + ' ' + (o.s || 20) + 'px ' + (o.f || SANS);
+  ctx.textAlign = o.align || 'left';
+  ctx.textBaseline = o.base || 'middle';
+  try { if (o.ls !== undefined) ctx.letterSpacing = o.ls + 'px'; } catch (e) {}
+  ctx.fillStyle = o.c || C.fg;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+function measure(text, s, w, f, ls) {
+  ctx.save();
+  ctx.font = (w||400) + ' ' + s + 'px ' + (f||SANS);
+  try { if (ls !== undefined) ctx.letterSpacing = ls + 'px'; } catch(e) {}
+  const m = ctx.measureText(text).width;
+  ctx.restore();
+  return m;
+}
+function rr(x, y, w, h, r) {
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+// ── 背景：细网格 + 琥珀光斑 + 颗粒 + 暗角 ──
+const GRAIN = [];
+for (let i = 0; i < 700; i++) GRAIN.push([Math.random(), Math.random(), Math.random()]);
+
+function bgBase(time) {
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const g = ctx.createRadialGradient(W*0.80, H*0.10, 0, W*0.80, H*0.10, W*0.85);
+  g.addColorStop(0,    'rgba(242,163,60,0.070)');
+  g.addColorStop(0.35, 'rgba(242,163,60,0.018)');
+  g.addColorStop(1,    'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  const pulse = 0.022 + 0.006 * Math.sin(time * 0.7);
+  ctx.strokeStyle = 'rgba(230,226,216,' + pulse + ')';
+  ctx.lineWidth = Math.max(1, W/1920);
+  const step = W * 0.042;
+  ctx.beginPath();
+  for (let x = 0; x < W; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = 0; y < H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+
+  for (let i = 0; i < GRAIN.length; i++) {
+    const p = GRAIN[i];
+    ctx.fillStyle = 'rgba(230,226,216,' + (0.020 * p[2]) + ')';
+    ctx.fillRect(p[0]*W, p[1]*H, Math.max(1, W/1600), Math.max(1, W/1600));
+  }
+
+  const vg = ctx.createRadialGradient(W*0.5, H*0.5, H*0.22, W*0.5, H*0.5, W*0.80);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ── 场景 1：开场 (0 – 6.5s) ───────────────
+function scene1(t) {
+  const LX = W * 0.08;
+
+  // 从左侧扫入的琥珀细线
+  const lineP = Ease.outExpo(seg(t, 0.15, 1.35));
+  if (lineP > 0.001) {
+    const lw = W * 0.20 * lineP;
+    const ly = H * 0.245;
+    const lg = ctx.createLinearGradient(LX, 0, LX + lw, 0);
+    lg.addColorStop(0, 'rgba(242,163,60,0.95)');
+    lg.addColorStop(1, 'rgba(242,163,60,0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(LX, ly, lw, Math.max(2, H*0.0022));
+  }
+
+  // 上方小标签
+  const labA = Ease.outCubic(seg(t, 0.25, 0.95));
+  if (labA > 0.01) {
+    T('ANDROID  ·  AI AGENT  ·  OPEN SOURCE', LX, H*0.185,
+      { s: H*0.019, w: 600, f: MONO, c: C.accent, a: labA, ls: H*0.004 });
+  }
+
+  // 主标题：逐字打出 + 光标
+  const title = 'AgenCode';
+  const tp = seg(t, 0.65, 2.05);
+  const nchars = Math.floor(Ease.outQuart(tp) * title.length + 0.0001);
+  const shown = title.slice(0, nchars);
+  const titleSize = H * 0.142;
+  if (shown.length > 0) {
+    T(shown, LX, H*0.355, { s: titleSize, w: 800, f: MONO, c: C.fg, ls: -H*0.002 });
+  }
+  const blink = Math.floor(t*2.4) % 2 === 0;
+  if (nchars < title.length || blink) {
+    const tw = measure(shown, titleSize, 800, MONO, -H*0.002);
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = C.accent;
+    ctx.fillRect(LX + tw + H*0.012, H*0.355 - titleSize*0.40, titleSize*0.34, titleSize*0.80);
+    ctx.restore();
+  }
+
+  // 副标题
+  const subA = Ease.outCubic(seg(t, 1.95, 2.85));
+  if (subA > 0.01) {
+    T('把整台开发机，装进一部手机', LX, H*0.480,
+      { s: H*0.040, w: 300, f: SANS, c: C.fg, a: subA * 0.92, ls: H*0.002 });
+  }
+
+  // 三行提要（stagger）
+  const items = [
+    ['01', '不自带模型，接任意 OpenAI 兼容接口'],
+    ['02', '内置 Linux 沙箱，命令真的跑得起来'],
+    ['03', '反编译、重打包、签名，一气做完'],
+  ];
+  for (let i = 0; i < items.length; i++) {
+    const d = 2.95 + i * 0.22;
+    const ia = Ease.outCubic(seg(t, d, d + 0.55));
+    if (ia < 0.01) continue;
+    const y = H*0.620 + i * H*0.060;
+    const dx = lerp(-W*0.010, 0, Ease.outCubic(seg(t, d, d + 0.6)));
+    T(items[i][0], LX + dx, y, { s: H*0.020, w: 400, f: MONO, c: C.accent, a: ia*0.85 });
+    T(items[i][1], LX + W*0.046 + dx, y, { s: H*0.023, w: 300, f: SANS, c: C.dim, a: ia });
+  }
+
+  // 底部终端提示行
+  const termA = Ease.outCubic(seg(t, 4.35, 5.10));
+  if (termA > 0.01) {
+    T('$', LX, H*0.880, { s: H*0.024, w: 600, f: MONO, c: C.accent, a: termA });
+    T('agencode --open-source', LX + W*0.020, H*0.880,
+      { s: H*0.024, w: 400, f: MONO, c: C.dim, a: termA });
+    if (Math.floor(t*2.2) % 2 === 0) {
+      ctx.save();
+      ctx.globalAlpha = termA * 0.8;
+      ctx.fillStyle = C.fg;
+      ctx.fillRect(LX + W*0.020 + measure('agencode --open-source', H*0.024, 400, MONO) + H*0.008,
+                   H*0.880 - H*0.012, H*0.011, H*0.024);
+      ctx.restore();
+    }
+  }
+}
+
+// ── 场景 2：一句话 → 真跑起来 (6.5 – 15.0s，局部 8.5s) ──
+const S2_LINES = [
+  { s: 1.75, k: 'cmd',  t: '$ jadx -d out/ app-release.apk' },
+  { s: 2.30, k: 'info', t: 'INFO  loading dex (3 files, 8.4 MB)' },
+  { s: 2.85, k: 'info', t: 'INFO  decompiling... 12,840 classes' },
+  { s: 3.45, k: 'ok',   t: 'DONE  2.1s   →   out/sources/' },
+];
+
+function scene2(t) {
+  const LX = W * 0.08;
+  const CW = W * 0.84;
+
+  // 用户一句话（气泡，从左侧滑入）
+  const bubbleA = Ease.outCubic(seg(t, 0.10, 0.75));
+  if (bubbleA > 0.01) {
+    const bw = W * 0.545, bh = H * 0.115;
+    const bx = LX + lerp(-W*0.02, 0, Ease.outCubic(seg(t, 0.10, 0.85)));
+    const by = H * 0.135;
+    ctx.save();
+    ctx.globalAlpha = bubbleA;
+    rr(bx, by, bw, bh, H*0.014);
+    ctx.fillStyle = 'rgba(230,226,216,0.045)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(230,226,216,0.10)';
+    ctx.lineWidth = Math.max(1, W/1920);
+    ctx.stroke();
+    ctx.restore();
+
+    T('你', bx + W*0.022, by + bh*0.30,
+      { s: H*0.017, w: 600, f: MONO, c: C.dim2, a: bubbleA, ls: H*0.003 });
+    T('帮我把这个 APK 反编译一下，看看用了什么库', bx + W*0.022, by + bh*0.63,
+      { s: H*0.028, w: 400, f: SANS, c: C.fg, a: bubbleA });
+  }
+
+  // 终端窗口：从下升起
+  const winP = Ease.outCubic(seg(t, 1.00, 1.85));
+  if (winP > 0.01) {
+    const wx = LX, wy = H * 0.315;
+    const wh = H * 0.470;
+    const dy = (1 - winP) * H * 0.10;
+
+    ctx.save();
+    ctx.globalAlpha = winP;
+    ctx.translate(0, dy);
+
+    // 窗口底
+    rr(wx, wy, CW, wh, H*0.012);
+    const wg = ctx.createLinearGradient(wx, wy, wx, wy + wh);
+    wg.addColorStop(0, 'rgba(22,27,31,0.985)');
+    wg.addColorStop(1, 'rgba(13,16,19,0.985)');
+    ctx.fillStyle = wg;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(242,163,60,0.34)';
+    ctx.lineWidth = Math.max(1.5, W/1150);
+    ctx.stroke();
+
+    // 标题条
+    const barH = H * 0.052;
+    ctx.save();
+    rr(wx, wy, CW, barH, H*0.012);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(230,226,216,0.030)';
+    ctx.fillRect(wx, wy, CW, barH);
+    ctx.restore();
+    // 三个小圆点
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(wx + W*0.020 + i*W*0.013, wy + barH*0.5, H*0.0045, 0, Math.PI*2);
+      ctx.fillStyle = i === 0 ? 'rgba(242,163,60,0.75)' : 'rgba(230,226,216,0.16)';
+      ctx.fill();
+    }
+    T('agencode — sandbox', wx + W*0.062, wy + barH*0.5,
+      { s: H*0.016, w: 400, f: MONO, c: C.dim2, a: 0.9 });
+    T('proot · aarch64', wx + CW - W*0.018, wy + barH*0.5,
+      { s: H*0.015, w: 400, f: MONO, c: C.dim2, a: 0.7, align: 'right' });
+    // 分隔线
+    ctx.fillStyle = 'rgba(230,226,216,0.07)';
+    ctx.fillRect(wx, wy + barH, CW, Math.max(1, H*0.0012));
+
+    // 命令行逐行出现
+    const lineX = wx + W*0.026;
+    let cursorY = 0;
+    for (let i = 0; i < S2_LINES.length; i++) {
+      const L = S2_LINES[i];
+      const la = Ease.outCubic(seg(t, L.s, L.s + 0.32));
+      if (la < 0.01) continue;
+      const ly = wy + barH + H*0.075 + i * H*0.078;
+      cursorY = ly;
+      const dx = lerp(-W*0.008, 0, la);
+      const col = L.k === 'cmd' ? C.fg : (L.k === 'ok' ? C.accent : C.dim);
+      const wt  = L.k === 'cmd' ? 600 : 400;
+      T(L.t, lineX + dx, ly, { s: H*0.0235, w: wt, f: MONO, c: col, a: la * (L.k === 'info' ? 0.78 : 1) });
+    }
+
+    // 活动光标
+    const lastDone = S2_LINES[S2_LINES.length-1];
+    if (t > lastDone.s + 0.35 && Math.floor(t*2.4) % 2 === 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = C.accent;
+      ctx.fillRect(lineX, cursorY + H*0.048, H*0.013, H*0.028);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // 结论句
+  const concA = Ease.outCubic(seg(t, 4.15, 5.05));
+  if (concA > 0.01) {
+    const pulse = 0.86 + 0.14 * Math.sin(t * 1.6);
+    T('不是给建议，是直接做完。', LX, H*0.870,
+      { s: H*0.036, w: 600, f: SANS, c: C.fg, a: concA * pulse, ls: H*0.001 });
+  }
+}
+
+// ── 场景 3：能力清单 (15.0 – 22.0s，局部 7s) ──
+const S3_ROWS = [
+  ['linux',   '完整 Linux 环境 · proot 沙箱里跑真命令'],
+  ['apk',     '反编译 · 重打包 · 签名 · 一键装回'],
+  ['skill',   '技能包热插拔 · 用的时候才加载'],
+  ['mcp',     'MCP 协议 · 外部工具即插即用'],
+  ['browser', '内置浏览器 · 能点能填能抓取'],
+  ['anim',    'Canvas 动画 · 直接导出成 MP4'],
+];
+
+function scene3(t) {
+  const LX = W * 0.08;
+
+  // 段落标签 + 细线
+  const headA = Ease.outCubic(seg(t, 0.05, 0.70));
+  if (headA > 0.01) {
+    T('/ CAPABILITIES', LX, H*0.135,
+      { s: H*0.019, w: 600, f: MONO, c: C.accent, a: headA, ls: H*0.004 });
+    const lw = W * 0.84 * Ease.outExpo(seg(t, 0.15, 1.10));
+    ctx.save();
+    ctx.globalAlpha = headA;
+    ctx.fillStyle = 'rgba(230,226,216,0.10)';
+    ctx.fillRect(LX, H*0.180, lw, Math.max(1, H*0.0012));
+    ctx.restore();
+  }
+
+  // 六行能力：逐行 stagger，左侧序号
+  const rowTop = H * 0.245;
+  const rowGap = H * 0.092;
+  for (let i = 0; i < S3_ROWS.length; i++) {
+    const d = 0.55 + i * 0.13;
+    const ra = Ease.outCubic(seg(t, d, d + 0.45));
+    if (ra < 0.01) continue;
+    const y = rowTop + i * rowGap;
+    const dx = lerp(-W*0.014, 0, Ease.outCubic(seg(t, d, d + 0.5)));
+    const dimFade = ra;
+
+    // 序号
+    T(('0' + (i+1)).slice(-2), LX + dx, y,
+      { s: H*0.017, w: 400, f: MONO, c: C.accent, a: dimFade * 0.7 });
+
+    // 名称（等宽，宽字距）
+    T(S3_ROWS[i][0], LX + W*0.052 + dx, y,
+      { s: H*0.030, w: 600, f: MONO, c: C.fg, a: dimFade, ls: H*0.001 });
+
+    // 描述
+    T(S3_ROWS[i][1], LX + W*0.290 + dx, y,
+      { s: H*0.0215, w: 300, f: SANS, c: C.dim, a: dimFade * 0.92 });
+
+    // 行间细线（最后一行之后不画）
+    if (i < S3_ROWS.length - 1) {
+      ctx.save();
+      ctx.globalAlpha = ra * 0.5;
+      ctx.fillStyle = 'rgba(230,226,216,0.055)';
+      ctx.fillRect(LX, y + rowGap*0.52, W*0.84 * Ease.outCubic(seg(t, d+0.1, d+0.9)), Math.max(1, H*0.001));
+      ctx.restore();
+    }
+  }
+
+  // 底部注脚
+  const footA = Ease.outCubic(seg(t, 1.90, 2.60));
+  if (footA > 0.01) {
+    T('全部跑在手机本地 · 数据不出设备', LX, H*0.885,
+      { s: H*0.0225, w: 400, f: SANS, c: C.dim2, a: footA });
+  }
+}
+
+// ── 场景 4：收尾 (22.0 – 27.5s，局部 5.5s) ──
+function scene4(t) {
+  const CX = W * 0.5;
+
+  // 顶部琥珀细线：从中心向两侧展开
+  const lineP = Ease.outExpo(seg(t, 0.10, 0.95));
+  if (lineP > 0.001) {
+    const lw = W * 0.16 * lineP;
+    const lg = ctx.createLinearGradient(CX - lw, 0, CX + lw, 0);
+    lg.addColorStop(0,   'rgba(242,163,60,0)');
+    lg.addColorStop(0.5, 'rgba(242,163,60,0.95)');
+    lg.addColorStop(1,   'rgba(242,163,60,0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(CX - lw, H*0.275, lw*2, Math.max(2, H*0.0022));
+  }
+
+  // 品牌名
+  const nameA = Ease.outCubic(seg(t, 0.55, 1.45));
+  if (nameA > 0.01) {
+    const dy = lerp(H*0.018, 0, nameA);
+    const size = H * 0.098;
+    ctx.save();
+    ctx.globalAlpha = nameA;
+    ctx.font = '800 ' + size + 'px ' + MONO;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = C.fg;
+    try { ctx.shadowColor = 'rgba(242,163,60,0.22)'; ctx.shadowBlur = size*0.30; } catch(e) {}
+    ctx.fillText('AgenCode', CX, H*0.395 + dy);
+    ctx.restore();
+  }
+
+  // 定位句
+  const tagA = Ease.outCubic(seg(t, 1.20, 2.00));
+  if (tagA > 0.01) {
+    T('一部手机，就是一台开发工作站', CX, H*0.480,
+      { s: H*0.031, w: 300, f: SANS, c: C.dim, a: tagA, align: 'center', ls: H*0.0015 });
+  }
+
+  // GitHub 地址（唯一的行动号召）
+  const urlA = Ease.outCubic(seg(t, 1.95, 2.75));
+  if (urlA > 0.01) {
+    const url = 'github.com/xz2762862767/AgenCode';
+    const uw = measure(url, H*0.026, 600, MONO);
+    const px = W*0.020, py = H*0.0165;
+    // 下划线描边框
+    ctx.save();
+    ctx.globalAlpha = urlA;
+    rr(CX - uw/2 - px, H*0.575 - py, uw + px*2, py*2, py);
+    ctx.strokeStyle = 'rgba(242,163,60,0.42)';
+    ctx.lineWidth = Math.max(1, W/1600);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(242,163,60,0.055)';
+    ctx.fill();
+    ctx.restore();
+    T(url, CX, H*0.575,
+      { s: H*0.026, w: 600, f: MONO, c: C.accent, a: urlA, align: 'center' });
+  }
+
+  // 元信息
+  const metaA = Ease.outCubic(seg(t, 2.60, 3.30));
+  if (metaA > 0.01) {
+    T('MIT License   ·   Public   ·   Android 8.0+', CX, H*0.680,
+      { s: H*0.019, w: 400, f: MONO, c: C.dim2, a: metaA, align: 'center', ls: H*0.002 });
+  }
+
+  // 结束淡黑
+  const fadeOut = Ease.inOutSine(seg(t, 4.55, 5.50));
+  if (fadeOut > 0.001) {
+    ctx.save();
+    ctx.globalAlpha = fadeOut;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+}
+
+// ── 章节标记（右上角，全片常驻）─────────────
+function chapterMark(gt) {
+  let idx, label;
+  if (gt < 6.5)       { idx = '01'; label = 'INTRO'; }
+  else if (gt < 15.0) { idx = '02'; label = 'ONE LINE'; }
+  else if (gt < 22.0) { idx = '03'; label = 'CAPABILITIES'; }
+  else                { idx = '04'; label = 'OPEN SOURCE'; }
+
+  // 结尾淡黑时同步消失
+  const a = 1 - Ease.inOutSine(clamp(seg(gt, 25.9, 26.5), 0, 1));
+  if (a < 0.02) return;
+
+  const RX = W * 0.920;
+  T(idx + ' / 04', RX, H*0.112,
+    { s: H*0.0165, w: 600, f: MONO, c: C.accent, a: a*0.60, align: 'right', ls: H*0.003 });
+  T(label, RX, H*0.143,
+    { s: H*0.0140, w: 400, f: MONO, c: C.dim2, a: a*0.50, align: 'right', ls: H*0.0032 });
+
+  // 右侧竖引线
+  ctx.save();
+  ctx.globalAlpha = a * 0.14;
+  ctx.fillStyle = C.fg;
+  ctx.fillRect(RX + W*0.0045, H*0.100, Math.max(1, W/1600), H*0.058);
+  ctx.restore();
+}
+
+// ── 主渲染器 ──────────────────────────────
+const S1_END = 6.5, S2_END = 15.0, S3_END = 22.0;
+
+function renderFrame(f) {
+  const gt = f / FPS;
+  bgBase(gt);
+
+  const FADE = 0.45;
+  function withFade(localT, localDur, fn) {
+    const inA  = Ease.inOutSine(clamp(localT / FADE, 0, 1));
+    const outA = 1 - Ease.inOutSine(clamp((localT - localDur + FADE) / FADE, 0, 1));
+    ctx.save();
+    ctx.globalAlpha = clamp(inA * outA, 0, 1);
+    fn();
+    ctx.restore();
+  }
+
+  if (gt < S1_END) {
+    withFade(gt, S1_END, () => scene1(gt));
+  } else if (gt < S2_END) {
+    withFade(gt - S1_END, S2_END - S1_END, () => scene2(gt - S1_END));
+  } else if (gt < S3_END) {
+    withFade(gt - S2_END, S3_END - S2_END, () => scene3(gt - S2_END));
+  } else {
+    // 末场景不做出场淡出，内部自己淡黑
+    const lt = gt - S3_END;
+    const inA = Ease.inOutSine(clamp(lt / FADE, 0, 1));
+    ctx.save();
+    ctx.globalAlpha = inA;
+    scene4(lt);
+    ctx.restore();
+  }
+
+  chapterMark(gt);
+}
+
+// ── 导出钩子 ──────────────────────────────
+window.__exportFrame = function (f) {
+  renderFrame(f);
+  const fmt = window.__exportFormat || 'png';
+  if (fmt === 'jpeg') return canvas.toDataURL('image/jpeg', window.__exportQuality || 0.92);
+  return canvas.toDataURL('image/png');
+};
+
+// 预热首帧 + 字体就绪后重绘
+renderFrame(0);
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(function () { try { renderFrame(0); } catch (e) {} });
+}
+</script></body></html>

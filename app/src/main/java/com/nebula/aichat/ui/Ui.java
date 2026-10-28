@@ -132,6 +132,8 @@ public class Ui {
     public static void dialogHeader(LinearLayout box, Context c, String title, String sub) {
         TextView t = text(c, title, 19f, Palette.text(c));
         t.setTypeface(Typeface.DEFAULT_BOLD);
+        // 标题上方再留一点：面板自己的 padding 之外，标题不要顶着上沿
+        t.setPadding(0, dp(c, 4), 0, 0);
         box.addView(t);
 
         if (sub != null && sub.length() > 0) {
@@ -139,7 +141,7 @@ public class Ui {
             s.setLineSpacing(dp(c, 5f), 1.0f);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            lp.topMargin = dp(c, 9);
+            lp.topMargin = dp(c, 11);
             box.addView(s, lp);
         }
 
@@ -147,8 +149,8 @@ public class Ui {
         line.setBackgroundColor(Palette.stroke(c));
         LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(c, 0.7f)));
-        llp.topMargin = dp(c, 16);
-        llp.bottomMargin = dp(c, 14);
+        llp.topMargin = dp(c, 18);
+        llp.bottomMargin = dp(c, 16);
         box.addView(line, llp);
     }
 

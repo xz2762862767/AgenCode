@@ -5,21 +5,15 @@
   @color/background_material_light，浅灰白，不随主题变化，
   导致深色/黑色主题下所有 AlertDialog 都是白底）。
 
-  background_material_light 的原始定义是 inset 16dp + corners 2dp。
-  这里保持 16dp 四边内缩（弹窗大小与系统默认一致，不发生视觉缩放），
-  但按需求去掉圆角，做纯直角矩形。
+  注意：这里不能再套 layer-list + item inset。
+  inset 只缩小背景的「绘制」区域，不参与布局——内容仍然从窗口边缘开始排，
+  结果是背景框比内容小 16dp，标题看起来压在背景外沿上，顶部显得很挤。
+  改为纯 shape 铺满窗口，缩进统一交给各面板自己的 padding 控制。
 
   颜色用 ?attr/neb_surface，跟随当前对话框主题解析：
   深色 #161B24 / 黑色 #0A0A0D / 浅色 #FFFFFF。
 -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:left="16dp"
-        android:right="16dp"
-        android:top="16dp"
-        android:bottom="16dp">
-        <shape android:shape="rectangle">
-            <solid android:color="?attr/neb_surface" />
-        </shape>
-    </item>
-</layer-list>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/neb_surface" />
+</shape>

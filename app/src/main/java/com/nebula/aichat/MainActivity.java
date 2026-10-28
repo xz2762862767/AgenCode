@@ -2631,7 +2631,7 @@ public class MainActivity extends AppCompatActivity {
 
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(pad, pad, pad, Ui.dp(this, 4));
+        box.setPadding(pad, Ui.dp(this, 28), pad, Ui.dp(this, 4));
         Ui.dialogHeader(box, this, "联网与浏览",
                 "联网搜索让 AI 在回答前检索最新资料；浏览器自动化可以让它自己打开网页读正文。");
 

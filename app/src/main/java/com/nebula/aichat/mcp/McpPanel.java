@@ -50,7 +50,7 @@ public class McpPanel {
         sv.setFillViewport(true);
         box = Ui.col(act);
         int p = Ui.dp(act, 20);
-        box.setPadding(p, p, p, Ui.dp(act, 6));
+        box.setPadding(p, Ui.dp(act, 28), p, Ui.dp(act, 6));
         sv.addView(box);
 
         dialog = new NebAlert.Builder(act)

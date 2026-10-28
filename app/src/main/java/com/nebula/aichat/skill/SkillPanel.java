@@ -61,7 +61,8 @@ public class SkillPanel {
         sv.setFillViewport(true);
         box = Ui.col(act);
         int p = Ui.dp(act, 20);
-        box.setPadding(p, p, p, Ui.dp(act, 6));
+        // 顶部单独放宽：标题区与内容区拉开，不要贴着窗口上沿
+        box.setPadding(p, Ui.dp(act, 28), p, Ui.dp(act, 6));
         sv.addView(box);
 
         // 不用 setTitle：系统标题与自定义内容之间的留白由 AlertController 写死，

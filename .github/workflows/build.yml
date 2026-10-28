@@ -24,14 +24,35 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        # 该 action 偶发在 license 检查阶段返回非零退出码，但 SDK 实际可用；
-        # 不让它拖垮整个 job，后续 sdkmanager / 构建步骤会验证 SDK 是否正常
-        continue-on-error: true
+      # runner 镜像自带完整 Android SDK（/usr/local/lib/android/sdk），
+      # 因此不再依赖 android-actions/setup-android —— 该 action 在 license
+      # 阶段提前退出时不会写入 PATH，导致后续 sdkmanager 报 127。
+      - name: Configure Android SDK
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          echo "使用 SDK: $SDK"
+          if [ ! -d "$SDK" ]; then
+            echo "找不到 Android SDK: $SDK"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          TOOLS="$(ls -d "$SDK"/cmdline-tools/*/bin 2>/dev/null | head -1 || true)"
+          if [ -z "$TOOLS" ]; then
+            echo "找不到 cmdline-tools"
+            exit 1
+          fi
+          echo "cmdline-tools: $TOOLS"
+          echo "$TOOLS" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
 
       - name: Install SDK packages
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+        run: |
+          # 不用 -e：yes 提前关闭管道会让前面的命令返回非零，但 license 实际已接受
+          set -uo pipefail
+          yes 2>/dev/null | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon -Dorg.gradle.vfs.watch=false

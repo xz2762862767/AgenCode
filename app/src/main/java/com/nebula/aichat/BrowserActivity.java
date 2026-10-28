@@ -325,7 +325,7 @@ public class BrowserActivity extends Activity {
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
-        cm.setAcceptThirdPartyCookies(web, true);
+        cm.setAcceptThirdPartyCookies(wv, true);
 
         wv.setWebViewClient(new WebViewClient() {
             @Override

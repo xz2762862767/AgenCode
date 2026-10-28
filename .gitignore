@@ -34,3 +34,6 @@ Thumbs.db
 # ---- deb 解包临时目录（构建期生成，不入库）----
 env-assets/x/
 env-assets/y/
+
+# ---- 大体积第三方二进制：超 GitHub 100MB 单文件限制，不入库 ----
+app/src/main/assets/revtools/jadx.jar

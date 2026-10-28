@@ -97,6 +97,14 @@ gradle assembleDebug --no-daemon -Dorg.gradle.vfs.watch=false
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
+**关于 `jadx.jar`**：`app/src/main/assets/revtools/jadx.jar`（约 110MB）是 APK 反编译功能的
+运行时依赖，体积超过 GitHub 单文件 100MB 限制，因此不随仓库分发（已加入 `.gitignore`）。
+
+自行编译时，如需完整的反编译能力，请从 [jadx Releases](https://github.com/skylot/jadx/releases)
+下载发行包，将其中的 `jadx-*.jar` 放到
+`app/src/main/assets/revtools/jadx.jar`。缺失该文件不影响其余功能的编译与运行，
+只是「APK 反编译」会提示工具缺失。
+
 ### 发布包签名
 
 仓库里**不包含任何密钥**。要出 release 包，自己在项目根目录放一个

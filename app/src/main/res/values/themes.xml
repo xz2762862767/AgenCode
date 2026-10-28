@@ -177,4 +177,30 @@
         <item name="android:windowEnterAnimation">@anim/drawer_in</item>
         <item name="android:windowExitAnimation">@anim/drawer_out</item>
     </style>
+
+    <!-- ===== 直角弹窗主题：仅模型选择/添加模型两个面板使用 ===== -->
+    <!-- Android 12+ 对 floating window 在 Surface 层强制加圆角，
+         windowBackground 设直角 shape 也盖不住。关掉 windowIsFloating 可以拿回直角，
+         但窗口不再自动居中，需要 NebAlert 里显式 gravity=CENTER + setLayout 收窄。
+         只给这两个面板用，避免影响其它 58 处弹窗。 -->
+    <style name="NebDialogRect" parent="NebDialog">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:backgroundDimAmount">0.6</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+    </style>
+
+    <style name="NebDialogRectBlack" parent="NebDialogBlack">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:backgroundDimAmount">0.6</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+    </style>
+
+    <style name="NebDialogRectLight" parent="NebDialogLight">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:backgroundDimAmount">0.35</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+    </style>
 </resources>

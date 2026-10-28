@@ -3,6 +3,7 @@ package com.nebula.aichat.ui;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.util.DisplayMetrics;
+import android.view.Gravity;
 import android.view.Window;
 import android.view.WindowManager;
 
@@ -91,12 +92,20 @@ public final class NebAlert {
         int width = dm.widthPixels - dp(ctx, 30);
         width = Math.min(width, dp(ctx, 560));
         final int finalW = width;
+        // 主题已设 windowIsFloating=false（为了拿直角），窗口不再自动居中，
+        // 必须自己把 gravity 掰回 CENTER，否则会贴在屏幕左上角。
+        WindowManager.LayoutParams attrs = w.getAttributes();
+        attrs.gravity = Gravity.CENTER;
+        w.setAttributes(attrs);
         w.setLayout(finalW, WindowManager.LayoutParams.WRAP_CONTENT);
         // create() 阶段窗口还没 attach 到 WindowManager，这次 setLayout 可能被随后的
         // show() 覆盖（技能面板就是 create 后手动 show）。往 decorView 的消息队列再投一次，
         // 等窗口真正上屏后再压一遍宽度；不用 setOnShowListener，避免顶掉业务侧的回调。
         w.getDecorView().post(() -> {
             if (d.isShowing()) {
+                WindowManager.LayoutParams a2 = w.getAttributes();
+                a2.gravity = Gravity.CENTER;
+                w.setAttributes(a2);
                 w.setLayout(finalW, WindowManager.LayoutParams.WRAP_CONTENT);
             }
         });

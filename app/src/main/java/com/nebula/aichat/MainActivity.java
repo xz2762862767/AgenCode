@@ -5863,11 +5863,20 @@ public class MainActivity extends AppCompatActivity {
     private TextView sheetRefreshBtn;
     private boolean fetchingModels;
 
+    /** 模型面板用的直角弹窗主题（按当前配色选深色/纯黑/浅色三套之一） */
+    private int rectDialogTheme() {
+        if (settings != null && settings.theme == Palette.THEME_BLACK) return R.style.NebDialogRectBlack;
+        if (settings != null && settings.theme == Palette.THEME_LIGHT) return R.style.NebDialogRectLight;
+        return R.style.NebDialogRect;
+    }
+
     private void showModelSheet() {
         if (modelSheet != null && modelSheet.isShowing()) return;
 
-        final Dialog d = new Dialog(this);
+        // 直角：关掉 windowIsFloating 拿回系统圆角（见 NebDialogRect 注释）
+        final Dialog d = new Dialog(this, rectDialogTheme());
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.getWindow().setGravity(Gravity.CENTER);
         modelSheet = d;
         // 上一轮若在拉取途中关掉弹窗，标志位会挂着不放，导致再次打开时「刷新」永远提示在拉取
         fetchingModels = false;
@@ -5875,7 +5884,7 @@ public class MainActivity extends AppCompatActivity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(Ui.roundRect(this, Palette.c(0xFF141A23), Palette.c(0xFF2A3240), 20f));
+        root.setBackground(Ui.roundRect(this, Palette.surface(this), Palette.stroke(this), 0f));
         root.setPadding(dp(18), dp(18), dp(18), dp(18));
         root.setClipChildren(false);
         root.setClipToPadding(false);   // 主按钮已改为内部渐变，留着这行防将来加阴影再被裁
@@ -6492,7 +6501,7 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout providerCard(int idx) {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(12), dp(10), dp(12), dp(10));
+        c.setPadding(dp(11), dp(9), dp(11), dp(9));
 
         TextView n = new TextView(this);
         n.setText(MODEL_PROVIDERS[idx][0]);
@@ -6524,12 +6533,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showAddModelDialog() {
-        final Dialog d = new Dialog(this);
+        final Dialog d = new Dialog(this, rectDialogTheme());
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.getWindow().setGravity(Gravity.CENTER);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(Ui.roundRect(this, Palette.c(0xFF141A23), Palette.c(0xFF2A3240), 20f));
+        root.setBackground(Ui.roundRect(this, Palette.surface(this), Palette.stroke(this), 0f));
         root.setPadding(dp(18), dp(18), dp(18), dp(18));
         root.setClipChildren(false);
         root.setClipToPadding(false);   // 主按钮已改为内部渐变，留着这行防将来加阴影再被裁
@@ -6617,20 +6627,21 @@ public class MainActivity extends AppCompatActivity {
         keyHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
         keyHint.setLineSpacing(dp(2), 1.25f);
 
-        // 1) 服务商：2 列网格，一屏看全 6 家，不用再点开二级对话框
+        // 1) 服务商：3 列网格。原来 2 列要占 4 行，7 家直接把弹窗顶到屏幕边；
+        //    改 3 列压成 3 行，一屏就能看全，域名仍以 9.5sp 小字挂在名字下面。
         body.addView(sheetLabel("服务商"), labelLp(true));
-        for (int base = 0; base < MODEL_PROVIDERS.length; base += 2) {
+        for (int base = 0; base < MODEL_PROVIDERS.length; base += 3) {
             LinearLayout rowLine = new LinearLayout(this);
             rowLine.setOrientation(LinearLayout.HORIZONTAL);
             LinearLayout.LayoutParams rllp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             if (base > 0) rllp.topMargin = dp(8);
-            for (int k = 0; k < 2; k++) {
+            for (int k = 0; k < 3; k++) {
                 int idx = base + k;
                 if (idx >= MODEL_PROVIDERS.length) {
                     View fill = new View(this);
                     LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(0, 1, 1f);
-                    if (k == 0) flp.rightMargin = dp(8);
+                    if (k < 2) flp.rightMargin = dp(8);
                     rowLine.addView(fill, flp);
                     continue;
                 }
@@ -6639,7 +6650,7 @@ public class MainActivity extends AppCompatActivity {
                 cardViews[idx] = card;
                 LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0,
                         LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-                if (k == 0) clp.rightMargin = dp(8);
+                if (k < 2) clp.rightMargin = dp(8);   // 3 列：前两列留缝，最后一列贴边
                 rowLine.addView(card, clp);
             }
             body.addView(rowLine, rllp);
@@ -6657,7 +6668,7 @@ public class MainActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         // 3) 自定义模型名（可选）
-        body.addView(sheetLabel("列表里没有？直接填模型名"), labelLp(false));
+        body.addView(sheetLabel("自定义模型名"), labelLp(false));
         body.addView(etManual, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 

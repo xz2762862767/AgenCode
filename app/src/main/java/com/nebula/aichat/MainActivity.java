@@ -5863,11 +5863,16 @@ public class MainActivity extends AppCompatActivity {
     private TextView sheetRefreshBtn;
     private boolean fetchingModels;
 
-    /** 模型面板用的直角弹窗主题（按当前配色选深色/纯黑/浅色三套之一） */
+    /**
+     * 模型面板用的弹窗主题（按当前配色选深色/纯黑/浅色三套之一）。
+     * 走普通 floating 主题而非 NebDialogRect：
+     * 关掉 windowIsFloating 后窗口的 gravity / attrs.x 全部失效，
+     * 弹窗永远贴左边，居中不了。透明窗口下 floating 的 gravity 正常工作。
+     */
     private int rectDialogTheme() {
-        if (settings != null && settings.theme == Palette.THEME_BLACK) return R.style.NebDialogRectBlack;
-        if (settings != null && settings.theme == Palette.THEME_LIGHT) return R.style.NebDialogRectLight;
-        return R.style.NebDialogRect;
+        if (settings != null && settings.theme == Palette.THEME_BLACK) return R.style.NebDialogBlack;
+        if (settings != null && settings.theme == Palette.THEME_LIGHT) return R.style.NebDialogLight;
+        return R.style.NebDialog;
     }
 
     private void showModelSheet() {
@@ -6048,20 +6053,18 @@ public class MainActivity extends AppCompatActivity {
         // 包一层 FrameLayout，用 layout_gravity 让内容自己在窗口里居中。
         int wpx2 = getResources().getDisplayMetrics().widthPixels;
         int dw2 = (int) (wpx2 * 0.9f);
-        FrameLayout wrap2 = new FrameLayout(this);
-        FrameLayout.LayoutParams rlp2 = new FrameLayout.LayoutParams(
-                dw2, FrameLayout.LayoutParams.WRAP_CONTENT);
-        rlp2.gravity = Gravity.CENTER;
-        rlp2.topMargin = dp(39);
-        wrap2.addView(root, rlp2);
-        d.setContentView(wrap2);
+        d.setContentView(root);
         d.show();
         Window w = d.getWindow();
         if (w != null) {
+            // 窗口透明，露出来的就是 root 自己那块直角卡片；
+            // floating 主题下 gravity 生效，居中交给窗口做
             w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
-            // 窗口铺满宽度，高度交给内容（列表自己封顶）
-            w.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.setGravity(Gravity.CENTER);
+            w.setLayout(dw2, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            WindowManager.LayoutParams attrs = w.getAttributes();
+            attrs.y = dp(39);
+            w.setAttributes(attrs);
         }
     }
 
@@ -6859,17 +6862,12 @@ public class MainActivity extends AppCompatActivity {
         int wpx = getResources().getDisplayMetrics().widthPixels;
         int hpx = getResources().getDisplayMetrics().heightPixels;
         int dw = (int) (wpx * 0.92f);
-        FrameLayout wrap1 = new FrameLayout(this);
-        FrameLayout.LayoutParams rlp1 = new FrameLayout.LayoutParams(
-                dw, FrameLayout.LayoutParams.WRAP_CONTENT);
-        rlp1.gravity = Gravity.CENTER;
-        rlp1.topMargin = dp(39);
-        wrap1.addView(root, rlp1);
-        d.setContentView(wrap1);
+        d.setContentView(root);
         d.show();
         Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
+            w.setGravity(Gravity.CENTER);
             // 高度跟内容走：字段就那么几项，固定 86% 屏高会在底部空出一大截。
             // 内容真超一屏时才封顶到 86%（body 不是 ScrollView，超了只能靠这个上限兜住）。
             root.measure(android.view.View.MeasureSpec.makeMeasureSpec(dw,
@@ -6879,9 +6877,10 @@ public class MainActivity extends AppCompatActivity {
             int contentH = root.getMeasuredHeight();
             // 只按内容高度走会太紧：按钮直接贴在弹窗底边，看着憋。留 22dp 呼吸，
             // 同时兜住 86% 屏高的上限（body 不是 ScrollView，超屏没法滚）。
-            // 高度要算上 topMargin 的 39dp，否则内容被顶下去后底部按钮会被裁
-            w.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                    Math.min(contentH + dp(22) + dp(39), (int) (hpx * 0.86f)));
+            w.setLayout(dw, Math.min(contentH + dp(22), (int) (hpx * 0.86f)));
+            WindowManager.LayoutParams attrs = w.getAttributes();
+            attrs.y = dp(39);
+            w.setAttributes(attrs);
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
     }

@@ -5916,16 +5916,27 @@ public class MainActivity extends AppCompatActivity {
         names.addView(name);
 
         TextView vendor = new TextView(this);
-        vendor.setText(settings.isConfigured()
-                ? shortHost(settings.baseUrl) + " · 选中后对下一条提问生效"
-                : "还没配 API Key，先去完整设置里填好");
+        // 设置入口只留这一处：未配置时这行文字本身就是可点的链接。
+        // 原来底部还有一条通栏「完整设置」主按钮，和侧滑栏里的「设置」重复，
+        // 且渐变实心比「添加模型」还重，两个都像主按钮，视觉打架。
+        boolean needSetup = !settings.isConfigured();
+        vendor.setText(needSetup
+                ? "还没配 API Key · 点这里去设置"
+                : shortHost(settings.baseUrl) + " · 选中后对下一条提问生效");
         vendor.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-        vendor.setTextColor(Palette.c(0xFF7F8C9F));
+        vendor.setTextColor(needSetup ? Palette.accent(this) : Palette.c(0xFF7F8C9F));
         vendor.setSingleLine(true);
         vendor.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         vlp.topMargin = dp(4);
+        if (needSetup) {
+            vendor.setPadding(0, dp(3), dp(8), dp(3));
+            vendor.setOnClickListener(v -> {
+                d.dismiss();
+                startActivityForResult(new Intent(MainActivity.this, SettingsActivity.class), 100);
+            });
+        }
         names.addView(vendor, vlp);
 
         TextView closeX = new TextView(this);
@@ -6015,21 +6026,8 @@ public class MainActivity extends AppCompatActivity {
         svlp.topMargin = dp(10);
         root.addView(sv, svlp);
 
-        // ---------- 底部：一条通栏主按钮，比摆两三个小胶囊利落 ----------
-        TextView settingsBtn = sheetPrimary("\u2699 完整设置 · 地址 / Key / 提示词");
-        settingsBtn.setOnClickListener(v -> {
-            d.dismiss();
-            startActivityForResult(new Intent(MainActivity.this, SettingsActivity.class), 100);
-        });
-        LinearLayout.LayoutParams seplp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
-        seplp.topMargin = dp(22);
-        listWrap.addView(sheetSeparator(), seplp);
-
-        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
-        flp.topMargin = dp(18);
-        listWrap.addView(settingsBtn, flp);
+        // 列表底部留一点呼吸，别贴着弹窗下沿
+        listWrap.setPadding(0, 0, 0, dp(18));
 
         rebuildModelList(composeModelList(lastServerModels), Settings.effectiveModel(settings),
                 settings.isConfigured() ? "正在拉取服务器模型列表…" : null);
@@ -6147,7 +6145,7 @@ public class MainActivity extends AppCompatActivity {
     private void fetchModelsForSheet() {
         // 之前这里直接 return，没配 Key 时点「刷新」毫无反应，被当成按钮坏了
         if (!settings.isConfigured()) {
-            Toast.makeText(this, "还没填 API Key · 点下面「完整设置」配好就能拉取",
+            Toast.makeText(this, "还没填 API Key · 点顶部那行提示去设置里配好",
                     Toast.LENGTH_LONG).show();
             return;
         }

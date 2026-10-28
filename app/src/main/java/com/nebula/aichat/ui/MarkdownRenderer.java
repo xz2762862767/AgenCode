@@ -802,7 +802,7 @@ public class MarkdownRenderer {
             chip.setPadding(dp(6), dp(1), dp(6), dp(1));
             android.graphics.drawable.GradientDrawable gd =
                     new android.graphics.drawable.GradientDrawable();
-            gd.setColor((colorAccent & 0x00FFFFFF) | 0x22000000);
+            gd.setColor((colorAccent & 0x00FFFFFF) | Palette.c(0x22000000));
             gd.setCornerRadius(0f);   // 与正文标记保持一致：直角
             chip.setBackground(gd);
             head.addView(chip);

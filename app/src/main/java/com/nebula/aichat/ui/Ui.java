@@ -88,13 +88,13 @@ public class Ui {
     public static android.graphics.drawable.Drawable primaryButton(Context c) {
         GradientDrawable fill = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xFF5C93FF, 0xFF3E78F2, 0xFF2A61DA});
+                new int[]{Palette.c(0xFF5C93FF), Palette.c(0xFF3E78F2), Palette.c(0xFF2A61DA)});
         fill.setCornerRadius(dp(c, 14));
 
         GradientDrawable stroke = new GradientDrawable();
         stroke.setColor(0);
         stroke.setCornerRadius(dp(c, 14));
-        stroke.setStroke(Math.max(1, dp(c, 1f)), 0x6689BAFF);
+        stroke.setStroke(Math.max(1, dp(c, 1f)), Palette.c(0x6689BAFF));
 
         return new android.graphics.drawable.LayerDrawable(
                 new android.graphics.drawable.Drawable[]{fill, stroke});
@@ -103,8 +103,8 @@ public class Ui {
     public static LinearLayout card(Context c) {
         LinearLayout box = new LinearLayout(c);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackground(roundRect(c, Palette.isLight(c) ? 0xFFFFFFFF : 0xFF161B24,
-                Palette.isLight(c) ? 0xFFE3E8F1 : 0xFF2A3240, 12f));
+        box.setBackground(roundRect(c, Palette.isLight(c) ? 0xFFFFFFFF : Palette.c(0xFF161B24),
+                Palette.isLight(c) ? Palette.c(0xFFE3E8F1) : Palette.c(0xFF2A3240), 12f));
         int p = dp(c, 12);
         box.setPadding(p, p, p, p);
         return box;
@@ -151,8 +151,8 @@ public class Ui {
 
     public static TextView primaryChip(Context c, String s, View.OnClickListener l) {
         return Palette.isLight(c)
-                ? chip(c, s, 0xFFDCE8FF, 0xFF2A61DA, l)
-                : chip(c, s, 0xFF1E3A6B, 0xFF9DC0FF, l);
+                ? chip(c, s, Palette.c(0xFFDCE8FF), Palette.c(0xFF2A61DA), l)
+                : chip(c, s, Palette.c(0xFF1E3A6B), Palette.c(0xFF9DC0FF), l);
     }
 
     /** 给背景加一层按下去的水波，按钮才有「点到了」的即时感 */
@@ -161,7 +161,7 @@ public class Ui {
         if (android.os.Build.VERSION.SDK_INT < 21) return base;
         try {
             return new android.graphics.drawable.RippleDrawable(
-                    android.content.res.ColorStateList.valueOf(0x40FFFFFF), base, null);
+                    android.content.res.ColorStateList.valueOf(Palette.c(0x40FFFFFF)), base, null);
         } catch (Throwable t) {
             return base;
         }
@@ -169,15 +169,15 @@ public class Ui {
 
     public static TextView ghostChip(Context c, String s, View.OnClickListener l) {
         return Palette.isLight(c)
-                ? chip(c, s, 0xFFEDF1F8, 0xFF3C4A5E, l)
-                : chip(c, s, 0xFF1E2530, 0xFFB9C5D6, l);
+                ? chip(c, s, Palette.c(0xFFEDF1F8), Palette.c(0xFF3C4A5E), l)
+                : chip(c, s, Palette.c(0xFF1E2530), Palette.c(0xFFB9C5D6), l);
     }
 
     /** 统一的小胶囊按钮（正文里折叠/操作的标记都用它，保证视觉一致） */
     public static TextView pill(Context c, String s) {
         TextView tv = text(c, s, 11f, Palette.accent(c));
         tv.setPadding(dp(c, 10), dp(c, 3), dp(c, 10), dp(c, 3));
-        tv.setBackground(roundRect(c, 0x1A5B93FF, 0x4D5B93FF, 9f));
+        tv.setBackground(roundRect(c, Palette.c(0x1A5B93FF), Palette.c(0x4D5B93FF), 9f));
         tv.setClickable(true);
         tv.setFocusable(true);
         return tv;
@@ -188,8 +188,8 @@ public class Ui {
         TextView tv = text(c, s, 11f, Palette.dim(c));
         tv.setPadding(dp(c, 10), dp(c, 3), dp(c, 10), dp(c, 3));
         tv.setBackground(Palette.isLight(c)
-                ? roundRect(c, 0x0F000000, 0xFFD8DFEA, 9f)
-                : roundRect(c, 0x14FFFFFF, 0x2E3A4C, 9f));
+                ? roundRect(c, Palette.c(0x0F000000), Palette.c(0xFFD8DFEA), 9f)
+                : roundRect(c, Palette.c(0x14FFFFFF), 0x2E3A4C, 9f));
         tv.setClickable(true);
         tv.setFocusable(true);
         return tv;
@@ -229,5 +229,42 @@ public class Ui {
         double mb = kb / 1024.0;
         if (mb < 1024) return String.format(java.util.Locale.CHINA, "%.1f MB", mb);
         return String.format(java.util.Locale.CHINA, "%.2f GB", mb / 1024.0);
+    }
+
+    // ===== 系统栏安全区 =====
+
+    /** 状态栏高度（px）：优先真实窗口 insets，取不到再回落到系统资源 */
+    public static int statusBarHeight(Context c) {
+        return insetSize(c, true);
+    }
+
+    /** 底部导航栏高度（px，手势导航时通常 > 0 但很矮） */
+    public static int navBarHeight(Context c) {
+        return insetSize(c, false);
+    }
+
+    private static int insetSize(Context c, boolean status) {
+        try {
+            if (c instanceof android.app.Activity) {
+                android.view.Window w = ((android.app.Activity) c).getWindow();
+                View dv = w == null ? null : w.getDecorView();
+                android.view.WindowInsets in = dv == null ? null : dv.getRootWindowInsets();
+                if (in != null) {
+                    int v = status ? in.getSystemWindowInsetTop() : in.getSystemWindowInsetBottom();
+                    if (v > 0) return v;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return resSize(c, status ? "status_bar_height" : "navigation_bar_height");
+    }
+
+    private static int resSize(Context c, String name) {
+        try {
+            int id = c.getResources().getIdentifier(name, "dimen", "android");
+            if (id > 0) return c.getResources().getDimensionPixelSize(id);
+        } catch (Throwable ignored) {
+        }
+        return 0;
     }
 }

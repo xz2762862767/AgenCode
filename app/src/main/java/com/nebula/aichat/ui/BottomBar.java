@@ -63,7 +63,7 @@ public class BottomBar {
             int ww = Ui.dp(act, 50), wh = Ui.dp(act, 30);
 
             View pill = new View(act);
-            pill.setBackground(Ui.roundRect(act, PILL_ON, 0, 15f));
+            pill.setBackground(Ui.roundRect(act, Palette.c(PILL_ON), 0, 15f));
             pill.setVisibility(View.INVISIBLE);
             FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(ww, wh);
             plp.gravity = Gravity.CENTER;
@@ -73,7 +73,7 @@ public class BottomBar {
             ImageView iv = new ImageView(act);
             iv.setImageResource(ICONS[i]);
             iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            iv.setColorFilter(COLOR_OFF);
+            iv.setColorFilter(Palette.c(COLOR_OFF));
             FrameLayout.LayoutParams ilp = new FrameLayout.LayoutParams(
                     Ui.dp(act, 24), Ui.dp(act, 24));
             ilp.gravity = Gravity.CENTER;
@@ -83,7 +83,7 @@ public class BottomBar {
             LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(ww, wh);
             item.addView(wrap, wlp);
 
-            TextView label = Ui.text(act, LABELS[i], 10.5f, COLOR_OFF);
+            TextView label = Ui.text(act, LABELS[i], 10.5f, Palette.c(COLOR_OFF));
             label.setGravity(Gravity.CENTER);
             label.setIncludeFontPadding(false);
             LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
@@ -118,7 +118,7 @@ public class BottomBar {
     private void apply() {
         for (int i = 0; i < ICONS.length; i++) {
             boolean on = i == selected;
-            int color = on ? COLOR_ON : COLOR_OFF;
+            int color = on ? Palette.c(COLOR_ON) : Palette.c(COLOR_OFF);
             icons[i].setColorFilter(color);
             icons[i].setAlpha(on ? 1f : 0.92f);
             labels[i].setTextColor(color);

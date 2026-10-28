@@ -31,8 +31,8 @@ public class AboutActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        Palette.apply(this);   // 主题必须在 setContentView 之前
         super.onCreate(savedInstanceState);
+        Palette.apply(this);   // 主题必须在 setContentView 之前
         setContentView(buildRoot());
     }
 

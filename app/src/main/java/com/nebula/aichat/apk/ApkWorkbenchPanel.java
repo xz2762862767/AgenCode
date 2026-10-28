@@ -93,7 +93,7 @@ public class ApkWorkbenchPanel {
         box.setPadding(p, p, p, Ui.dp(act, 12));
         sv.addView(box);
 
-        envView = Ui.text(act, envText(), 12f, 0xFF8A8F98);
+        envView = Ui.text(act, envText(), 12f, Palette.c(0xFF8A8F98));
         box.addView(envView);
         box.addView(Ui.spacer(act, 10));
 
@@ -152,7 +152,7 @@ public class ApkWorkbenchPanel {
         box.addView(Ui.spacer(act, 12));
 
         box.addView(Ui.sectionTitle(act, "运行日志"));
-        logView = Ui.text(act, "", 11.5f, 0xFF8A8F98);
+        logView = Ui.text(act, "", 11.5f, Palette.c(0xFF8A8F98));
         logView.setLineSpacing(Ui.dp(act, 2), 1.25f);
         logScroll = new ScrollView(act);
         logScroll.addView(logView);
@@ -689,14 +689,14 @@ public class ApkWorkbenchPanel {
         projBox.removeAllViews();
         final List<String> names = ApkWorkbench.listProjects(act);
         if (names.isEmpty()) {
-            projBox.addView(Ui.text(act, "还没有解包的工程", 12.5f, 0xFF8A8F98));
+            projBox.addView(Ui.text(act, "还没有解包的工程", 12.5f, Palette.c(0xFF8A8F98)));
             return;
         }
         for (int i = 0; i < names.size(); i++) {
             final String name = names.get(i);
             LinearLayout row = Ui.row(act);
             row.setPadding(0, Ui.dp(act, 6), 0, Ui.dp(act, 6));
-            row.addView(Ui.text(act, name, 13f, 0xFFFFFFFF), Ui.lpw(1f));
+            row.addView(Ui.text(act, name, 13f, Palette.c(0xFFFFFFFF)), Ui.lpw(1f));
             row.addView(Ui.ghostChip(act, "编译签名", new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {

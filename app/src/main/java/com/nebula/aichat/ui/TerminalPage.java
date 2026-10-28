@@ -193,7 +193,7 @@ public class TerminalPage {
         dot = new View(act);
         GradientDrawable dotBg = new GradientDrawable();
         dotBg.setShape(GradientDrawable.OVAL);
-        dotBg.setColor(C_OK);
+        dotBg.setColor(Palette.c(C_OK));
         dot.setBackground(dotBg);
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
                 Ui.dp(act, 8), Ui.dp(act, 8));
@@ -480,7 +480,7 @@ public class TerminalPage {
 
     /** 圆形运行按钮：空闲 = 强调色实心播放符，运行中 = 红色停止块 */
     private TextView runButton() {
-        final TextView tv = Ui.text(act, "▶", 13f, 0xFFFFFFFF);
+        final TextView tv = Ui.text(act, "▶", 13f, Palette.c(0xFFFFFFFF));
         tv.setGravity(Gravity.CENTER);
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
@@ -492,7 +492,7 @@ public class TerminalPage {
             public void onClick(View v) {
                 if (runner.isRunning()) {
                     runner.cancel();
-                    addLine("^C 已中断", C_ERR);
+                    addLine("^C 已中断", Palette.c(C_ERR));
                     decorateRunButton(false);
                 } else {
                     execute(input.getText().toString(), true);
@@ -508,7 +508,7 @@ public class TerminalPage {
         btnRun.setTextSize(busy ? 12f : 13f);
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(busy ? 0xFFE05A4F : cAccent);
+        bg.setColor(busy ? Palette.c(0xFFE05A4F) : cAccent);
         btnRun.setBackground(Ui.pressable(act, bg));
     }
 
@@ -650,13 +650,13 @@ public class TerminalPage {
         if (handleBuiltin(cmd)) return;
 
         if (runner.isRunning()) {
-            addLine("上一条命令仍在执行，先中断它", C_WARN);
+            addLine("上一条命令仍在执行，先中断它", Palette.c(C_WARN));
             return;
         }
 
         boolean remote = "remote".equals(settings.execMode);
         if (remote && settings.remoteExecUrl.trim().isEmpty()) {
-            addLine("远程地址未配置，已回退本地执行", C_WARN);
+            addLine("远程地址未配置，已回退本地执行", Palette.c(C_WARN));
             remote = false;
         }
 
@@ -680,17 +680,17 @@ public class TerminalPage {
                     @Override
                     public void run() {
                         if (error != null) {
-                            addLine("[执行失败] " + error, C_ERR);
-                            endLive("✕ 失败", C_ERR);
-                            setDot(C_ERR);
+                            addLine("[执行失败] " + error, Palette.c(C_ERR));
+                            endLive("✕ 失败", Palette.c(C_ERR));
+                            setDot(Palette.c(C_ERR));
                         } else if (code != 0) {
-                            addLine("[退出码 " + code + "]", C_ERR);
-                            endLive("✕ 退出码 " + code, C_ERR);
-                            setDot(C_ERR);
+                            addLine("[退出码 " + code + "]", Palette.c(C_ERR));
+                            endLive("✕ 退出码 " + code, Palette.c(C_ERR));
+                            setDot(Palette.c(C_ERR));
                         } else {
-                            addLine("✓ 命令结束", C_OK);
-                            endLive("✓ 完成", C_OK);
-                            setDot(C_OK);
+                            addLine("✓ 命令结束", Palette.c(C_OK));
+                            endLive("✓ 完成", Palette.c(C_OK));
+                            setDot(Palette.c(C_OK));
                         }
                         decorateRunButton(false);
                     }
@@ -754,12 +754,12 @@ public class TerminalPage {
         } catch (Exception ignored) {
         }
         if (!target.isDirectory()) {
-            addLine("cd: 目录不存在 " + target.getAbsolutePath(), C_ERR);
+            addLine("cd: 目录不存在 " + target.getAbsolutePath(), Palette.c(C_ERR));
             return;
         }
         String path = target.getAbsolutePath();
         if (!path.startsWith(home.getAbsolutePath())) {
-            addLine("提示：已离开工作区 " + pretty(home.getAbsolutePath()) + "，可能受系统权限限制", C_WARN);
+            addLine("提示：已离开工作区 " + pretty(home.getAbsolutePath()) + "，可能受系统权限限制", Palette.c(C_WARN));
         }
         cwd = path;
         refreshHeader();
@@ -792,7 +792,7 @@ public class TerminalPage {
     private void startLive(String what) {
         running = true;
         startAt = SystemClock.uptimeMillis();
-        setDot(C_WARN);
+        setDot(Palette.c(C_WARN));
         startScan();
         if (tvTimer != null) tvTimer.setTextColor(Palette.c(C_WARN));
         if (tick != null) ui.removeCallbacks(tick);
@@ -1034,7 +1034,7 @@ public class TerminalPage {
                 addCmdLine("❯ " + cmd);
                 startLive("AI 执行中");
                 decorateRunButton(true);
-                setDot(C_AI);
+                setDot(Palette.c(C_AI));
             }
         });
     }
@@ -1055,13 +1055,13 @@ public class TerminalPage {
             @Override
             public void run() {
                 if (code == 0) {
-                    addLine("✓ 执行完成", C_OK);
-                    endLive("✓ 完成", C_OK);
-                    setDot(C_OK);
+                    addLine("✓ 执行完成", Palette.c(C_OK));
+                    endLive("✓ 完成", Palette.c(C_OK));
+                    setDot(Palette.c(C_OK));
                 } else {
-                    addLine("[退出码 " + code + "]", C_ERR);
-                    endLive("✕ 退出码 " + code, C_ERR);
-                    setDot(C_ERR);
+                    addLine("[退出码 " + code + "]", Palette.c(C_ERR));
+                    endLive("✕ 退出码 " + code, Palette.c(C_ERR));
+                    setDot(Palette.c(C_ERR));
                 }
                 decorateRunButton(false);
             }

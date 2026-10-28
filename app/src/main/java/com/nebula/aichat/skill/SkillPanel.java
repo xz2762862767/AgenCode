@@ -97,9 +97,9 @@ public class SkillPanel {
         final int gen = ++fillGen;
         box.removeAllViews();
         box.addView(Ui.text(act, "技能是工作区 skills/ 下的 SKILL.md。启用的技能会追加到系统提示词，"
-                + "让模型按固定流程回答。可以从文件、压缩包或内置库导入。", 11.5f, 0xFF8B97A9));
+                + "让模型按固定流程回答。可以从文件、压缩包或内置库导入。", 11.5f, Palette.c(0xFF8B97A9)));
         box.addView(Ui.spacer(act, 10));
-        box.addView(Ui.text(act, "正在读取技能…", 12f, 0xFF8B97A9));
+        box.addView(Ui.text(act, "正在读取技能…", 12f, Palette.c(0xFF8B97A9)));
 
         // 读盘、解析、统计附件数全部挪到后台：以前这些都压在点击那一下的主线程上，
         // 技能一多点点按钮就要卡住几百毫秒
@@ -128,7 +128,7 @@ public class SkillPanel {
                         if (gen != fillGen || box == null) return;
                         if (fl == null) {
                             box.removeAllViews();
-                            box.addView(Ui.text(act, "读取技能失败：" + ferr, 12f, 0xFFFF8A80));
+                            box.addView(Ui.text(act, "读取技能失败：" + ferr, 12f, Palette.c(0xFFFF8A80)));
                             return;
                         }
                         render(fl, fe);
@@ -140,8 +140,8 @@ public class SkillPanel {
 
     private void applyToggle(TextView toggle, boolean on) {
         toggle.setText(on ? "已启用" : "启用");
-        toggle.setTextColor(on ? 0xFF7CD98F : 0xFF8B97A9);
-        toggle.setBackground(Ui.roundRect(act, on ? 0xFF16281C : 0xFF1A1D22, 0, 10f));
+        toggle.setTextColor(on ? Palette.c(0xFF7CD98F) : Palette.c(0xFF8B97A9));
+        toggle.setBackground(Ui.roundRect(act, on ? Palette.c(0xFF16281C) : Palette.c(0xFF1A1D22), 0, 10f));
     }
 
     /** 只刷新统计文本，不重建整个列表 */
@@ -157,7 +157,7 @@ public class SkillPanel {
         currentList = list;
         currentExtras = extras;
         box.addView(Ui.text(act, "技能是工作区 skills/ 下的 SKILL.md。启用的技能会追加到系统提示词，"
-                + "让模型按固定流程回答。可以从文件、压缩包或内置库导入。", 11.5f, 0xFF8B97A9));
+                + "让模型按固定流程回答。可以从文件、压缩包或内置库导入。", 11.5f, Palette.c(0xFF8B97A9)));
         box.addView(Ui.spacer(act, 10));
 
         int enabled = 0;
@@ -165,7 +165,7 @@ public class SkillPanel {
 
         // 统计 + 操作条
         LinearLayout bar = Ui.row(act);
-        statView = Ui.text(act, "共 " + list.size() + " 个 · 已启用 " + enabled, 11.5f, 0xFF8B97A9);
+        statView = Ui.text(act, "共 " + list.size() + " 个 · 已启用 " + enabled, 11.5f, Palette.c(0xFF8B97A9));
         bar.addView(statView);
         View spring = new View(act);
         bar.addView(spring, new LinearLayout.LayoutParams(0, 1, 1f));
@@ -205,9 +205,9 @@ public class SkillPanel {
 
         if (list.isEmpty()) {
             LinearLayout empty = Ui.card(act);
-            empty.addView(Ui.text(act, "还没有技能", 13f, 0xFFE8EDF6));
+            empty.addView(Ui.text(act, "还没有技能", 13f, Palette.c(0xFFE8EDF6)));
             empty.addView(Ui.text(act, "点上面「＋ 新建」自己写，或「⬇ 导入」从文件/内置库加进来",
-                    11f, 0xFF8B97A9));
+                    11f, Palette.c(0xFF8B97A9)));
             box.addView(empty);
             return;
         }
@@ -222,14 +222,14 @@ public class SkillPanel {
             card.setLayoutParams(clp);
 
             LinearLayout titleRow = Ui.row(act);
-            TextView name = Ui.text(act, s.name, 14f, 0xFFE8EDF6);
+            TextView name = Ui.text(act, s.name, 14f, Palette.c(0xFFE8EDF6));
             name.setTypeface(Typeface.DEFAULT_BOLD);
             name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
             titleRow.addView(name, new LinearLayout.LayoutParams(0,
                     LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-            final TextView toggle = Ui.text(act, "", 11f, 0xFF8B97A9);
+            final TextView toggle = Ui.text(act, "", 11f, Palette.c(0xFF8B97A9));
             applyToggle(toggle, s.enabled);
             toggle.setPadding(Ui.dp(act, 8), Ui.dp(act, 4), Ui.dp(act, 8), Ui.dp(act, 4));
             toggle.setOnClickListener(new View.OnClickListener() {
@@ -246,25 +246,25 @@ public class SkillPanel {
             card.addView(titleRow);
 
             if (s.description != null && !s.description.isEmpty()) {
-                TextView d = Ui.text(act, s.description, 11f, 0xFF8B97A9);
+                TextView d = Ui.text(act, s.description, 11f, Palette.c(0xFF8B97A9));
                 d.setPadding(0, Ui.dp(act, 4), 0, Ui.dp(act, 8));
                 card.addView(d);
             }
             int extra = extras != null && i < extras.length ? extras[i] : 0;
             card.addView(Ui.text(act, "目录：" + s.id + " · 正文 " + s.body.length() + " 字"
-                    + (extra > 0 ? " · 附带 " + extra + " 个文件" : ""), 10.5f, 0xFF5A6577));
+                    + (extra > 0 ? " · 附带 " + extra + " 个文件" : ""), 10.5f, Palette.c(0xFF5A6577)));
 
             // 操作按钮（等宽两行，避免挤压）
             LinearLayout actions = Ui.row(act);
             actions.setPadding(0, Ui.dp(act, 8), 0, 0);
-            actions.addView(Ui.chip(act, "编辑", 0xFF1E3A6B, 0xFF9DC0FF, new View.OnClickListener() {
+            actions.addView(Ui.chip(act, "编辑", Palette.c(0xFF1E3A6B), Palette.c(0xFF9DC0FF), new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     editDialog(s);
                 }
             }));
             actions.addView(gap(act, 6));
-            actions.addView(Ui.chip(act, "复制", 0xFF1A1D22, 0xFFC8D3E5, new View.OnClickListener() {
+            actions.addView(Ui.chip(act, "复制", Palette.c(0xFF1A1D22), Palette.c(0xFFC8D3E5), new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     copy(SkillImport.exportText(s));
@@ -272,7 +272,7 @@ public class SkillPanel {
                 }
             }));
             actions.addView(gap(act, 6));
-            actions.addView(Ui.chip(act, "删除", 0xFF3A1E1E, 0xFFFF8A80, new View.OnClickListener() {
+            actions.addView(Ui.chip(act, "删除", Palette.c(0xFF3A1E1E), Palette.c(0xFFFF8A80), new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     confirmDelete(s);
@@ -377,8 +377,8 @@ public class SkillPanel {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = Ui.dp(act, 8);
         card.setLayoutParams(lp);
-        card.addView(Ui.text(act, title, 13.5f, 0xFFE8EDF6));
-        TextView s = Ui.text(act, sub, 11f, 0xFF8B97A9);
+        card.addView(Ui.text(act, title, 13.5f, Palette.c(0xFFE8EDF6)));
+        TextView s = Ui.text(act, sub, 11f, Palette.c(0xFF8B97A9));
         s.setPadding(0, Ui.dp(act, 3), 0, 0);
         card.addView(s);
         card.setOnClickListener(l);
@@ -466,9 +466,9 @@ public class SkillPanel {
             etBody.setSelection(etBody.getText().length());
         }
 
-        form.addView(Ui.text(act, "名称", 11f, 0xFF8B97A9));
+        form.addView(Ui.text(act, "名称", 11f, Palette.c(0xFF8B97A9)));
         form.addView(etName);
-        form.addView(Ui.text(act, "内容", 11f, 0xFF8B97A9));
+        form.addView(Ui.text(act, "内容", 11f, Palette.c(0xFF8B97A9)));
         ScrollView sv = new ScrollView(act);
         sv.addView(etBody);
         form.addView(sv, new LinearLayout.LayoutParams(
@@ -617,9 +617,9 @@ public class SkillPanel {
 
         final EditText etName = field("显示名称，如 技术选型对比", "我的技能");
         final EditText etDesc = field("什么时候用它（一句话）", "");
-        form.addView(Ui.text(act, "名称", 11f, 0xFF8B97A9));
+        form.addView(Ui.text(act, "名称", 11f, Palette.c(0xFF8B97A9)));
         form.addView(etName);
-        form.addView(Ui.text(act, "何时使用", 11f, 0xFF8B97A9));
+        form.addView(Ui.text(act, "何时使用", 11f, Palette.c(0xFF8B97A9)));
         form.addView(etDesc);
 
         new AlertDialog.Builder(act)
@@ -665,7 +665,7 @@ public class SkillPanel {
             return;
         }
         ScrollView sv = new ScrollView(act);
-        TextView tv = Ui.text(act, inject, 11.5f, 0xFFC8D3E5);
+        TextView tv = Ui.text(act, inject, 11.5f, Palette.c(0xFFC8D3E5));
         tv.setTextIsSelectable(true);
         tv.setTypeface(Typeface.MONOSPACE);
         int p = Ui.dp(act, 14);

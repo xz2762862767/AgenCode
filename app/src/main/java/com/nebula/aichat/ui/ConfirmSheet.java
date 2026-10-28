@@ -261,7 +261,7 @@ public class ConfirmSheet {
 
         LinearLayout root = new LinearLayout(act);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(Ui.roundRect(act, CARD, CARD_STROKE, 18f));
+        root.setBackground(Ui.roundRect(act, Palette.c(CARD), Palette.c(CARD_STROKE), 18f));
         int p = dp(act, 16);
         root.setPadding(p, dp(act, 14), p, dp(act, 12));
 
@@ -282,7 +282,7 @@ public class ConfirmSheet {
         count.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         count.setTextColor(Palette.c(ACCENT));
         count.setPadding(dp(act, 7), dp(act, 2), dp(act, 7), dp(act, 2));
-        count.setBackground(Ui.roundRect(act, 0x225B93FF, 0x4D5B93FF, 8f));
+        count.setBackground(Ui.roundRect(act, Palette.c(0x225B93FF), Palette.c(0x4D5B93FF), 8f));
         LinearLayout.LayoutParams countLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         countLp.leftMargin = dp(act, 8);
@@ -345,7 +345,7 @@ public class ConfirmSheet {
         cancel.setTextColor(Palette.c(DIM));
         cancel.setGravity(Gravity.CENTER);
         cancel.setPadding(dp(act, 16), dp(act, 9), dp(act, 16), dp(act, 9));
-        cancel.setBackground(Ui.roundRect(act, 0x00000000, 0xFF2A3A4D, 12f));
+        cancel.setBackground(Ui.roundRect(act, 0x00000000, Palette.c(0xFF2A3A4D), 12f));
         cancel.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -361,7 +361,7 @@ public class ConfirmSheet {
         ok.setTextColor(Palette.c(0xFFFFFFFF));
         ok.setGravity(Gravity.CENTER);
         ok.setPadding(dp(act, 20), dp(act, 10), dp(act, 20), dp(act, 10));
-        ok.setBackground(Ui.roundRect(act, ACCENT, 0x00000000, 12f));
+        ok.setBackground(Ui.roundRect(act, Palette.c(ACCENT), 0x00000000, 12f));
         LinearLayout.LayoutParams okLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         okLp.leftMargin = dp(act, 10);
@@ -419,7 +419,7 @@ public class ConfirmSheet {
     private static View buildItem(final Activity act, final Item it, int index) {
         LinearLayout box = new LinearLayout(act);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackground(Ui.roundRect(act, ITEM_FILL, ITEM_STROKE, 13f));
+        box.setBackground(Ui.roundRect(act, Palette.c(ITEM_FILL), Palette.c(ITEM_STROKE), 13f));
         int ip = dp(act, 12);
         box.setPadding(ip, dp(act, 10), ip, dp(act, 11));
 
@@ -436,28 +436,28 @@ public class ConfirmSheet {
         no.setGravity(Gravity.CENTER);
         no.setWidth(dp(act, 17));
         no.setHeight(dp(act, 17));
-        no.setBackground(Ui.roundRect(act, 0x225B93FF, 0x4D5B93FF, 6f));
+        no.setBackground(Ui.roundRect(act, Palette.c(0x225B93FF), Palette.c(0x4D5B93FF), 6f));
         head.addView(no);
 
         String modeText;
         int modeColor;
         if (it.isText()) {
             modeText = "填空";
-            modeColor = WARN;
+            modeColor = Palette.c(WARN);
         } else if (it.isMulti()) {
             modeText = "多选";
-            modeColor = OK;
+            modeColor = Palette.c(OK);
         } else {
             modeText = "单选";
-            modeColor = ACCENT;
+            modeColor = Palette.c(ACCENT);
         }
         TextView mode = new TextView(act);
         mode.setText(modeText);
         mode.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
         mode.setTextColor(modeColor);
         mode.setPadding(dp(act, 6), dp(act, 1), dp(act, 6), dp(act, 1));
-        mode.setBackground(Ui.roundRect(act, (modeColor & 0x00FFFFFF) | 0x22000000,
-                (modeColor & 0x00FFFFFF) | 0x55000000, 5f));
+        mode.setBackground(Ui.roundRect(act, (modeColor & 0x00FFFFFF) | Palette.c(0x22000000),
+                (modeColor & 0x00FFFFFF) | Palette.c(0x55000000), 5f));
         LinearLayout.LayoutParams modeLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         modeLp.leftMargin = dp(act, 7);
@@ -484,7 +484,7 @@ public class ConfirmSheet {
             et.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             et.setTextColor(Palette.c(TEXT));
             et.setTypeface(Typeface.MONOSPACE);
-            et.setBackground(Ui.roundRect(act, FIELD, 0xFF26364D, 10f));
+            et.setBackground(Ui.roundRect(act, Palette.c(FIELD), Palette.c(0xFF26364D), 10f));
             int ep = dp(act, 10);
             et.setPadding(ep, dp(act, 8), ep, dp(act, 8));
             et.setSingleLine(false);
@@ -574,19 +574,19 @@ public class ConfirmSheet {
         d.setShape(multi ? GradientDrawable.RECTANGLE : GradientDrawable.OVAL);
         d.setCornerRadius(dp(dot.getContext(), multi ? 4 : 0));
         if (checked) {
-            d.setColor(ACCENT);
-            d.setStroke(dp(dot.getContext(), 1.5f), ACCENT);
+            d.setColor(Palette.c(ACCENT));
+            d.setStroke(dp(dot.getContext(), 1.5f), Palette.c(ACCENT));
         } else {
             d.setColor(Palette.c(0x00000000));
-            d.setStroke(dp(dot.getContext(), 1.5f), 0xFF3A4A61);
+            d.setStroke(dp(dot.getContext(), 1.5f), Palette.c(0xFF3A4A61));
         }
         dot.setBackground(d);
-        label.setTextColor(checked ? 0xFFE9F0FF : 0xFFC9D6E8);
+        label.setTextColor(checked ? Palette.c(0xFFE9F0FF) : Palette.c(0xFFC9D6E8));
         // 整行底色淡染，选中更明显
         View row = (View) label.getParent();
         if (row != null) {
             row.setBackground(checked
-                    ? Ui.roundRect(row.getContext(), 0x225B93FF, 0x4D5B93FF, 10f)
+                    ? Ui.roundRect(row.getContext(), Palette.c(0x225B93FF), Palette.c(0x4D5B93FF), 10f)
                     : Ui.roundRect(row.getContext(), 0x00000000, 0x00000000, 10f));
         }
     }

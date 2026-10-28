@@ -34,8 +34,8 @@ public class DiagActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        Palette.apply(this);
         super.onCreate(savedInstanceState);
+        Palette.apply(this);
         setContentView(R.layout.activity_diag);
         content = findViewById(R.id.contentList);
 
@@ -297,7 +297,7 @@ public class DiagActivity extends AppCompatActivity {
         t.setGravity(Gravity.CENTER);
         t.setTextSize(12.5f);
         t.setBackgroundResource(primary ? R.drawable.btn_primary : R.drawable.btn_ghost);
-        t.setTextColor(primary ? 0xFFFFFFFF : Palette.text(this));
+        t.setTextColor(primary ? Palette.c(0xFFFFFFFF) : Palette.text(this));
         return t;
     }
 

@@ -324,7 +324,7 @@ public class SandboxPage {
         renderCrumbs(dir);
         listBox.removeAllViews();
         showStats(-1, -1, null);
-        TextView loading = Ui.text(act, "读取中…", 13f, 0xFF8B97A9);
+        TextView loading = Ui.text(act, "读取中…", 13f, Palette.c(0xFF8B97A9));
         loading.setGravity(Gravity.CENTER);
         loading.setPadding(0, Ui.dp(act, 40), 0, 0);
         listBox.addView(loading);
@@ -362,10 +362,10 @@ public class SandboxPage {
     private void render(File[] files, java.util.Map<String, Integer> counts, long[] size) {
         if (files == null) {
             listBox.removeAllViews();
-            listBox.addView(emptyState("🔒", "无法读取该目录", "可能是系统权限限制，换个位置再试", 0xFFFF8A80));
+            listBox.addView(emptyState("🔒", "无法读取该目录", "可能是系统权限限制，换个位置再试", Palette.c(0xFFFF8A80)));
             if (statBox != null) {
                 statBox.removeAllViews();
-                statBox.addView(infoPill("不可读", 0xFFFF8A80));
+                statBox.addView(infoPill("不可读", Palette.c(0xFFFF8A80)));
             }
             return;
         }
@@ -512,13 +512,13 @@ public class SandboxPage {
     private int tintOf(int kind) {
         switch (kind) {
             case FileGlyph.DIR:     return Palette.accent(act);
-            case FileGlyph.CODE:    return 0xFF5AD8F0;
-            case FileGlyph.TEXT:    return 0xFF8FB4FF;
-            case FileGlyph.IMAGE:   return 0xFFB388FF;
-            case FileGlyph.MEDIA:   return 0xFFFF8AB0;
-            case FileGlyph.ARCHIVE: return 0xFFFFD166;
-            case FileGlyph.APK:     return 0xFFFFA85C;
-            case FileGlyph.DOC:     return 0xFFFF7B72;
+            case FileGlyph.CODE:    return Palette.c(0xFF5AD8F0);
+            case FileGlyph.TEXT:    return Palette.c(0xFF8FB4FF);
+            case FileGlyph.IMAGE:   return Palette.c(0xFFB388FF);
+            case FileGlyph.MEDIA:   return Palette.c(0xFFFF8AB0);
+            case FileGlyph.ARCHIVE: return Palette.c(0xFFFFD166);
+            case FileGlyph.APK:     return Palette.c(0xFFFFA85C);
+            case FileGlyph.DOC:     return Palette.c(0xFFFF7B72);
             default:                return Palette.dim(act);
         }
     }

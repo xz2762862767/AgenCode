@@ -152,13 +152,13 @@ public class EnvPage {
         LinearLayout linuxCard = Ui.card(act);
         boolean alpineReady = linux.isInstalled();
         sizeTv = Ui.text(act, linuxTitle(linux, alpineReady), 13.5f,
-                alpineReady ? 0xFF7FE3A1 : 0xFFFFB74D);
+                alpineReady ? Palette.c(0xFF7FE3A1) : Palette.c(0xFFFFB74D));
         TextView lTitle = sizeTv;
         linuxCard.addView(lTitle);
         TextView lDesc = Ui.text(act, alpineReady
                 ? "终端可执行 apk add 安装真实软件包：python3 / nodejs / gcc / git / vim"
                 : "在 App 内运行真正的 Alpine Linux，支持 apk add 安装软件，无需 Root。内置资产约 4 MB。",
-                11.5f, 0xFF8B97A9);
+                11.5f, Palette.c(0xFF8B97A9));
         lDesc.setLineSpacing(Ui.dp(act, 2f), 1f);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -205,7 +205,7 @@ public class EnvPage {
         boolean remote = "remote".equals(settings.execMode);
         boolean alpineMode = "alpine".equals(settings.execMode);
         modeCard.addView(Ui.text(act, alpineMode ? "内置 Alpine Linux"
-                : (remote ? "远程执行" : "本地执行（手机 shell）"), 13.5f, 0xFFE8EDF6));
+                : (remote ? "远程执行" : "本地执行（手机 shell）"), 13.5f, Palette.c(0xFFE8EDF6)));
         String url = settings.remoteExecUrl == null ? "" : settings.remoteExecUrl.trim();
         modeCard.addView(Ui.text(act, alpineMode
                         ? (linux.isInstalled() ? "proot + " + linux.versionText() + " · /root"
@@ -214,17 +214,17 @@ public class EnvPage {
                         ? (url.isEmpty() ? "⚠ 未配置地址，将回退本地" : url)
                         : "shell: " + com.nebula.aichat.shell.ShellRunner.shellPath()), 11.5f,
                 (remote && !alpineMode && url.isEmpty()) || (alpineMode && !linux.isInstalled())
-                        ? 0xFFFFB74D : 0xFF8B97A9));
+                        ? Palette.c(0xFFFFB74D) : Palette.c(0xFF8B97A9)));
         box.addView(modeCard);
 
         // ---- 工具链（探测的是内置 Linux，Android 系统本身不含 java/gcc/python3）
         box.addView(Ui.sectionTitle(act, "工具链探测"));
         LinearLayout toolCard = Ui.card(act);
-        probeSum = Ui.text(act, "正在探测内置 Linux 环境…", 12f, 0xFF5B93FF);
+        probeSum = Ui.text(act, "正在探测内置 Linux 环境…", 12f, Palette.c(0xFF5B93FF));
         toolCard.addView(probeSum);
 
-        tcBanner = Ui.text(act, "", 11.5f, 0xFFFFD180);
-        tcBanner.setBackground(Ui.roundRect(act, 0xFF2A2218, 0, 8f));
+        tcBanner = Ui.text(act, "", 11.5f, Palette.c(0xFFFFD180));
+        tcBanner.setBackground(Ui.roundRect(act, Palette.c(0xFF2A2218), 0, 8f));
         tcBanner.setPadding(Ui.dp(act, 10), Ui.dp(act, 8), Ui.dp(act, 10), Ui.dp(act, 8));
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -270,7 +270,7 @@ public class EnvPage {
         TextView tcHint = Ui.text(act,
                 "基础 ≈15MB（zip/curl/git/sqlite/xxd/xz…）；只装 Java 运行时 ≈60MB，内置 jadx/apktool/baksmali/smali 靠它才能跑；"
                         + "全部 ≈245MB（再加 python3、node、gcc）。内置 aapt2 与逆向 jar 随包附带，零流量。安装时请保持前台、别锁屏。",
-                11f, 0xFF7A8494);
+                11f, Palette.c(0xFF7A8494));
         tcHint.setPadding(0, Ui.dp(act, 6), 0, 0);
         toolCard.addView(tcHint);
         box.addView(toolCard);
@@ -311,7 +311,7 @@ public class EnvPage {
         LinearLayout envCard = Ui.card(act);
         Map<String, String> env = new TreeMap<>(System.getenv());
         if (env.isEmpty()) {
-            envCard.addView(Ui.text(act, "（无）", 12f, 0xFF8B97A9));
+            envCard.addView(Ui.text(act, "（无）", 12f, Palette.c(0xFF8B97A9)));
         } else {
             for (Map.Entry<String, String> e : env.entrySet()) {
                 envCard.addView(kv(e.getKey(), e.getValue()));
@@ -324,7 +324,7 @@ public class EnvPage {
 
     private LinearLayout entryRow(String icon, String title, String desc, View.OnClickListener l) {
         LinearLayout row = Ui.row(act);
-        row.setBackground(Ui.roundRect(act, 0xFF161B24, 0, 12f));
+        row.setBackground(Ui.roundRect(act, Palette.c(0xFF161B24), 0, 12f));
         int p = Ui.dp(act, 12);
         row.setPadding(p, p, p, p);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -332,17 +332,17 @@ public class EnvPage {
         lp.bottomMargin = Ui.dp(act, 7);
         row.setLayoutParams(lp);
 
-        row.addView(Ui.text(act, icon, 17f, 0xFFFFFFFF));
+        row.addView(Ui.text(act, icon, 17f, Palette.c(0xFFFFFFFF)));
         LinearLayout mid = Ui.col(act);
         LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         mp.leftMargin = Ui.dp(act, 10);
-        TextView t = Ui.text(act, title, 13.5f, 0xFFE8EDF6);
+        TextView t = Ui.text(act, title, 13.5f, Palette.c(0xFFE8EDF6));
         t.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         mid.addView(t);
-        mid.addView(Ui.text(act, desc, 11f, 0xFF8B97A9));
+        mid.addView(Ui.text(act, desc, 11f, Palette.c(0xFF8B97A9)));
         row.addView(mid, mp);
-        row.addView(Ui.text(act, "›", 18f, 0xFF5A6577));
+        row.addView(Ui.text(act, "›", 18f, Palette.c(0xFF5A6577)));
         row.setOnClickListener(l);
         return row;
     }
@@ -350,11 +350,11 @@ public class EnvPage {
     private LinearLayout kv(String k, String v) {
         LinearLayout row = Ui.row(act);
         row.setPadding(0, Ui.dp(act, 3), 0, Ui.dp(act, 3));
-        TextView key = Ui.text(act, k, 11.5f, 0xFF8B97A9);
+        TextView key = Ui.text(act, k, 11.5f, Palette.c(0xFF8B97A9));
         key.setSingleLine(true);
         LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 0.42f);
-        TextView val = Ui.text(act, v == null ? "" : v, 11.5f, 0xFFC8D3E5);
+        TextView val = Ui.text(act, v == null ? "" : v, 11.5f, Palette.c(0xFFC8D3E5));
         val.setSingleLine(true);
         val.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
         row.addView(key, kp);
@@ -404,8 +404,8 @@ public class EnvPage {
                 probeBox.addView(line);
             }
             TextView chip = Ui.text(act, (yes ? "✓ " : "✗ ") + c, 11.5f,
-                    yes ? 0xFF7CD98F : 0xFF5A6577);
-            chip.setBackground(Ui.roundRect(act, yes ? 0xFF16281C : 0xFF1A1D22, 0, 8f));
+                    yes ? Palette.c(0xFF7CD98F) : Palette.c(0xFF5A6577));
+            chip.setBackground(Ui.roundRect(act, yes ? Palette.c(0xFF16281C) : Palette.c(0xFF1A1D22), 0, 8f));
             chip.setPadding(Ui.dp(act, 8), Ui.dp(act, 5), Ui.dp(act, 8), Ui.dp(act, 5));
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -439,7 +439,7 @@ public class EnvPage {
             Toast.makeText(act, "正在安装中，看下面的进度条就行", Toast.LENGTH_SHORT).show();
             return;
         }
-        final TextView logView = Ui.text(act, "开始…\n", 11f, 0xFFB9C2CE);
+        final TextView logView = Ui.text(act, "开始…\n", 11f, Palette.c(0xFFB9C2CE));
         logView.setPadding(Ui.dp(act, 12), Ui.dp(act, 10), Ui.dp(act, 12), Ui.dp(act, 10));
         ScrollView sv = new ScrollView(act);
         sv.addView(logView);
@@ -593,7 +593,7 @@ public class EnvPage {
 
     public static void showInfo(Activity act, String title, String content) {
         ScrollView sv = new ScrollView(act);
-        TextView tv = Ui.text(act, content, 12f, 0xFFC8D3E5);
+        TextView tv = Ui.text(act, content, 12f, Palette.c(0xFFC8D3E5));
         tv.setTextIsSelectable(true);
         int p = Ui.dp(act, 14);
         tv.setPadding(p, p, p, p);

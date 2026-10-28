@@ -11,6 +11,7 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import com.nebula.aichat.ui.Ui;
+import com.nebula.aichat.ui.Palette;
 
 /**
  * 内置 Linux 环境安装/重置对话框。
@@ -67,7 +68,7 @@ public final class InstallDialog {
 
     public static void showLog(final Activity act, final LinuxEnv env) {
         android.widget.ScrollView sv = new android.widget.ScrollView(act);
-        TextView tv = Ui.text(act, env.logText(), 10.5f, 0xFFAEB9C9);
+        TextView tv = Ui.text(act, env.logText(), 10.5f, Palette.c(0xFFAEB9C9));
         tv.setTypeface(Typeface.MONOSPACE);
         int p2 = Ui.dp(act, 14);
         tv.setPadding(p2, p2, p2, p2);
@@ -111,7 +112,7 @@ public final class InstallDialog {
                 + "· 装好后可执行 apk add 安装软件：\n"
                 + "  python3 / nodejs / gcc / git / vim …\n"
                 + "· 文件可通过 /exchange 与沙箱互通\n"
-                + "· 不修改系统，卸载 App 即清除", 12.5f, 0xFF9AA7BA);
+                + "· 不修改系统，卸载 App 即清除", 12.5f, Palette.c(0xFF9AA7BA));
         desc.setLineSpacing(Ui.dp(act, 3f), 1f);
         box.addView(desc);
 
@@ -124,7 +125,7 @@ public final class InstallDialog {
         box.addView(bar, bp);
 
         final TextView status = Ui.text(act, env.isInstalled() ? "环境已就绪" : "点击「立即安装」开始", 11.5f,
-                0xFF8B97A9);
+                Palette.c(0xFF8B97A9));
         status.setTypeface(Typeface.MONOSPACE);
         status.setSingleLine(true);
         status.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);

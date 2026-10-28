@@ -184,9 +184,9 @@ public class ComposerBar {
     }
 
     private void style(TextView tv, boolean on) {
-        tv.setBackground(Ui.roundRect(act, on ? C_ON_FILL : C_OFF_FILL,
-                on ? C_ON_STROKE : C_OFF_STROKE, 15f));
-        tv.setTextColor(on ? C_ON_TEXT : C_OFF_TEXT);
+        tv.setBackground(Ui.roundRect(act, on ? Palette.c(C_ON_FILL) : Palette.c(C_OFF_FILL),
+                on ? Palette.c(C_ON_STROKE) : Palette.c(C_OFF_STROKE), 15f));
+        tv.setTextColor(on ? Palette.c(C_ON_TEXT) : Palette.c(C_OFF_TEXT));
         tv.setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
     }
 
@@ -302,7 +302,7 @@ public class ComposerBar {
         tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11.5f);
         tv.setIncludeFontPadding(false);
         tv.setTextColor(Palette.c(0xFF9DC0FF));
-        tv.setBackground(Ui.roundRect(act, 0xFF171E2A, 0xFF2F3B4D, 10f));
+        tv.setBackground(Ui.roundRect(act, Palette.c(0xFF171E2A), Palette.c(0xFF2F3B4D), 10f));
         int hx = Ui.dp(act, 9);
         int hy = Ui.dp(act, 4);
         tv.setPadding(hx, hy, hx, hy);

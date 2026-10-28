@@ -57,8 +57,8 @@ public class SettingsActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        com.nebula.aichat.ui.Palette.apply(this);   // 主题/强调色必须在 setContentView 之前
         super.onCreate(savedInstanceState);
+        com.nebula.aichat.ui.Palette.apply(this);   // 主题/强调色必须在 setContentView 之前
         setContentView(R.layout.activity_settings);
 
         settings = Settings.load(this);
@@ -262,7 +262,7 @@ public class SettingsActivity extends AppCompatActivity {
             GradientDrawable gd = new GradientDrawable();
             gd.setShape(GradientDrawable.OVAL);
             gd.setColor(Palette.ACCENT_COLORS[i]);
-            if (settings.accent == i) gd.setStroke(dp(2), 0xFFFFFFFF);
+            if (settings.accent == i) gd.setStroke(dp(2), Palette.c(0xFFFFFFFF));
             dot.setBackground(gd);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(26), dp(26));
             lp.rightMargin = dp(12);
@@ -857,9 +857,9 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private int themeBg(int theme) {
-        if (theme == Palette.THEME_LIGHT) return 0xFFF4F6FA;
+        if (theme == Palette.THEME_LIGHT) return Palette.c(0xFFF4F6FA);
         if (theme == Palette.THEME_BLACK) return 0xFF000000;
-        return 0xFF0F1218;
+        return Palette.c(0xFF0F1218);
     }
 
     private TextView chip(String text, boolean selected) {
@@ -890,7 +890,7 @@ public class SettingsActivity extends AppCompatActivity {
         t.setGravity(Gravity.CENTER);
         t.setTextSize(13f);
         t.setBackgroundResource(primary ? R.drawable.btn_primary : R.drawable.btn_ghost);
-        t.setTextColor(primary ? 0xFFFFFFFF : Palette.text(this));
+        t.setTextColor(primary ? Palette.c(0xFFFFFFFF) : Palette.text(this));
         return t;
     }
 
@@ -1020,12 +1020,12 @@ public class SettingsActivity extends AppCompatActivity {
 
     /** 各家服务商的品牌色，用于列表左侧的字母徽标 */
     private static final int[] PROVIDER_COLORS = {
-            0xFF4D6BFE, // DeepSeek
-            0xFF6F5CF1, // 通义千问
-            0xFF8B5CF6, // Kimi
-            0xFF2E7BE6, // 智谱 GLM
-            0xFF10A37F, // OpenAI
-            0xFF3AA6BD  // SiliconFlow
+            Palette.c(0xFF4D6BFE), // DeepSeek
+            Palette.c(0xFF6F5CF1), // 通义千问
+            Palette.c(0xFF8B5CF6), // Kimi
+            Palette.c(0xFF2E7BE6), // 智谱 GLM
+            Palette.c(0xFF10A37F), // OpenAI
+            Palette.c(0xFF3AA6BD)  // SiliconFlow
     };
 
     /** 一级：选服务商（末项为从账号拉取真实列表） */
@@ -1068,7 +1068,7 @@ public class SettingsActivity extends AppCompatActivity {
 
         // 从账号拉取：与上面同构，徽标换成下载箭头，走中性色
         View fetchRow = providerRow("\u21e3", "从账号拉取模型列表", "需先在下方填好 API Key",
-                0xFF3E6E8C, 2, v -> {
+                Palette.c(0xFF3E6E8C), 2, v -> {
                     d.dismiss();
                     fetchModels();
                 });
@@ -1100,7 +1100,7 @@ public class SettingsActivity extends AppCompatActivity {
         gd.setShape(GradientDrawable.RECTANGLE);
         gd.setCornerRadius(dp(20));
         gd.setColor(Palette.c(0xFF141A23));
-        gd.setStroke(Math.max(1, dp(1)), 0xFF2A3240);
+        gd.setStroke(Math.max(1, dp(1)), Palette.c(0xFF2A3240));
         root.setBackground(gd);
         root.setPadding(dp(18), dp(18), dp(18), dp(14));
         d.setContentView(root);
@@ -1137,7 +1137,7 @@ public class SettingsActivity extends AppCompatActivity {
     private View sheetLine(int topDp) {
         View v = new View(this);
         GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0x00FFFFFF, 0x26FFFFFF, 0x00FFFFFF});
+                new int[]{0x00FFFFFF, Palette.c(0x26FFFFFF), 0x00FFFFFF});
         v.setBackground(gd);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
@@ -1170,9 +1170,9 @@ public class SettingsActivity extends AppCompatActivity {
         row.setFocusable(true);
 
         boolean active = tail == 1;
-        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x1FFFFFFF),
-                pill(active ? 0x1A63C8FF : 0x08FFFFFF,
-                        active ? 0x6663C8FF : 0x14FFFFFF, 12f), null));
+        row.setBackground(new RippleDrawable(ColorStateList.valueOf(Palette.c(0x1FFFFFFF)),
+                pill(active ? Palette.c(0x1A63C8FF) : Palette.c(0x08FFFFFF),
+                        active ? Palette.c(0x6663C8FF) : Palette.c(0x14FFFFFF), 12f), null));
 
         TextView b = new TextView(this);
         b.setText(badge);
@@ -1192,7 +1192,7 @@ public class SettingsActivity extends AppCompatActivity {
         TextView n = new TextView(this);
         n.setText(title);
         n.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
-        n.setTextColor(active ? 0xFFBEE3FF : 0xFFE7ECF4);
+        n.setTextColor(active ? Palette.c(0xFFBEE3FF) : Palette.c(0xFFE7ECF4));
         n.setSingleLine(true);
         n.setEllipsize(TextUtils.TruncateAt.END);
         mid.addView(n);
@@ -1214,7 +1214,7 @@ public class SettingsActivity extends AppCompatActivity {
             t.setText("使用中");
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
             t.setTextColor(Palette.c(0xFF63C8FF));
-            t.setBackground(pill(0x1A63C8FF, 0x5563C8FF, 8f));
+            t.setBackground(pill(Palette.c(0x1A63C8FF), Palette.c(0x5563C8FF), 8f));
             t.setPadding(dp(7), dp(3), dp(7), dp(3));
             row.addView(t);
         } else if (tail == 0) {
@@ -1238,9 +1238,9 @@ public class SettingsActivity extends AppCompatActivity {
         row.setPadding(dp(12), 0, dp(12), 0);
         row.setClickable(true);
         row.setFocusable(true);
-        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x1FFFFFFF),
-                pill(current ? 0x1A63C8FF : 0x06FFFFFF,
-                        current ? 0x6663C8FF : 0x12FFFFFF, 12f), null));
+        row.setBackground(new RippleDrawable(ColorStateList.valueOf(Palette.c(0x1FFFFFFF)),
+                pill(current ? Palette.c(0x1A63C8FF) : Palette.c(0x06FFFFFF),
+                        current ? Palette.c(0x6663C8FF) : Palette.c(0x12FFFFFF), 12f), null));
 
         View dot = new View(this);
         dot.setBackground(pill(color, 0, 4f));
@@ -1249,7 +1249,7 @@ public class SettingsActivity extends AppCompatActivity {
         TextView n = new TextView(this);
         n.setText(name);
         n.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
-        n.setTextColor(current ? 0xFFBEE3FF : 0xFFE7ECF4);
+        n.setTextColor(current ? Palette.c(0xFFBEE3FF) : Palette.c(0xFFE7ECF4));
         n.setSingleLine(true);
         n.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(
@@ -1262,7 +1262,7 @@ public class SettingsActivity extends AppCompatActivity {
             t.setText("当前");
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
             t.setTextColor(Palette.c(0xFF63C8FF));
-            t.setBackground(pill(0x1A63C8FF, 0x5563C8FF, 8f));
+            t.setBackground(pill(Palette.c(0x1A63C8FF), Palette.c(0x5563C8FF), 8f));
             t.setPadding(dp(7), dp(3), dp(7), dp(3));
             row.addView(t);
         }
@@ -1283,12 +1283,12 @@ public class SettingsActivity extends AppCompatActivity {
         tv.setFocusable(true);
         if (primary) {
             tv.setTextColor(Palette.c(0xFFC6D8FA));
-            tv.setBackground(new RippleDrawable(ColorStateList.valueOf(0x3D4A86F7),
-                    pill(0x1F4A86F7, 0x6B4A86F7, 14f), null));
+            tv.setBackground(new RippleDrawable(ColorStateList.valueOf(Palette.c(0x3D4A86F7)),
+                    pill(Palette.c(0x1F4A86F7), Palette.c(0x6B4A86F7), 14f), null));
         } else {
             tv.setTextColor(Palette.c(0xFF8FA0B5));
-            tv.setBackground(new RippleDrawable(ColorStateList.valueOf(0x1FFFFFFF),
-                    pill(0x0AFFFFFF, 0x1FFFFFFF, 14f), null));
+            tv.setBackground(new RippleDrawable(ColorStateList.valueOf(Palette.c(0x1FFFFFFF)),
+                    pill(Palette.c(0x0AFFFFFF), Palette.c(0x1FFFFFFF), 14f), null));
         }
         return tv;
     }
@@ -1303,7 +1303,7 @@ public class SettingsActivity extends AppCompatActivity {
         final String curModel = etModel.getText().toString().trim();
         final boolean sameBase = hostOf(base).equals(curHost);
 
-        int color = 0xFF4D6BFE;
+        int color = Palette.c(0xFF4D6BFE);
         for (int i = 0; i < PROVIDERS.length; i++) {
             if (PROVIDERS[i] == p) {
                 color = PROVIDER_COLORS[i % PROVIDER_COLORS.length];
@@ -1383,7 +1383,7 @@ public class SettingsActivity extends AppCompatActivity {
         final String cur = etModel.getText().toString().trim();
 
         // 品牌色按当前地址匹配，匹配不到就走中性青
-        int color = 0xFF63C8FF;
+        int color = Palette.c(0xFF63C8FF);
         String host = hostOf(etBase.getText().toString().trim());
         for (int i = 0; i < PROVIDERS.length; i++) {
             if (hostOf(PROVIDERS[i][1]).equals(host)) {

@@ -27,6 +27,21 @@ public final class Palette {
     /** 当前进程是否浅色主题：由 {@link #apply(Activity)} 更新，供 {@link #c(int)} 使用 */
     private static boolean light = false;
 
+    /**
+     * 最近一次 apply 的 Activity。c(int) 优先读它的真实主题属性来判断深浅，
+     * 而不是只信静态 light —— 静态标志一旦与实际主题错位（时序、跨 Activity 复用），
+     * 整页就会退回深色，且没有任何报错提示。
+     */
+    private static java.lang.ref.WeakReference<Activity> actRef;
+
+    /** 复用 TypedValue，避免每次 c() 都新建对象（c() 在构建视图时会被调用几百次） */
+    private static final ThreadLocal<TypedValue> TV = new ThreadLocal<TypedValue>() {
+        @Override
+        protected TypedValue initialValue() {
+            return new TypedValue();
+        }
+    };
+
     public static final String[] ACCENT_NAMES = {"经典蓝", "雾紫", "薄荷绿", "暖橙", "青蓝"};
     public static final int[] ACCENT_COLORS = {
             0xFF5B93FF, 0xFFA97BFF, 0xFF3DDC97, 0xFFFFA85C, 0xFF4CD7E8
@@ -39,6 +54,7 @@ public final class Palette {
     public static void apply(Activity a) {
         Settings s = Settings.load(a);
         light = (s.theme == THEME_LIGHT);
+        actRef = new java.lang.ref.WeakReference<Activity>(a);
         int themeRes;
         if (s.theme == THEME_BLACK) themeRes = R.style.AppTheme_Black;
         else if (s.theme == THEME_LIGHT) themeRes = R.style.AppTheme_Light;
@@ -60,7 +76,8 @@ public final class Palette {
     /** 直接看主题里的背景亮度，避免静态标志与实际主题不一致 */
     private static boolean isLightAttr(Context c) {
         if (c == null) return light;
-        TypedValue tv = new TypedValue();
+        TypedValue tv = TV.get();
+        tv.type = TypedValue.TYPE_NULL;
         if (!c.getTheme().resolveAttribute(R.attr.neb_bg, tv, true)) return light;
         return luminance(tv.data) > 0.5f;
     }
@@ -75,7 +92,10 @@ public final class Palette {
      * 浅色主题：无彩色（文字/描边/背景）做亮度反转，彩色（强调/状态色）压暗保持色相，alpha 不变。
      */
     public static int c(int argb) {
-        return light ? map(argb) : argb;
+        // 以当前 Activity 的真实主题为准；拿不到时退回静态标志
+        Activity a = actRef == null ? null : actRef.get();
+        boolean isLight = a != null ? isLightAttr(a) : light;
+        return isLight ? map(argb) : argb;
     }
 
     /** 需要按 context 判断主题时用这个版本（跨主题缓存的视图） */

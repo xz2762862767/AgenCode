@@ -90,9 +90,9 @@ public class ProjectPage {
         head.setPadding(Ui.dp(act, 14), Ui.dp(act, 12), Ui.dp(act, 12), Ui.dp(act, 10));
 
         LinearLayout info = Ui.col(act);
-        tvTitle = Ui.text(act, "本应用工程", 19f, TEXT_MAIN);
+        tvTitle = Ui.text(act, "本应用工程", 19f, Palette.c(TEXT_MAIN));
         tvTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        tvSummary = Ui.text(act, "", 11f, TEXT_SUB);
+        tvSummary = Ui.text(act, "", 11f, Palette.c(TEXT_SUB));
         tvSummary.setPadding(0, Ui.dp(act, 3), 0, 0);
         tvSummary.setSingleLine(true);
         tvSummary.setEllipsize(TextUtils.TruncateAt.MIDDLE);
@@ -100,7 +100,7 @@ public class ProjectPage {
         info.addView(tvSummary);
         head.addView(info, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        btnSwitch = Ui.chip(act, "我的工程", 0xFF1C2532, 0xFF9DC0FF, new View.OnClickListener() {
+        btnSwitch = Ui.chip(act, "我的工程", Palette.c(0xFF1C2532), Palette.c(0xFF9DC0FF), new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 mode = (mode == MODE_SELF) ? MODE_MINE : MODE_SELF;
@@ -151,15 +151,15 @@ public class ProjectPage {
             LinearLayout empty = Ui.col(act);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, Ui.dp(act, 60), 0, 0);
-            TextView icon = Ui.text(act, "🗂", 34f, 0xFF39445A);
+            TextView icon = Ui.text(act, "🗂", 34f, Palette.c(0xFF39445A));
             icon.setGravity(Gravity.CENTER);
-            TextView e1 = Ui.text(act, "还没有项目", 15f, TEXT_MAIN);
+            TextView e1 = Ui.text(act, "还没有项目", 15f, Palette.c(TEXT_MAIN));
             e1.setGravity(Gravity.CENTER);
             e1.setPadding(0, Ui.dp(act, 10), 0, 0);
-            TextView e2 = Ui.text(act, "点下方按钮从模板创建工程", 12f, TEXT_SUB);
+            TextView e2 = Ui.text(act, "点下方按钮从模板创建工程", 12f, Palette.c(TEXT_SUB));
             e2.setGravity(Gravity.CENTER);
             e2.setPadding(0, Ui.dp(act, 6), 0, 0);
-            TextView e3 = Ui.chip(act, "＋ 从模板新建", 0xFF1E3A6B, 0xFF9DC0FF,
+            TextView e3 = Ui.chip(act, "＋ 从模板新建", Palette.c(0xFF1E3A6B), Palette.c(0xFF9DC0FF),
                     new View.OnClickListener() {
                         @Override
                         public void onClick(View v) {
@@ -177,7 +177,7 @@ public class ProjectPage {
             return;
         }
 
-        TextView addNew = Ui.chip(act, "＋ 从模板新建工程", 0xFF17233A, 0xFF9DC0FF,
+        TextView addNew = Ui.chip(act, "＋ 从模板新建工程", Palette.c(0xFF17233A), Palette.c(0xFF9DC0FF),
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
@@ -201,7 +201,7 @@ public class ProjectPage {
         if (all.isEmpty()) {
             tvSummary.setText("源码索引缺失，请安装完整构建的 APK");
             LinearLayout tip = Ui.card(act);
-            TextView t = Ui.text(act, "未找到 assets/selfsrc/index.tsv\n构建时 genSelfSrc 任务未执行或资源被裁剪。", 11.5f, TEXT_SUB);
+            TextView t = Ui.text(act, "未找到 assets/selfsrc/index.tsv\n构建时 genSelfSrc 任务未执行或资源被裁剪。", 11.5f, Palette.c(TEXT_SUB));
             tip.addView(t);
             listBox.addView(tip);
             return;
@@ -288,14 +288,14 @@ public class ProjectPage {
         logo.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         logo.setGravity(Gravity.CENTER);
         logo.setTextColor(Palette.c(0xFFBFD4FF));
-        logo.setBackground(Ui.roundRect(act, 0xFF1B2B4A, 0xFF2E4A78, 14f));
+        logo.setBackground(Ui.roundRect(act, Palette.c(0xFF1B2B4A), Palette.c(0xFF2E4A78), 14f));
         int sq = Ui.dp(act, 46);
         top.addView(logo, new LinearLayout.LayoutParams(sq, sq));
 
         LinearLayout nameBox = Ui.col(act);
-        TextView name = Ui.text(act, "AgenCode", 16f, TEXT_MAIN);
+        TextView name = Ui.text(act, "AgenCode", 16f, Palette.c(TEXT_MAIN));
         name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        TextView pkg = Ui.text(act, act.getPackageName(), 10.5f, TEXT_SUB);
+        TextView pkg = Ui.text(act, act.getPackageName(), 10.5f, Palette.c(TEXT_SUB));
         pkg.setPadding(0, Ui.dp(act, 3), 0, 0);
         nameBox.addView(name);
         nameBox.addView(pkg);
@@ -350,8 +350,8 @@ public class ProjectPage {
     private View kvRow(String k, String v) {
         LinearLayout r = Ui.row(act);
         r.setPadding(0, Ui.dp(act, 5), 0, Ui.dp(act, 5));
-        TextView kt = Ui.text(act, k, 11f, 0xFF74839A);
-        TextView vt = Ui.text(act, v, 11f, 0xFFCBD6E6);
+        TextView kt = Ui.text(act, k, 11f, Palette.c(0xFF74839A));
+        TextView vt = Ui.text(act, v, 11f, Palette.c(0xFFCBD6E6));
         vt.setSingleLine(true);
         vt.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         vt.setGravity(Gravity.RIGHT);
@@ -373,11 +373,11 @@ public class ProjectPage {
         lp.bottomMargin = Ui.dp(act, 9);
         r.setPadding(Ui.dp(act, 2), 0, Ui.dp(act, 2), 0);
 
-        TextView t = Ui.text(act, title, 12.5f, 0xFF9FB0C8);
+        TextView t = Ui.text(act, title, 12.5f, Palette.c(0xFF9FB0C8));
         t.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         r.addView(t);
         if (sub != null && !sub.isEmpty()) {
-            TextView st = Ui.text(act, sub, 9.5f, 0xFF5D6B80);
+            TextView st = Ui.text(act, sub, 9.5f, Palette.c(0xFF5D6B80));
             st.setSingleLine(true);
             LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
@@ -385,7 +385,7 @@ public class ProjectPage {
             r.addView(st, slp);
         }
         if (right != null && !right.isEmpty()) {
-            r.addView(Ui.text(act, right, 9.5f, 0xFF5D6B80));
+            r.addView(Ui.text(act, right, 9.5f, Palette.c(0xFF5D6B80)));
         }
         listBox.addView(r, lp);
     }
@@ -398,15 +398,15 @@ public class ProjectPage {
         wlp.bottomMargin = Ui.dp(act, 8);
 
         LinearLayout head = Ui.row(act);
-        head.setBackground(Ui.roundRect(act, 0xFF161B24, 0xFF242C39, 11f));
+        head.setBackground(Ui.roundRect(act, Palette.c(0xFF161B24), Palette.c(0xFF242C39), 11f));
         head.setPadding(Ui.dp(act, 11), Ui.dp(act, 10), Ui.dp(act, 11), Ui.dp(act, 10));
         head.setClickable(true);
 
-        final TextView arrow = Ui.text(act, expanded ? "▾" : "▸", 10f, 0xFF7E8B9E);
+        final TextView arrow = Ui.text(act, expanded ? "▾" : "▸", 10f, Palette.c(0xFF7E8B9E));
         arrow.setIncludeFontPadding(false);
         head.addView(arrow);
 
-        TextView name = Ui.text(act, label, 12f, 0xFFDCE5F2);
+        TextView name = Ui.text(act, label, 12f, Palette.c(0xFFDCE5F2));
         name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.START);
@@ -415,7 +415,7 @@ public class ProjectPage {
         nlp.leftMargin = Ui.dp(act, 8);
         head.addView(name, nlp);
 
-        TextView meta = Ui.text(act, files.size() + " 文件", 9.5f, 0xFF6E7B8E);
+        TextView meta = Ui.text(act, files.size() + " 文件", 9.5f, Palette.c(0xFF6E7B8E));
         head.addView(meta);
 
         final LinearLayout body = Ui.col(act);
@@ -442,7 +442,7 @@ public class ProjectPage {
     /** 文件行：文件名 + 右侧行数/大小，点击查看源码 */
     private View selfFileRow(final SelfSource.Entry e) {
         LinearLayout r = Ui.row(act);
-        r.setBackground(Ui.roundRect(act, 0xFF12171F, 0xFF1C232E, 9f));
+        r.setBackground(Ui.roundRect(act, Palette.c(0xFF12171F), Palette.c(0xFF1C232E), 9f));
         r.setPadding(Ui.dp(act, 11), Ui.dp(act, 9), Ui.dp(act, 11), Ui.dp(act, 9));
         r.setClickable(true);
 
@@ -450,7 +450,7 @@ public class ProjectPage {
         dot.setIncludeFontPadding(false);
         r.addView(dot);
 
-        TextView name = Ui.text(act, e.name(), 11.5f, 0xFFD5DFEE);
+        TextView name = Ui.text(act, e.name(), 11.5f, Palette.c(0xFFD5DFEE));
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(
@@ -459,7 +459,7 @@ public class ProjectPage {
         r.addView(name, nlp);
 
         TextView meta = Ui.text(act, e.lines > 0 ? e.lines + " 行" : Ui.humanSize(e.bytes),
-                9.5f, 0xFF66748A);
+                9.5f, Palette.c(0xFF66748A));
         r.addView(meta);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -477,9 +477,9 @@ public class ProjectPage {
     }
 
     private int fileColor(SelfSource.Entry e) {
-        if (SelfSource.KIND_JAVA.equals(e.kind)) return 0xFF6F9BFF;
-        if (SelfSource.KIND_RES.equals(e.kind)) return 0xFF6FE3A0;
-        return 0xFFFFC46B;
+        if (SelfSource.KIND_JAVA.equals(e.kind)) return Palette.c(0xFF6F9BFF);
+        if (SelfSource.KIND_RES.equals(e.kind)) return Palette.c(0xFF6FE3A0);
+        return Palette.c(0xFFFFC46B);
     }
 
     /** 两列等宽网格，末行不足时补占位，保证卡片不被拉伸 */
@@ -542,7 +542,7 @@ public class ProjectPage {
         View gap = new View(act);
         top.addView(gap, new LinearLayout.LayoutParams(0, 1, 1f));
 
-        TextView more = Ui.text(act, "⋯", 20f, 0xFF7E8B9E);
+        TextView more = Ui.text(act, "⋯", 20f, Palette.c(0xFF7E8B9E));
         more.setGravity(Gravity.CENTER);
         int mh = Ui.dp(act, 30);
         more.setLayoutParams(new LinearLayout.LayoutParams(mh, mh));
@@ -556,7 +556,7 @@ public class ProjectPage {
         card.addView(top);
 
         // 工程名
-        TextView name = Ui.text(act, dir.getName(), 13.5f, TEXT_MAIN);
+        TextView name = Ui.text(act, dir.getName(), 13.5f, Palette.c(TEXT_MAIN));
         name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
@@ -573,7 +573,7 @@ public class ProjectPage {
         View filler = new View(act);
         card.addView(filler, new LinearLayout.LayoutParams(1, 0, 1f));
         TextView meta = Ui.text(act,
-                countFiles(dir) + " 文件 · " + ago(dir.lastModified()), 10.5f, TEXT_SUB);
+                countFiles(dir) + " 文件 · " + ago(dir.lastModified()), 10.5f, Palette.c(TEXT_SUB));
         meta.setPadding(0, Ui.dp(act, 8), 0, 0);
         card.addView(meta);
         return card;
@@ -655,19 +655,19 @@ public class ProjectPage {
     }
 
     private int kindFg(String kind) {
-        if ("Android".equals(kind)) return 0xFF6FE3A0;
-        if ("Node".equals(kind)) return 0xFF9FE07A;
-        if ("Python".equals(kind)) return 0xFFFFD166;
-        if ("Web".equals(kind)) return 0xFF7FD1FF;
-        return 0xFFB9C5D6;
+        if ("Android".equals(kind)) return Palette.c(0xFF6FE3A0);
+        if ("Node".equals(kind)) return Palette.c(0xFF9FE07A);
+        if ("Python".equals(kind)) return Palette.c(0xFFFFD166);
+        if ("Web".equals(kind)) return Palette.c(0xFF7FD1FF);
+        return Palette.c(0xFFB9C5D6);
     }
 
     private int kindBg(String kind) {
-        if ("Android".equals(kind)) return 0xFF17352A;
-        if ("Node".equals(kind)) return 0xFF202F1C;
-        if ("Python".equals(kind)) return 0xFF3A2F1B;
-        if ("Web".equals(kind)) return 0xFF16293A;
-        return 0xFF232A36;
+        if ("Android".equals(kind)) return Palette.c(0xFF17352A);
+        if ("Node".equals(kind)) return Palette.c(0xFF202F1C);
+        if ("Python".equals(kind)) return Palette.c(0xFF3A2F1B);
+        if ("Web".equals(kind)) return Palette.c(0xFF16293A);
+        return Palette.c(0xFF232A36);
     }
 
     /** 工程名首字母（跳过符号） */
@@ -694,7 +694,7 @@ public class ProjectPage {
         StringBuilder sb = new StringBuilder();
         tree(dir, "", sb, 0);
         ScrollView sv = new ScrollView(act);
-        TextView tv = Ui.text(act, sb.toString(), 12f, 0xFFC8D3E5);
+        TextView tv = Ui.text(act, sb.toString(), 12f, Palette.c(0xFFC8D3E5));
         tv.setTypeface(android.graphics.Typeface.MONOSPACE);
         tv.setTextIsSelectable(true);
         int p = Ui.dp(act, 14);

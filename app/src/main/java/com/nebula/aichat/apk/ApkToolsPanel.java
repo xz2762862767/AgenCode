@@ -22,6 +22,7 @@ import com.nebula.aichat.ui.Ui;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import com.nebula.aichat.ui.Palette;
 
 /** APK 工具面板：信息解析、换图标、重签名 */
 public class ApkToolsPanel {
@@ -68,7 +69,7 @@ public class ApkToolsPanel {
         sv.addView(root);
 
         root.addView(Ui.text(act, "选择要处理的 APK，可解析信息或替换图标后重新签名。"
-                + "生成的 APK 会放在工作区 apk-out/ 目录。", 11.5f, 0xFF8B97A9));
+                + "生成的 APK 会放在工作区 apk-out/ 目录。", 11.5f, Palette.c(0xFF8B97A9)));
         root.addView(Ui.spacer(act, 10));
 
         LinearLayout tools = Ui.row(act);
@@ -81,7 +82,7 @@ public class ApkToolsPanel {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.leftMargin = Ui.dp(act, 8);
-        tools.addView(Ui.chip(act, "选择新图标", 0xFF1E3A6B, 0xFF9DC0FF, new View.OnClickListener() {
+        tools.addView(Ui.chip(act, "选择新图标", Palette.c(0xFF1E3A6B), Palette.c(0xFF9DC0FF), new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 pickFile(REQ_PICK_ICON, "image/*");
@@ -91,12 +92,12 @@ public class ApkToolsPanel {
 
         root.addView(Ui.spacer(act, 12));
         infoBox = Ui.card(act);
-        infoBox.addView(Ui.text(act, "尚未选择 APK", 12f, 0xFF8B97A9));
+        infoBox.addView(Ui.text(act, "尚未选择 APK", 12f, Palette.c(0xFF8B97A9)));
         root.addView(infoBox);
 
         root.addView(Ui.spacer(act, 10));
         iconBox = Ui.card(act);
-        iconBox.addView(Ui.text(act, "尚未选择新图标", 12f, 0xFF8B97A9));
+        iconBox.addView(Ui.text(act, "尚未选择新图标", 12f, Palette.c(0xFF8B97A9)));
         root.addView(iconBox);
 
         root.addView(Ui.spacer(act, 12));
@@ -105,7 +106,7 @@ public class ApkToolsPanel {
         bar.setVisibility(View.GONE);
         root.addView(bar);
 
-        statusView = Ui.text(act, "", 11f, 0xFF8B97A9);
+        statusView = Ui.text(act, "", 11f, Palette.c(0xFF8B97A9));
         statusView.setPadding(0, Ui.dp(act, 6), 0, 0);
         root.addView(statusView);
 
@@ -209,7 +210,7 @@ public class ApkToolsPanel {
         info = ApkTools.inspect(act, workApk);
         infoBox.removeAllViews();
         if (info == null) {
-            infoBox.addView(Ui.text(act, "无法解析该文件，可能不是有效的 APK", 12f, 0xFFFF8A80));
+            infoBox.addView(Ui.text(act, "无法解析该文件，可能不是有效的 APK", 12f, Palette.c(0xFFFF8A80)));
             return;
         }
         LinearLayout head = Ui.row(act);
@@ -221,10 +222,10 @@ public class ApkToolsPanel {
             head.addView(iv, ilp);
         }
         LinearLayout titleCol = Ui.col(act);
-        TextView tv = Ui.text(act, info.label.isEmpty() ? info.pkgName : info.label, 14f, 0xFFE8EDF6);
+        TextView tv = Ui.text(act, info.label.isEmpty() ? info.pkgName : info.label, 14f, Palette.c(0xFFE8EDF6));
         tv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         titleCol.addView(tv);
-        titleCol.addView(Ui.text(act, info.pkgName, 11f, 0xFF8B97A9));
+        titleCol.addView(Ui.text(act, info.pkgName, 11f, Palette.c(0xFF8B97A9)));
         head.addView(titleCol, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         infoBox.addView(head);
@@ -244,7 +245,7 @@ public class ApkToolsPanel {
                 if (sb.length() > 0) sb.append("、");
                 sb.append(s);
             }
-            TextView permTv = Ui.text(act, sb.toString(), 10.5f, 0xFF7C879B);
+            TextView permTv = Ui.text(act, sb.toString(), 10.5f, Palette.c(0xFF7C879B));
             permTv.setPadding(0, Ui.dp(act, 6), 0, 0);
             infoBox.addView(permTv);
         }
@@ -253,10 +254,10 @@ public class ApkToolsPanel {
     private View line(String k, String v) {
         LinearLayout r = Ui.row(act);
         r.setPadding(0, Ui.dp(act, 3), 0, Ui.dp(act, 3));
-        TextView kt = Ui.text(act, k, 11.5f, 0xFF8B97A9);
+        TextView kt = Ui.text(act, k, 11.5f, Palette.c(0xFF8B97A9));
         r.addView(kt, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 0.34f));
-        TextView vt = Ui.text(act, v, 12f, 0xFFD5DEEA);
+        TextView vt = Ui.text(act, v, 12f, Palette.c(0xFFD5DEEA));
         r.addView(vt, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 0.66f));
         return r;
@@ -265,7 +266,7 @@ public class ApkToolsPanel {
     private void renderIcon() {
         iconBox.removeAllViews();
         if (iconPreview == null) {
-            iconBox.addView(Ui.text(act, "图标读取失败", 12f, 0xFFFF8A80));
+            iconBox.addView(Ui.text(act, "图标读取失败", 12f, Palette.c(0xFFFF8A80)));
             return;
         }
         LinearLayout r = Ui.row(act);
@@ -276,9 +277,9 @@ public class ApkToolsPanel {
         ilp.rightMargin = Ui.dp(act, 10);
         r.addView(iv, ilp);
         LinearLayout col = Ui.col(act);
-        col.addView(Ui.text(act, "新图标", 13f, 0xFFE8EDF6));
+        col.addView(Ui.text(act, "新图标", 13f, Palette.c(0xFFE8EDF6)));
         col.addView(Ui.text(act, iconPreview.getWidth() + " × " + iconPreview.getHeight()
-                + " · " + Ui.humanSize(workIcon.length()), 11f, 0xFF8B97A9));
+                + " · " + Ui.humanSize(workIcon.length()), 11f, Palette.c(0xFF8B97A9)));
         r.addView(col, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         iconBox.addView(r);

@@ -56,7 +56,7 @@ public class TaskCardView extends LinearLayout {
         }
 
         setOrientation(VERTICAL);
-        setBackground(Ui.roundRect(c, C_BOX, 0, 10));
+        setBackground(Ui.roundRect(c, Palette.c(C_BOX), 0, 10));
         int pad = Ui.dp(c, 10);
         setPadding(pad, Ui.dp(c, 9), pad, Ui.dp(c, 8));
 
@@ -65,11 +65,11 @@ public class TaskCardView extends LinearLayout {
         head.setOrientation(HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView title = Ui.text(c, "执行步骤", 12f, C_TEXT);
+        TextView title = Ui.text(c, "执行步骤", 12f, Palette.c(C_TEXT));
         title.setTypeface(Typeface.DEFAULT_BOLD);
         head.addView(title, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
 
-        count = Ui.text(c, "", 11f, C_DIM);
+        count = Ui.text(c, "", 11f, Palette.c(C_DIM));
         count.setTypeface(Typeface.MONOSPACE);
         head.addView(count);
         addView(head);
@@ -80,11 +80,11 @@ public class TaskCardView extends LinearLayout {
         LayoutParams barLp = new LayoutParams(LayoutParams.MATCH_PARENT, Ui.dp(c, 3));
         barLp.topMargin = Ui.dp(c, 7);
         bar.setLayoutParams(barLp);
-        bar.setBackground(Ui.roundRect(c, C_LINE, 0, 2));
+        bar.setBackground(Ui.roundRect(c, Palette.c(C_LINE), 0, 2));
         bar.setClipToOutline(true);
 
         fill = new View(c);
-        fill.setBackground(Ui.roundRect(c, C_DONE, 0, 2));
+        fill.setBackground(Ui.roundRect(c, Palette.c(C_DONE), 0, 2));
         bar.addView(fill, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
         rest = new View(c);
         bar.addView(rest, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
@@ -115,7 +115,7 @@ public class TaskCardView extends LinearLayout {
             blp.rightMargin = Ui.dp(c, 8);
             row.addView(box, blp);
 
-            TextView label = Ui.text(c, tasks.get(i), 12.5f, C_TEXT);
+            TextView label = Ui.text(c, tasks.get(i), 12.5f, Palette.c(C_TEXT));
             label.setLineSpacing(Ui.dp(c, 2), 1f);
             row.addView(label, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
 
@@ -202,14 +202,14 @@ public class TaskCardView extends LinearLayout {
             TextView box = i < marks.size() ? marks.get(i) : null;
             if (box != null) {
                 box.setTextColor(d ? Color.WHITE : Color.TRANSPARENT);
-                GradientDrawable gd = Ui.roundRect(ctx, d ? C_DONE : 0x00000000, 0, 5);
-                gd.setStroke(Ui.dp(ctx, 1), d ? C_DONE : 0x3AFFFFFF);
+                GradientDrawable gd = Ui.roundRect(ctx, d ? Palette.c(C_DONE) : 0x00000000, 0, 5);
+                gd.setStroke(Ui.dp(ctx, 1), d ? Palette.c(C_DONE) : Palette.c(0x3AFFFFFF));
                 box.setBackground(gd);
             }
 
             TextView label = i < labels.size() ? labels.get(i) : null;
             if (label != null) {
-                label.setTextColor(d ? C_DIM : C_TEXT);
+                label.setTextColor(d ? Palette.c(C_DIM) : Palette.c(C_TEXT));
                 label.setPaintFlags(d
                         ? (label.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG)
                         : (label.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG));
@@ -217,7 +217,7 @@ public class TaskCardView extends LinearLayout {
         }
 
         count.setText(doneCount + "/" + n);
-        count.setTextColor(doneCount == n ? C_DONE : C_DIM);
+        count.setTextColor(doneCount == n ? Palette.c(C_DONE) : Palette.c(C_DIM));
 
         LayoutParams flp = (LayoutParams) fill.getLayoutParams();
         LayoutParams rlp = (LayoutParams) rest.getLayoutParams();

@@ -76,8 +76,8 @@ public class BrowserActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        Palette.apply(this);
         super.onCreate(savedInstanceState);
+        Palette.apply(this);
         settings = Settings.load(this);
         setContentView(buildUi());
         setupWeb();

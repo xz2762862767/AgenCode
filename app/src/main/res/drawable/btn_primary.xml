@@ -1,16 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_pressed="true">
-        <shape android:shape="rectangle">
-            <solid android:color="#254F8CFF" />
-            <stroke android:width="1dp" android:color="?attr/neb_stroke" />
-            <corners android:radius="12dp" />
-        </shape>
-    </item>
+<!-- 主按钮：底色跟着强调色走，按下用水波纹反馈 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?android:attr/colorControlHighlight">
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/accent_dim" />
+            <solid android:color="?attr/neb_accent" />
             <corners android:radius="12dp" />
         </shape>
     </item>
-</selector>
+</ripple>

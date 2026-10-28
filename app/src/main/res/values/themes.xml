@@ -46,7 +46,10 @@
 
 
     <!-- 默认白：浅色底 + 深色文字，状态栏图标转深色 -->
-    <style name="AppTheme.Light">
+    <!-- 必须显式继承 Light 版 AppCompat：否则按点号隐式继承深色 AppTheme，
+         colorBackground / EditText / CheckBox / PopupMenu / Toast 等系统控件仍是暗色 -->
+    <style name="AppTheme.Light" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:colorBackground">@color/bg_light</item>
         <item name="colorPrimary">@color/surface_light</item>
         <item name="colorPrimaryDark">@color/bg_light</item>
         <item name="android:windowBackground">@color/bg_light</item>

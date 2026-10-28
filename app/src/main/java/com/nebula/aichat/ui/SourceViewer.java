@@ -35,7 +35,7 @@ public final class SourceViewer {
         head.setBackgroundColor(Palette.c(0xFF10151C));
         head.setPadding(Ui.dp(act, 6), Ui.dp(act, 9), Ui.dp(act, 10), Ui.dp(act, 9));
 
-        TextView back = Ui.text(act, "‹", 26f, 0xFFD7E0EE);
+        TextView back = Ui.text(act, "‹", 26f, Palette.c(0xFFD7E0EE));
         back.setGravity(Gravity.CENTER);
         back.setIncludeFontPadding(false);
         back.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(act, 38), Ui.dp(act, 38)));
@@ -48,11 +48,11 @@ public final class SourceViewer {
         head.addView(back);
 
         LinearLayout info = Ui.col(act);
-        TextView t1 = Ui.text(act, title == null ? "" : title, 13.5f, 0xFFE8EDF6);
+        TextView t1 = Ui.text(act, title == null ? "" : title, 13.5f, Palette.c(0xFFE8EDF6));
         t1.setTypeface(Typeface.DEFAULT_BOLD);
         t1.setSingleLine(true);
         t1.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-        TextView t2 = Ui.text(act, subtitle == null ? "" : subtitle, 10f, 0xFF7A879B);
+        TextView t2 = Ui.text(act, subtitle == null ? "" : subtitle, 10f, Palette.c(0xFF7A879B));
         t2.setSingleLine(true);
         t2.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         info.addView(t1);
@@ -62,7 +62,7 @@ public final class SourceViewer {
         ilp.leftMargin = Ui.dp(act, 2);
         head.addView(info, ilp);
 
-        TextView copy = Ui.chip(act, "复制", 0xFF1C2532, 0xFF9DC0FF, new View.OnClickListener() {
+        TextView copy = Ui.chip(act, "复制", Palette.c(0xFF1C2532), Palette.c(0xFF9DC0FF), new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 ClipboardManager cm = (ClipboardManager) act.getSystemService(Activity.CLIPBOARD_SERVICE);

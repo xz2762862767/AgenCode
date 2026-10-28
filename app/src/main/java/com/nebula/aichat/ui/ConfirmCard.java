@@ -193,7 +193,7 @@ public class ConfirmCard {
             View dot = new View(ctx);
             GradientDrawable dotBg = new GradientDrawable();
             dotBg.setShape(GradientDrawable.OVAL);
-            dotBg.setColor(GOLD);
+            dotBg.setColor(Palette.c(GOLD));
             dot.setBackground(dotBg);
             LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(7), dp(7));
             dotLp.rightMargin = dp(8);
@@ -214,7 +214,7 @@ public class ConfirmCard {
             chip.setTypeface(Typeface.MONOSPACE);
             chip.setTextColor(Palette.c(CHIP_TX));
             chip.setPadding(dp(7), dp(2), dp(7), dp(3));
-            chip.setBackground(Ui.roundRect(ctx, CHIP_BG, 0x33C3B0FF, 6f));
+            chip.setBackground(Ui.roundRect(ctx, Palette.c(CHIP_BG), Palette.c(0x33C3B0FF), 6f));
             head.addView(chip);
             root.addView(head);
 
@@ -245,7 +245,7 @@ public class ConfirmCard {
             more.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(11.5f, baseSp - 2.5f));
             more.setTextColor(Palette.c(0xFFB9C6D6));
             more.setGravity(Gravity.CENTER);
-            more.setBackground(Ui.roundRect(ctx, 0x14FFFFFF, 0x26FFFFFF, 11f));
+            more.setBackground(Ui.roundRect(ctx, Palette.c(0x14FFFFFF), Palette.c(0x26FFFFFF), 11f));
             more.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) { toggleNote(); }
             });
@@ -257,7 +257,7 @@ public class ConfirmCard {
             okBtn.setTypeface(Typeface.DEFAULT_BOLD);
             okBtn.setTextColor(Palette.c(GOLD_DEEP));
             okBtn.setGravity(Gravity.CENTER);
-            okBtn.setBackground(Ui.roundRect(ctx, GOLD, 0, 11f));
+            okBtn.setBackground(Ui.roundRect(ctx, Palette.c(GOLD), 0, 11f));
             okBtn.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) { submit(); }
             });
@@ -316,7 +316,7 @@ public class ConfirmCard {
                 no.setTypeface(Typeface.DEFAULT_BOLD);
                 no.setTextColor(Palette.c(GOLD));
                 no.setGravity(Gravity.CENTER);
-                no.setBackground(Ui.roundRect(ctx, 0x1FE8C06A, 0x4DE8C06A, 5f));
+                no.setBackground(Ui.roundRect(ctx, Palette.c(0x1FE8C06A), Palette.c(0x4DE8C06A), 5f));
                 LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(dp(16), dp(16));
                 nlp.rightMargin = dp(7);
                 h.addView(no, nlp);
@@ -427,29 +427,29 @@ public class ConfirmCard {
         private void paintOption(OptRow or, boolean multi, boolean sel) {
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(dp(11));
-            bg.setColor(sel ? OPT_SEL_BG : OPT_BG);
-            bg.setStroke(Math.max(1, dp(1)), sel ? OPT_SEL_STROKE : OPT_STROKE);
+            bg.setColor(sel ? Palette.c(OPT_SEL_BG) : Palette.c(OPT_BG));
+            bg.setStroke(Math.max(1, dp(1)), sel ? Palette.c(OPT_SEL_STROKE) : Palette.c(OPT_STROKE));
             or.row.setBackground(bg);
 
-            or.title.setTextColor(sel ? 0xFFF3E6C4 : TEXT);
-            if (or.desc != null) or.desc.setTextColor(sel ? 0xFFB6A780 : DIM);
+            or.title.setTextColor(sel ? Palette.c(0xFFF3E6C4) : TEXT);
+            if (or.desc != null) or.desc.setTextColor(sel ? Palette.c(0xFFB6A780) : DIM);
 
             if (!sel) {
                 GradientDrawable d = new GradientDrawable();
                 d.setShape(multi ? GradientDrawable.RECTANGLE : GradientDrawable.OVAL);
                 d.setCornerRadius(multi ? dp(4) : 0);
                 d.setColor(Palette.c(0x00000000));
-                d.setStroke(Math.max(1, dp(1.4f)), 0x4DFFFFFF);
+                d.setStroke(Math.max(1, dp(1.4f)), Palette.c(0x4DFFFFFF));
                 or.dot.setBackground(d);
             } else {
                 // 选中：金色实心 + 深色内芯（圆点/方块都是同一套画法，大小一致）
                 GradientDrawable fill = new GradientDrawable();
                 fill.setShape(multi ? GradientDrawable.RECTANGLE : GradientDrawable.OVAL);
                 fill.setCornerRadius(multi ? dp(4) : 0);
-                fill.setColor(GOLD);
+                fill.setColor(Palette.c(GOLD));
                 GradientDrawable inner = new GradientDrawable();
                 inner.setShape(GradientDrawable.OVAL);
-                inner.setColor(GOLD_DEEP);
+                inner.setColor(Palette.c(GOLD_DEEP));
                 LayerDrawable ld = new LayerDrawable(new GradientDrawable[]{fill, inner});
                 int inset = dp(4);
                 ld.setLayerInset(1, inset, inset, inset, inset);
@@ -480,7 +480,7 @@ public class ConfirmCard {
             et.setHintTextColor(Palette.c(0xFF5C6A7E));
             et.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(11.8f, baseSp - 2.3f));
             et.setTextColor(Palette.c(TEXT));
-            et.setBackground(Ui.roundRect(ctx, FIELD, FIELD_STROKE, 10f));
+            et.setBackground(Ui.roundRect(ctx, Palette.c(FIELD), Palette.c(FIELD_STROKE), 10f));
             int p = dp(10);
             et.setPadding(p, dp(8), p, dp(8));
             et.setSingleLine(maxLines <= 1);
@@ -558,7 +558,7 @@ public class ConfirmCard {
             if (done) {
                 chip.setText("已确认");
                 chip.setTextColor(Palette.c(GREEN));
-                chip.setBackground(Ui.roundRect(ctx, 0x1F3FB950, 0x333FB950, 6f));
+                chip.setBackground(Ui.roundRect(ctx, Palette.c(0x1F3FB950), Palette.c(0x333FB950), 6f));
             } else {
                 // 还没选齐：确认键压暗，选齐后点亮，用户一眼知道还差什么
                 boolean ready = st.complete(items);
@@ -606,9 +606,9 @@ public class ConfirmCard {
         private GradientDrawable cardBg() {
             GradientDrawable g = new GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
-                    new int[]{CARD_TOP, CARD_BOTTOM});
+                    new int[]{Palette.c(CARD_TOP), Palette.c(CARD_BOTTOM)});
             g.setCornerRadius(dp(16));
-            g.setStroke(Math.max(1, dp(1)), STROKE);
+            g.setStroke(Math.max(1, dp(1)), Palette.c(STROKE));
             return g;
         }
 

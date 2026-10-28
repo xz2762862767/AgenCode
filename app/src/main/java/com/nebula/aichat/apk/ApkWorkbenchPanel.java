@@ -1,5 +1,7 @@
 package com.nebula.aichat.apk;
 
+import com.nebula.aichat.ui.Palette;
+
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -139,7 +141,7 @@ public class ApkWorkbenchPanel {
         fastBox = new CheckBox(act);
         fastBox.setText("快速模式（只解资源不解 dex，快 3~4 倍）");
         fastBox.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        fastBox.setTextColor(0xFF8A8F98);
+        fastBox.setTextColor(Palette.c(0xFF8A8F98));
         fastBox.setChecked(true);
         box.addView(fastBox);
 

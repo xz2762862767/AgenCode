@@ -62,10 +62,10 @@ public class MarkdownRenderer {
         this.ctx = ctx;
         this.container = container;
         this.baseSp = baseSp;
-        this.colorText = ctx.getResources().getColor(R.color.text);
-        this.colorDim = ctx.getResources().getColor(R.color.text_dim);
-        this.colorAccent = ctx.getResources().getColor(R.color.accent);
-        this.colorCodeBg = ctx.getResources().getColor(R.color.code_bg);
+        this.colorText = Palette.text(ctx);
+        this.colorDim = Palette.dim(ctx);
+        this.colorAccent = Palette.accent(ctx);
+        this.colorCodeBg = Palette.code(ctx);
     }
 
     /**
@@ -672,7 +672,7 @@ public class MarkdownRenderer {
 
     private void addDivider() {
         View v = new View(ctx);
-        v.setBackgroundColor(ctx.getResources().getColor(R.color.stroke));
+        v.setBackgroundColor(Palette.stroke(ctx));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
         lp.setMargins(0, dp(8), 0, dp(8));
@@ -1214,11 +1214,15 @@ public class MarkdownRenderer {
         return (color & 0x00FFFFFF) | ((alpha & 0xFF) << 24);
     }
 
-    /** 向白色提亮：f=0 原色，f=1 纯白。行内代码的文字色用它提亮，深底上才看得清 */
-    private static int mixWhite(int color, float f) {
-        int r = (int) (((color >> 16) & 0xFF) * (1 - f) + 255 * f);
-        int g = (int) (((color >> 8) & 0xFF) * (1 - f) + 255 * f);
-        int b = (int) ((color & 0xFF) * (1 - f) + 255 * f);
+    /**
+     * 拉开对比：f=0 原色，f=1 纯白/纯黑。
+     * 深色主题向白提亮（深底上才看得清），浅色主题向黑压暗（白底上才看得清）。
+     */
+    private int mixFg(int color, float f) {
+        int target = Palette.isLight(ctx) ? 0 : 255;
+        int r = (int) (((color >> 16) & 0xFF) * (1 - f) + target * f);
+        int g = (int) (((color >> 8) & 0xFF) * (1 - f) + target * f);
+        int b = (int) ((color & 0xFF) * (1 - f) + target * f);
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
@@ -1240,7 +1244,7 @@ public class MarkdownRenderer {
                     out.append(s, i + 1, end);
                     // 胶囊颜色跟着强调色走：换紫/绿主题时行内代码不该还是蓝的
                     int ac = Palette.accent(ctx);
-                    out.setSpan(new CodeSpan(mixWhite(ac, 0.55f), soft(ac, 0x1C), soft(ac, 0x38),
+                    out.setSpan(new CodeSpan(mixFg(ac, 0.55f), soft(ac, 0x1C), soft(ac, 0x38),
                             0f, dp(5.5f), sp), st, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     i = end + 1;
                     continue;
@@ -1252,14 +1256,14 @@ public class MarkdownRenderer {
                 if (end > i + 1) {
                     String inner = s.substring(i + 2, end);
                     int st = out.length();
-                    out.append(span(inner, 0xFFF2F7FF, sp, true));
+                    out.append(span(inner, Palette.c(0xFFF2F7FF), sp, true));
                     int en = out.length();
                     out.setSpan(new StyleSpan(Typeface.BOLD), st, en, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     // 短重点句才给标记，整段加粗不铺（否则一片色块反而没重点）；
                     // 段内含 `行内代码` 时也不铺 —— 两层 ReplacementSpan 重叠会把代码胶囊吃掉
                     if (en > st && en - st <= BOLD_HL_MAX && inner.indexOf('`') < 0) {
                         int ac = Palette.accent(ctx);
-                        out.setSpan(new MarkSpan(mixWhite(ac, 0.35f), soft(ac, 0x10),
+                        out.setSpan(new MarkSpan(mixFg(ac, 0.35f), soft(ac, 0x10),
                                 0f, dp(3f), dp(0.5f)), st, en, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     }
                     i = end + 2;

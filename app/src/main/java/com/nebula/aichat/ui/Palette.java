@@ -22,7 +22,7 @@ public final class Palette {
     public static final int THEME_BLACK = 1;
     public static final int THEME_LIGHT = 2;
 
-    public static final String[] THEME_NAMES = {"深色", "纯黑 OLED", "默认白"};
+    public static final String[] THEME_NAMES = {"深色", "纯黑", "默认白"};
 
     /** 当前进程是否浅色主题：由 {@link #apply(Activity)} 更新，供 {@link #c(int)} 使用 */
     private static boolean light = false;
@@ -139,6 +139,11 @@ public final class Palette {
 
     public static int stroke(Context c) {
         return attr(c, R.attr.neb_stroke);
+    }
+
+    /** 代码块/终端底色 */
+    public static int code(Context c) {
+        return attr(c, R.attr.neb_code);
     }
 
     public static int text(Context c) {

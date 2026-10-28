@@ -25,12 +25,14 @@ public final class SourceViewer {
 
     public static void show(final Activity act, String title, String subtitle,
                             final String code, String lang) {
-        final Dialog dlg = new Dialog(act, android.R.style.Theme_DeviceDefault_NoActionBar);
+        // 用 App 弹窗主题（随浅色/深色切换），窗口尺寸下面再拉满
+        final Dialog dlg = new Dialog(act);
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout root = Ui.col(act);
-        root.setBackgroundColor(0xFF0C1016);
+        root.setBackgroundColor(Palette.c(0xFF0C1016));
 
         LinearLayout head = Ui.row(act);
-        head.setBackgroundColor(0xFF10151C);
+        head.setBackgroundColor(Palette.c(0xFF10151C));
         head.setPadding(Ui.dp(act, 6), Ui.dp(act, 9), Ui.dp(act, 10), Ui.dp(act, 9));
 
         TextView back = Ui.text(act, "‹", 26f, 0xFFD7E0EE);
@@ -76,7 +78,7 @@ public final class SourceViewer {
         TextView tv = new TextView(act);
         tv.setTypeface(Typeface.MONOSPACE);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        tv.setTextColor(0xFFC8D3F5);
+        tv.setTextColor(Palette.c(0xFFC8D3F5));
         tv.setLineSpacing(Ui.dp(act, 2.5f), 1.18f);
         tv.setTextIsSelectable(true);
         tv.setPadding(0, Ui.dp(act, 8), Ui.dp(act, 16), Ui.dp(act, 40));
@@ -109,7 +111,7 @@ public final class SourceViewer {
         dlg.setContentView(root);
         Window w = dlg.getWindow();
         if (w != null) {
-            w.setBackgroundDrawableResource(android.R.color.black);
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Palette.bg(act)));
             w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
         }
         dlg.show();

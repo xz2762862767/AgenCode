@@ -203,7 +203,7 @@ public class ConfirmCard {
             t.setText("AI 需要你的确认");
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(12.5f, baseSp - 1.5f));
             t.setTypeface(Typeface.DEFAULT_BOLD);
-            t.setTextColor(GOLD);
+            t.setTextColor(Palette.c(GOLD));
             head.addView(t);
 
             head.addView(new View(ctx), new LinearLayout.LayoutParams(0, 1, 1f));
@@ -212,7 +212,7 @@ public class ConfirmCard {
             chip.setText("askUserQuestion");
             chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(9.5f, baseSp - 4.5f));
             chip.setTypeface(Typeface.MONOSPACE);
-            chip.setTextColor(CHIP_TX);
+            chip.setTextColor(Palette.c(CHIP_TX));
             chip.setPadding(dp(7), dp(2), dp(7), dp(3));
             chip.setBackground(Ui.roundRect(ctx, CHIP_BG, 0x33C3B0FF, 6f));
             head.addView(chip);
@@ -243,7 +243,7 @@ public class ConfirmCard {
             TextView more = new TextView(ctx);
             more.setText("补充");
             more.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(11.5f, baseSp - 2.5f));
-            more.setTextColor(0xFFB9C6D6);
+            more.setTextColor(Palette.c(0xFFB9C6D6));
             more.setGravity(Gravity.CENTER);
             more.setBackground(Ui.roundRect(ctx, 0x14FFFFFF, 0x26FFFFFF, 11f));
             more.setOnClickListener(new View.OnClickListener() {
@@ -255,7 +255,7 @@ public class ConfirmCard {
             okBtn.setText("确认");
             okBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(12.5f, baseSp - 1.5f));
             okBtn.setTypeface(Typeface.DEFAULT_BOLD);
-            okBtn.setTextColor(GOLD_DEEP);
+            okBtn.setTextColor(Palette.c(GOLD_DEEP));
             okBtn.setGravity(Gravity.CENTER);
             okBtn.setBackground(Ui.roundRect(ctx, GOLD, 0, 11f));
             okBtn.setOnClickListener(new View.OnClickListener() {
@@ -273,13 +273,13 @@ public class ConfirmCard {
             okMark.setText("✓");
             okMark.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(11f, baseSp - 3f));
             okMark.setTypeface(Typeface.DEFAULT_BOLD);
-            okMark.setTextColor(GREEN);
+            okMark.setTextColor(Palette.c(GREEN));
             okMark.setPadding(0, 0, dp(7), 0);
             doneRow.addView(okMark);
             TextView okText = new TextView(ctx);
             okText.setText("已确认，正在按你的选择继续");
             okText.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(11f, baseSp - 3f));
-            okText.setTextColor(0xFF7FD08B);
+            okText.setTextColor(Palette.c(0xFF7FD08B));
             okText.setLineSpacing(dp(2), 1f);
             doneRow.addView(okText, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -314,7 +314,7 @@ public class ConfirmCard {
                 no.setText(String.valueOf(index + 1));
                 no.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(9.5f, baseSp - 4.5f));
                 no.setTypeface(Typeface.DEFAULT_BOLD);
-                no.setTextColor(GOLD);
+                no.setTextColor(Palette.c(GOLD));
                 no.setGravity(Gravity.CENTER);
                 no.setBackground(Ui.roundRect(ctx, 0x1FE8C06A, 0x4DE8C06A, 5f));
                 LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(dp(16), dp(16));
@@ -324,7 +324,7 @@ public class ConfirmCard {
                 TextView mode = new TextView(ctx);
                 mode.setText(it.isText() ? "填空" : (it.isMulti() ? "多选" : "单选"));
                 mode.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(9.5f, baseSp - 4.5f));
-                mode.setTextColor(DIM);
+                mode.setTextColor(Palette.c(DIM));
                 h.addView(mode);
                 bodyBox.addView(h);
             }
@@ -332,7 +332,7 @@ public class ConfirmCard {
             TextView q = new TextView(ctx);
             q.setText(it.question);
             q.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(12.5f, baseSp - 1.5f));
-            q.setTextColor(TITLE);
+            q.setTextColor(Palette.c(TITLE));
             q.setLineSpacing(dp(3), 1f);
             LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -391,7 +391,7 @@ public class ConfirmCard {
             or.title = new TextView(ctx);
             or.title.setText(parts[0]);
             or.title.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(12.3f, baseSp - 1.8f));
-            or.title.setTextColor(TEXT);
+            or.title.setTextColor(Palette.c(TEXT));
             or.title.setLineSpacing(dp(2), 1f);
             col.addView(or.title);
 
@@ -400,7 +400,7 @@ public class ConfirmCard {
                 or.desc = new TextView(ctx);
                 or.desc.setText(parts[1]);
                 or.desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(10.8f, baseSp - 3.2f));
-                or.desc.setTextColor(DIM);
+                or.desc.setTextColor(Palette.c(DIM));
                 or.desc.setLineSpacing(dp(2), 1f);
                 or.desc.setMaxLines(3);
                 or.desc.setEllipsize(TextUtils.TruncateAt.END);
@@ -438,7 +438,7 @@ public class ConfirmCard {
                 GradientDrawable d = new GradientDrawable();
                 d.setShape(multi ? GradientDrawable.RECTANGLE : GradientDrawable.OVAL);
                 d.setCornerRadius(multi ? dp(4) : 0);
-                d.setColor(0x00000000);
+                d.setColor(Palette.c(0x00000000));
                 d.setStroke(Math.max(1, dp(1.4f)), 0x4DFFFFFF);
                 or.dot.setBackground(d);
             } else {
@@ -477,9 +477,9 @@ public class ConfirmCard {
         private EditText field(String hint, int maxLines) {
             EditText et = new EditText(ctx);
             et.setHint(hint);
-            et.setHintTextColor(0xFF5C6A7E);
+            et.setHintTextColor(Palette.c(0xFF5C6A7E));
             et.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(11.8f, baseSp - 2.3f));
-            et.setTextColor(TEXT);
+            et.setTextColor(Palette.c(TEXT));
             et.setBackground(Ui.roundRect(ctx, FIELD, FIELD_STROKE, 10f));
             int p = dp(10);
             et.setPadding(p, dp(8), p, dp(8));
@@ -498,7 +498,7 @@ public class ConfirmCard {
             }
             if (st.confirmed) {
                 et.setEnabled(false);
-                et.setTextColor(0xFF98A5B6);
+                et.setTextColor(Palette.c(0xFF98A5B6));
             }
             et.addTextChangedListener(new TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
@@ -525,7 +525,7 @@ public class ConfirmCard {
             noteEt.setText(st.note == null ? "" : st.note);
             if (st.confirmed) {
                 noteEt.setEnabled(false);
-                noteEt.setTextColor(0xFF98A5B6);
+                noteEt.setTextColor(Palette.c(0xFF98A5B6));
             }
             noteEt.addTextChangedListener(new TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
@@ -557,7 +557,7 @@ public class ConfirmCard {
             doneRow.setVisibility(done ? View.VISIBLE : View.GONE);
             if (done) {
                 chip.setText("已确认");
-                chip.setTextColor(GREEN);
+                chip.setTextColor(Palette.c(GREEN));
                 chip.setBackground(Ui.roundRect(ctx, 0x1F3FB950, 0x333FB950, 6f));
             } else {
                 // 还没选齐：确认键压暗，选齐后点亮，用户一眼知道还差什么

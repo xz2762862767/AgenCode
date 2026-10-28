@@ -274,13 +274,13 @@ public class ConfirmSheet {
         title.setText("需要你确认");
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(TEXT);
+        title.setTextColor(Palette.c(TEXT));
         titleRow.addView(title);
 
         TextView count = new TextView(act);
         count.setText("  " + items.size() + " 项");
         count.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        count.setTextColor(ACCENT);
+        count.setTextColor(Palette.c(ACCENT));
         count.setPadding(dp(act, 7), dp(act, 2), dp(act, 7), dp(act, 2));
         count.setBackground(Ui.roundRect(act, 0x225B93FF, 0x4D5B93FF, 8f));
         LinearLayout.LayoutParams countLp = new LinearLayout.LayoutParams(
@@ -292,7 +292,7 @@ public class ConfirmSheet {
         TextView hint = new TextView(act);
         hint.setText("选好后点底部「确认并继续」，我会带着这些选择接着做，不用你再打字。");
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        hint.setTextColor(DIM);
+        hint.setTextColor(Palette.c(DIM));
         hint.setLineSpacing(dp(act, 3), 1f);
         LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -342,7 +342,7 @@ public class ConfirmSheet {
         TextView cancel = new TextView(act);
         cancel.setText("取消");
         cancel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        cancel.setTextColor(DIM);
+        cancel.setTextColor(Palette.c(DIM));
         cancel.setGravity(Gravity.CENTER);
         cancel.setPadding(dp(act, 16), dp(act, 9), dp(act, 16), dp(act, 9));
         cancel.setBackground(Ui.roundRect(act, 0x00000000, 0xFF2A3A4D, 12f));
@@ -358,7 +358,7 @@ public class ConfirmSheet {
         ok.setText("确认并继续");
         ok.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
         ok.setTypeface(Typeface.DEFAULT_BOLD);
-        ok.setTextColor(0xFFFFFFFF);
+        ok.setTextColor(Palette.c(0xFFFFFFFF));
         ok.setGravity(Gravity.CENTER);
         ok.setPadding(dp(act, 20), dp(act, 10), dp(act, 20), dp(act, 10));
         ok.setBackground(Ui.roundRect(act, ACCENT, 0x00000000, 12f));
@@ -432,7 +432,7 @@ public class ConfirmSheet {
         no.setText(String.valueOf(index));
         no.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
         no.setTypeface(Typeface.DEFAULT_BOLD);
-        no.setTextColor(ACCENT);
+        no.setTextColor(Palette.c(ACCENT));
         no.setGravity(Gravity.CENTER);
         no.setWidth(dp(act, 17));
         no.setHeight(dp(act, 17));
@@ -468,7 +468,7 @@ public class ConfirmSheet {
         TextView q = new TextView(act);
         q.setText(it.question);
         q.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
-        q.setTextColor(TEXT);
+        q.setTextColor(Palette.c(TEXT));
         q.setLineSpacing(dp(act, 3), 1f);
         LinearLayout.LayoutParams qLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -480,9 +480,9 @@ public class ConfirmSheet {
             EditText et = new EditText(act);
             it.input = et;
             et.setHint("在这里输入…");
-            et.setHintTextColor(0xFF5D6A7E);
+            et.setHintTextColor(Palette.c(0xFF5D6A7E));
             et.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-            et.setTextColor(TEXT);
+            et.setTextColor(Palette.c(TEXT));
             et.setTypeface(Typeface.MONOSPACE);
             et.setBackground(Ui.roundRect(act, FIELD, 0xFF26364D, 10f));
             int ep = dp(act, 10);
@@ -528,7 +528,7 @@ public class ConfirmSheet {
         final TextView label = new TextView(act);
         label.setText(option);
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        label.setTextColor(0xFFC9D6E8);
+        label.setTextColor(Palette.c(0xFFC9D6E8));
         row.addView(label, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -577,7 +577,7 @@ public class ConfirmSheet {
             d.setColor(ACCENT);
             d.setStroke(dp(dot.getContext(), 1.5f), ACCENT);
         } else {
-            d.setColor(0x00000000);
+            d.setColor(Palette.c(0x00000000));
             d.setStroke(dp(dot.getContext(), 1.5f), 0xFF3A4A61);
         }
         dot.setBackground(d);

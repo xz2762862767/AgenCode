@@ -102,7 +102,7 @@ public class EnvPage {
 
     private void build() {
         if (rootView == null) rootView = Ui.col(act);
-        rootView.setBackgroundColor(0xFF0F1218);
+        rootView.setBackgroundColor(Palette.c(0xFF0F1218));
 
         ScrollView sv = new ScrollView(act);
         sv.setFillViewport(true);

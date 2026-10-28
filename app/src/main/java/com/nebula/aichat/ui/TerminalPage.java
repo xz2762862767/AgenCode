@@ -794,7 +794,7 @@ public class TerminalPage {
         startAt = SystemClock.uptimeMillis();
         setDot(C_WARN);
         startScan();
-        if (tvTimer != null) tvTimer.setTextColor(C_WARN);
+        if (tvTimer != null) tvTimer.setTextColor(Palette.c(C_WARN));
         if (tick != null) ui.removeCallbacks(tick);
         tick = new Runnable() {
             @Override

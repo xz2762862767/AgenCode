@@ -237,9 +237,9 @@ public class SettingsActivity extends AppCompatActivity {
         card.addView(themeRow, lpTop(dp(8)));
         for (int i = 0; i < Palette.THEME_NAMES.length; i++) {
             final int idx = i;
-            TextView chip = chip(Palette.THEME_NAMES[i], settings.theme == i);
+            View chip = themeChip(Palette.THEME_NAMES[i], i, settings.theme == i);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(36), 1f);
-            if (i == 0) lp.rightMargin = dp(8);
+            if (i < Palette.THEME_NAMES.length - 1) lp.rightMargin = dp(8);
             themeRow.addView(chip, lp);
             chip.setOnClickListener(v -> {
                 if (settings.theme == idx) return;
@@ -816,11 +816,30 @@ public class SettingsActivity extends AppCompatActivity {
         return sw;
     }
 
-    private TextView chip(String text, boolean selected) {
+
+    /** 主题选项：左侧一块真实底色的预览点，「默认白」一眼能认出来 */
+    private View themeChip(String text, int theme, boolean selected) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(6), 0, dp(6), 0);
+
+        View dot = new View(this);
+        GradientDrawable dg = new GradientDrawable();
+        dg.setShape(GradientDrawable.OVAL);
+        dg.setColor(themeBg(theme));
+        dg.setStroke(dp(1), Palette.stroke(this));
+        dot.setBackground(dg);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(9), dp(9));
+        dlp.rightMargin = dp(5);
+        box.addView(dot, dlp);
+
         TextView t = new TextView(this);
         t.setText(text);
-        t.setGravity(Gravity.CENTER);
         t.setTextSize(12.5f);
+        t.setSingleLine(true);
+        box.addView(t);
+
         GradientDrawable gd = new GradientDrawable();
         gd.setCornerRadius(dp(10));
         if (selected) {
@@ -830,6 +849,34 @@ public class SettingsActivity extends AppCompatActivity {
             t.setTypeface(null, android.graphics.Typeface.BOLD);
         } else {
             gd.setColor(0x00000000);
+            gd.setStroke(dp(1), Palette.stroke(this));
+            t.setTextColor(Palette.dim(this));
+        }
+        box.setBackground(gd);
+        return box;
+    }
+
+    private int themeBg(int theme) {
+        if (theme == Palette.THEME_LIGHT) return 0xFFF4F6FA;
+        if (theme == Palette.THEME_BLACK) return 0xFF000000;
+        return 0xFF0F1218;
+    }
+
+    private TextView chip(String text, boolean selected) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setGravity(Gravity.CENTER);
+        t.setTextSize(12.5f);
+        t.setSingleLine(true);
+        GradientDrawable gd = new GradientDrawable();
+        gd.setCornerRadius(dp(10));
+        if (selected) {
+            gd.setColor(Palette.accentSoft(this, 0x33));
+            gd.setStroke(dp(2), Palette.accent(this));
+            t.setTextColor(Palette.accent(this));
+            t.setTypeface(null, android.graphics.Typeface.BOLD);
+        } else {
+            gd.setColor(Palette.c(0x00000000));
             gd.setStroke(dp(1), Palette.stroke(this));
             t.setTextColor(Palette.dim(this));
         }
@@ -1052,7 +1099,7 @@ public class SettingsActivity extends AppCompatActivity {
         GradientDrawable gd = new GradientDrawable();
         gd.setShape(GradientDrawable.RECTANGLE);
         gd.setCornerRadius(dp(20));
-        gd.setColor(0xFF141A23);
+        gd.setColor(Palette.c(0xFF141A23));
         gd.setStroke(Math.max(1, dp(1)), 0xFF2A3240);
         root.setBackground(gd);
         root.setPadding(dp(18), dp(18), dp(18), dp(14));
@@ -1074,13 +1121,13 @@ public class SettingsActivity extends AppCompatActivity {
         t.setText(title);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         t.setTypeface(Typeface.DEFAULT_BOLD);
-        t.setTextColor(0xFFEDF2FA);
+        t.setTextColor(Palette.c(0xFFEDF2FA));
         root.addView(t);
         if (!TextUtils.isEmpty(sub)) {
             TextView s = new TextView(this);
             s.setText(sub);
             s.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-            s.setTextColor(0xFF7F8C9F);
+            s.setTextColor(Palette.c(0xFF7F8C9F));
             s.setPadding(0, dp(5), 0, 0);
             root.addView(s);
         }
@@ -1131,7 +1178,7 @@ public class SettingsActivity extends AppCompatActivity {
         b.setText(badge);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
         b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setTextColor(0xFFFFFFFF);
+        b.setTextColor(Palette.c(0xFFFFFFFF));
         b.setGravity(Gravity.CENTER);
         b.setBackground(pill(color, 0, 10f));
         row.addView(b, new LinearLayout.LayoutParams(dp(34), dp(34)));
@@ -1154,7 +1201,7 @@ public class SettingsActivity extends AppCompatActivity {
             TextView h = new TextView(this);
             h.setText(sub);
             h.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-            h.setTextColor(0xFF7C8A9C);
+            h.setTextColor(Palette.c(0xFF7C8A9C));
             h.setSingleLine(true);
             h.setEllipsize(TextUtils.TruncateAt.END);
             h.setPadding(0, dp(3), 0, 0);
@@ -1166,7 +1213,7 @@ public class SettingsActivity extends AppCompatActivity {
             TextView t = new TextView(this);
             t.setText("使用中");
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
-            t.setTextColor(0xFF63C8FF);
+            t.setTextColor(Palette.c(0xFF63C8FF));
             t.setBackground(pill(0x1A63C8FF, 0x5563C8FF, 8f));
             t.setPadding(dp(7), dp(3), dp(7), dp(3));
             row.addView(t);
@@ -1174,7 +1221,7 @@ public class SettingsActivity extends AppCompatActivity {
             TextView t = new TextView(this);
             t.setText("\u203A");
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
-            t.setTextColor(0xFF66768C);
+            t.setTextColor(Palette.c(0xFF66768C));
             t.setPadding(dp(6), 0, dp(2), 0);
             row.addView(t);
         }
@@ -1214,7 +1261,7 @@ public class SettingsActivity extends AppCompatActivity {
             TextView t = new TextView(this);
             t.setText("当前");
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
-            t.setTextColor(0xFF63C8FF);
+            t.setTextColor(Palette.c(0xFF63C8FF));
             t.setBackground(pill(0x1A63C8FF, 0x5563C8FF, 8f));
             t.setPadding(dp(7), dp(3), dp(7), dp(3));
             row.addView(t);
@@ -1235,11 +1282,11 @@ public class SettingsActivity extends AppCompatActivity {
         tv.setClickable(true);
         tv.setFocusable(true);
         if (primary) {
-            tv.setTextColor(0xFFC6D8FA);
+            tv.setTextColor(Palette.c(0xFFC6D8FA));
             tv.setBackground(new RippleDrawable(ColorStateList.valueOf(0x3D4A86F7),
                     pill(0x1F4A86F7, 0x6B4A86F7, 14f), null));
         } else {
-            tv.setTextColor(0xFF8FA0B5);
+            tv.setTextColor(Palette.c(0xFF8FA0B5));
             tv.setBackground(new RippleDrawable(ColorStateList.valueOf(0x1FFFFFFF),
                     pill(0x0AFFFFFF, 0x1FFFFFFF, 14f), null));
         }

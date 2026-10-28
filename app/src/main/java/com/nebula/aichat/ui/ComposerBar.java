@@ -301,7 +301,7 @@ public class ComposerBar {
         tv.setText(label);
         tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11.5f);
         tv.setIncludeFontPadding(false);
-        tv.setTextColor(0xFF9DC0FF);
+        tv.setTextColor(Palette.c(0xFF9DC0FF));
         tv.setBackground(Ui.roundRect(act, 0xFF171E2A, 0xFF2F3B4D, 10f));
         int hx = Ui.dp(act, 9);
         int hy = Ui.dp(act, 4);

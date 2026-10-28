@@ -653,8 +653,8 @@ public class SandboxPage {
         et.setText(content);
         et.setTextSize(12.5f);
         et.setTypeface(Typeface.MONOSPACE);
-        et.setTextColor(0xFFE8EDF6);
-        et.setBackgroundColor(0xFF0B0E14);
+        et.setTextColor(Palette.c(0xFFE8EDF6));
+        et.setBackgroundColor(Palette.c(0xFF0B0E14));
         et.setGravity(Gravity.TOP | Gravity.START);
         et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -796,7 +796,7 @@ public class SandboxPage {
     private void createNameDialog(final boolean dir, String defName, final String initial) {
         final EditText et = new EditText(act);
         et.setText(defName);
-        et.setTextColor(0xFFE8EDF6);
+        et.setTextColor(Palette.c(0xFFE8EDF6));
         et.setSelectAllOnFocus(true);
         int p = Ui.dp(act, 16);
         et.setPadding(p, Ui.dp(act, 8), p, Ui.dp(act, 8));
@@ -831,7 +831,7 @@ public class SandboxPage {
         final EditText et = new EditText(act);
         et.setText(f.getName());
         et.setSelectAllOnFocus(true);
-        et.setTextColor(0xFFE8EDF6);
+        et.setTextColor(Palette.c(0xFFE8EDF6));
         int p = Ui.dp(act, 16);
         et.setPadding(p, Ui.dp(act, 8), p, Ui.dp(act, 8));
 

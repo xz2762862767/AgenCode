@@ -186,7 +186,7 @@ public class AboutActivity extends AppCompatActivity {
         btnCopy.setText("复制版本信息");
         btnCopy.setGravity(Gravity.CENTER);
         btnCopy.setTextSize(13.5f);
-        btnCopy.setTextColor(0xFFFFFFFF);
+        btnCopy.setTextColor(Palette.c(0xFFFFFFFF));
         btnCopy.setBackgroundResource(R.drawable.btn_primary);
         LinearLayout.LayoutParams cLP = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48));

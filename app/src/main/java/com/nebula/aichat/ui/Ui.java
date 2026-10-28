@@ -103,7 +103,8 @@ public class Ui {
     public static LinearLayout card(Context c) {
         LinearLayout box = new LinearLayout(c);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackground(roundRect(c, 0xFF161B24, 0xFF2A3240, 12f));
+        box.setBackground(roundRect(c, Palette.isLight(c) ? 0xFFFFFFFF : 0xFF161B24,
+                Palette.isLight(c) ? 0xFFE3E8F1 : 0xFF2A3240, 12f));
         int p = dp(c, 12);
         box.setPadding(p, p, p, p);
         return box;
@@ -131,7 +132,7 @@ public class Ui {
     }
 
     public static TextView sectionTitle(Context c, String s) {
-        TextView tv = text(c, s, 12f, 0xFF8B97A9);
+        TextView tv = text(c, s, 12f, Palette.dim(c));
         tv.setPadding(0, dp(c, 14), 0, dp(c, 6));
         tv.setTypeface(Typeface.DEFAULT_BOLD);
         return tv;
@@ -149,7 +150,9 @@ public class Ui {
     }
 
     public static TextView primaryChip(Context c, String s, View.OnClickListener l) {
-        return chip(c, s, 0xFF1E3A6B, 0xFF9DC0FF, l);
+        return Palette.isLight(c)
+                ? chip(c, s, 0xFFDCE8FF, 0xFF2A61DA, l)
+                : chip(c, s, 0xFF1E3A6B, 0xFF9DC0FF, l);
     }
 
     /** 给背景加一层按下去的水波，按钮才有「点到了」的即时感 */
@@ -165,12 +168,14 @@ public class Ui {
     }
 
     public static TextView ghostChip(Context c, String s, View.OnClickListener l) {
-        return chip(c, s, 0xFF1E2530, 0xFFB9C5D6, l);
+        return Palette.isLight(c)
+                ? chip(c, s, 0xFFEDF1F8, 0xFF3C4A5E, l)
+                : chip(c, s, 0xFF1E2530, 0xFFB9C5D6, l);
     }
 
     /** 统一的小胶囊按钮（正文里折叠/操作的标记都用它，保证视觉一致） */
     public static TextView pill(Context c, String s) {
-        TextView tv = text(c, s, 11f, 0xFF5B93FF);
+        TextView tv = text(c, s, 11f, Palette.accent(c));
         tv.setPadding(dp(c, 10), dp(c, 3), dp(c, 10), dp(c, 3));
         tv.setBackground(roundRect(c, 0x1A5B93FF, 0x4D5B93FF, 9f));
         tv.setClickable(true);
@@ -180,9 +185,11 @@ public class Ui {
 
     /** 弱化的胶囊按钮（次要动作，比如「复制」） */
     public static TextView pillGhost(Context c, String s) {
-        TextView tv = text(c, s, 11f, 0xFF9AA7BA);
+        TextView tv = text(c, s, 11f, Palette.dim(c));
         tv.setPadding(dp(c, 10), dp(c, 3), dp(c, 10), dp(c, 3));
-        tv.setBackground(roundRect(c, 0x14FFFFFF, 0x2E3A4C, 9f));
+        tv.setBackground(Palette.isLight(c)
+                ? roundRect(c, 0x0F000000, 0xFFD8DFEA, 9f)
+                : roundRect(c, 0x14FFFFFF, 0x2E3A4C, 9f));
         tv.setClickable(true);
         tv.setFocusable(true);
         return tv;
@@ -190,12 +197,12 @@ public class Ui {
 
     /** 折叠标题左侧文字：字号/颜色统一，避免各处长文本、代码、思考过程各写一套 */
     public static TextView foldTitle(Context c, String s) {
-        return text(c, s, 12f, 0xFF8FA0B5);
+        return text(c, s, 12f, Palette.dim(c));
     }
 
     public static View divider(Context c) {
         View v = new View(c);
-        v.setBackgroundColor(0xFF2A3240);
+        v.setBackgroundColor(Palette.c(0xFF2A3240));
         v.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 Math.max(1, dp(c, 0.6f))));
         return v;

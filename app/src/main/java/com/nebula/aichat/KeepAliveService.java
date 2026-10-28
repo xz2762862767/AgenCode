@@ -1,5 +1,7 @@
 package com.nebula.aichat;
 
+import com.nebula.aichat.ui.Palette;
+
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -133,7 +135,7 @@ public class KeepAliveService extends Service {
         b.setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(R.drawable.ic_stat_nebula)
-                .setColor(0xFF5B93FF)
+                .setColor(Palette.c(0xFF5B93FF))
                 .setContentIntent(contentIntent())
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)

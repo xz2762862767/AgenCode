@@ -1,5 +1,7 @@
 package com.nebula.aichat.skill;
 
+import com.nebula.aichat.ui.Palette;
+
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -448,9 +450,9 @@ public class SkillPanel {
         etBody.setHint("---\nname: 我的技能\ndescription: 什么情况下用\n---\n\n# 正文\n\n## 规则\n- ...");
         etBody.setTextSize(12f);
         etBody.setTypeface(Typeface.MONOSPACE);
-        etBody.setTextColor(0xFFE8EDF6);
-        etBody.setHintTextColor(0xFF5A6577);
-        etBody.setBackgroundColor(0xFF0B0E14);
+        etBody.setTextColor(Palette.c(0xFFE8EDF6));
+        etBody.setHintTextColor(Palette.c(0xFF5A6577));
+        etBody.setBackgroundColor(Palette.c(0xFF0B0E14));
         etBody.setGravity(Gravity.TOP | Gravity.START);
         etBody.setMinLines(8);
         etBody.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -564,8 +566,8 @@ public class SkillPanel {
         et.setText(content);
         et.setTextSize(11.5f);
         et.setTypeface(Typeface.MONOSPACE);
-        et.setTextColor(0xFFE8EDF6);
-        et.setBackgroundColor(0xFF0B0E14);
+        et.setTextColor(Palette.c(0xFFE8EDF6));
+        et.setBackgroundColor(Palette.c(0xFF0B0E14));
         et.setGravity(Gravity.TOP | Gravity.START);
         et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -734,8 +736,8 @@ public class SkillPanel {
         et.setText(value);
         et.setSingleLine(true);
         et.setTextSize(13f);
-        et.setTextColor(0xFFE8EDF6);
-        et.setHintTextColor(0xFF5A6577);
+        et.setTextColor(Palette.c(0xFFE8EDF6));
+        et.setHintTextColor(Palette.c(0xFF5A6577));
         return et;
     }
 

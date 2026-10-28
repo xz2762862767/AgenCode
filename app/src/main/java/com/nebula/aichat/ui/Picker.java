@@ -214,7 +214,7 @@ public final class Picker {
         GradientDrawable pressed = new GradientDrawable();
         pressed.setColor(Palette.accentSoft(act, 0x14));
         GradientDrawable normal = new GradientDrawable();
-        normal.setColor(0x00000000);
+        normal.setColor(Palette.c(0x00000000));
         StateListDrawable bg = new StateListDrawable();
         bg.addState(new int[]{android.R.attr.state_pressed}, pressed);
         bg.addState(new int[]{}, normal);

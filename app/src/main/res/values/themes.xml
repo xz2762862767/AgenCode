@@ -21,6 +21,10 @@
         <item name="neb_dim">@color/text_dim</item>
         <item name="neb_accent">@color/accent</item>
         <item name="neb_code">@color/code_bg</item>
+
+        <!-- 弹窗/抽屉继承弹窗主题，才能解析到 neb_* 语义色 -->
+        <item name="android:dialogTheme">@style/NebDialog</item>
+        <item name="android:alertDialogTheme">@style/NebDialog</item>
     </style>
 
     <!-- 纯黑 OLED：只压暗背景层，卡片/描边改用近黑，省电且不刺眼 -->
@@ -36,6 +40,8 @@
         <item name="neb_surface2">@color/surface2_black</item>
         <item name="neb_stroke">@color/stroke_black</item>
         <item name="neb_code">@color/code_black</item>
+        <item name="android:dialogTheme">@style/NebDialogBlack</item>
+        <item name="android:alertDialogTheme">@style/NebDialogBlack</item>
     </style>
 
 
@@ -47,6 +53,7 @@
         <item name="android:statusBarColor">@color/bg_light</item>
         <item name="android:navigationBarColor">@color/bg_light</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:textColorPrimary">@color/text_light</item>
         <item name="android:textColorSecondary">@color/text_dim_light</item>
         <item name="android:textColorHint">@color/text_dim_light</item>
@@ -58,6 +65,8 @@
         <item name="neb_text">@color/text_light</item>
         <item name="neb_dim">@color/text_dim_light</item>
         <item name="neb_code">@color/code_light</item>
+        <item name="android:dialogTheme">@style/NebDialogLight</item>
+        <item name="android:alertDialogTheme">@style/NebDialogLight</item>
     </style>
 
     <!-- 强调色覆盖（运行时 applyStyle 叠加到当前主题上） -->
@@ -84,6 +93,56 @@
     <style name="AccentCyan">
         <item name="neb_accent">@color/accent_cyan</item>
         <item name="colorAccent">@color/accent_cyan</item>
+    </style>
+
+    <!-- ===== 弹窗主题：与主主题一一对应 ===== -->
+    <!-- 弹窗独立于 Activity 主题，必须自己带 neb_* 语义色，否则 new Dialog(this)
+         会落到 AppCompat 默认弹窗主题，抽屉/面板里的 ?attr/neb_bg 全部解析不到 -->
+    <style name="NebDialog" parent="Theme.AppCompat.Dialog">
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="android:textColorHint">@color/text_dim</item>
+        <item name="android:colorBackground">@color/surface</item>
+        <item name="neb_bg">@color/bg</item>
+        <item name="neb_surface">@color/surface</item>
+        <item name="neb_surface2">@color/surface2</item>
+        <item name="neb_stroke">@color/stroke</item>
+        <item name="neb_text">@color/text</item>
+        <item name="neb_dim">@color/text_dim</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_bg</item>
+    </style>
+
+    <style name="NebDialogBlack" parent="Theme.AppCompat.Dialog">
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="android:colorBackground">@color/surface_black</item>
+        <item name="neb_bg">@color/bg_black</item>
+        <item name="neb_surface">@color/surface_black</item>
+        <item name="neb_surface2">@color/surface2_black</item>
+        <item name="neb_stroke">@color/stroke_black</item>
+        <item name="neb_text">@color/text</item>
+        <item name="neb_dim">@color/text_dim</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_black</item>
+    </style>
+
+    <style name="NebDialogLight" parent="Theme.AppCompat.Light.Dialog">
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/text_light</item>
+        <item name="android:textColorSecondary">@color/text_dim_light</item>
+        <item name="android:textColorHint">@color/text_dim_light</item>
+        <item name="android:colorBackground">@color/surface_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="neb_bg">@color/bg_light</item>
+        <item name="neb_surface">@color/surface_light</item>
+        <item name="neb_surface2">@color/surface2_light</item>
+        <item name="neb_stroke">@color/stroke_light</item>
+        <item name="neb_text">@color/text_light</item>
+        <item name="neb_dim">@color/text_dim_light</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_light</item>
     </style>
 
     <style name="DialogTheme" parent="Theme.AppCompat.Dialog">

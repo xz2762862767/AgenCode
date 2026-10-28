@@ -1,5 +1,7 @@
 package com.nebula.aichat.mcp;
 
+import com.nebula.aichat.ui.Palette;
+
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -220,8 +222,8 @@ public class McpPanel {
         et.setHint(hint);
         et.setText(value);
         et.setTextSize(13f);
-        et.setTextColor(0xFFE8EDF6);
-        et.setHintTextColor(0xFF5A6577);
+        et.setTextColor(Palette.c(0xFFE8EDF6));
+        et.setHintTextColor(Palette.c(0xFF5A6577));
         et.setSingleLine(true);
         et.setInputType(uri ? InputType.TYPE_TEXT_VARIATION_URI
                 : InputType.TYPE_CLASS_TEXT);
@@ -317,7 +319,7 @@ public class McpPanel {
         et.setText(sampleArgs(tool));
         et.setTextSize(12f);
         et.setTypeface(android.graphics.Typeface.MONOSPACE);
-        et.setTextColor(0xFFE8EDF6);
+        et.setTextColor(Palette.c(0xFFE8EDF6));
         et.setGravity(Gravity.TOP | Gravity.START);
         et.setMinLines(4);
         et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE

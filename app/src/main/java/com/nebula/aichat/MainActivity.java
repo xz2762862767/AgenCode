@@ -1,6 +1,9 @@
 package com.nebula.aichat;
 
+import com.nebula.aichat.ui.Palette;
+
 import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.app.AlertDialog;
 import android.widget.CompoundButton;
 import androidx.appcompat.widget.SwitchCompat;
@@ -37,8 +40,10 @@ import android.text.style.TypefaceSpan;
 import android.util.Base64;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewParent;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
@@ -330,8 +335,13 @@ public class MainActivity extends AppCompatActivity {
                     float dy = Math.abs(ev.getY() - edgeDownY);
                     if (dy > dp(56) || dx < -dp(16)) {
                         edgeTracking = false;
-                    } else if (dx > dp(72) && dx > dy * 1.6f) {
+                    } else if (dx > dp(44) && dx > dy * 1.6f) {
                         edgeTracking = false;
+                        try {
+                            View dv = getWindow().getDecorView();
+                            dv.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                        } catch (Throwable ignored) {
+                        }
                         showConversationList();
                         return true;
                     }
@@ -529,6 +539,11 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         Settings fresh = Settings.load(this);
+        // 主题/强调色是在设置页改的，回来必须整体重建才有新配色
+        if (settings != null && (fresh.theme != settings.theme || fresh.accent != settings.accent)) {
+            recreate();
+            return;
+        }
         boolean changed = !TextUtils.equals(fresh.model, settings.model)
                 || !TextUtils.equals(fresh.baseUrl, settings.baseUrl);
         int oldSp = msgSp;
@@ -633,12 +648,12 @@ public class MainActivity extends AppCompatActivity {
         if (!settings.isConfigured()) {
             if (ivModelIcon != null) ivModelIcon.setVisibility(View.GONE);
             tvSub.setText("未配置 API Key · 点右上角设置");
-            tvSub.setTextColor(getResources().getColor(R.color.accent));
+            tvSub.setTextColor(Palette.accent(this));
         } else {
             // 思考强度可能把 deepseek-chat 自动升级成 deepseek-reasoner，这里显示真正在用的模型
             String eff = Settings.effectiveModel(settings);
             tvSub.setText(Settings.isAutoReasoner(settings) ? eff + " ·思考" : eff);
-            tvSub.setTextColor(getResources().getColor(R.color.text_dim));
+            tvSub.setTextColor(Palette.dim(this));
             // 只有 DeepSeek 系列模型才显示品牌小图标，换到其它厂商模型时自动隐藏
             String m = eff.toLowerCase(Locale.ROOT);
             if (ivModelIcon != null) {
@@ -964,7 +979,7 @@ public class MainActivity extends AppCompatActivity {
             TextView head = new TextView(this);
             head.setText("直接说要做的事就行，也可以点下面的例子");
             head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-            head.setTextColor(0xFF8A97A6);
+            head.setTextColor(Palette.c(0xFF8A97A6));
             head.setPadding(dp(10), 0, dp(10), dp(10));
             box.addView(head);
 
@@ -990,14 +1005,14 @@ public class MainActivity extends AppCompatActivity {
                 TextView title = new TextView(this);
                 title.setText(it[1]);
                 title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
-                title.setTextColor(0xFFE6EDF3);
+                title.setTextColor(Palette.c(0xFFE6EDF3));
                 title.setTypeface(Typeface.DEFAULT_BOLD);
                 col.addView(title);
 
                 TextView desc = new TextView(this);
                 desc.setText(it[2]);
                 desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-                desc.setTextColor(0xFF8A97A6);
+                desc.setTextColor(Palette.c(0xFF8A97A6));
                 desc.setPadding(0, dp(2), 0, 0);
                 col.addView(desc);
                 row.addView(col);
@@ -1031,7 +1046,7 @@ public class MainActivity extends AppCompatActivity {
             TextView t = new TextView(this);
             t.setText("\u2191 更早的 " + count + " 条");
             t.setTextSize(11.5f);
-            t.setTextColor(0xFF9AA7B4);
+            t.setTextColor(Palette.c(0xFF9AA7B4));
             t.setTypeface(Typeface.DEFAULT_BOLD);
             t.setGravity(Gravity.CENTER);
             t.setPadding(dp(14), dp(6), dp(14), dp(6));
@@ -1289,7 +1304,7 @@ public class MainActivity extends AppCompatActivity {
         TextView spark = new TextView(this);
         spark.setText("✦");
         spark.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40f);
-        spark.setTextColor(getResources().getColor(R.color.accent));
+        spark.setTextColor(Palette.accent(this));
         spark.setGravity(Gravity.CENTER);
         box.addView(spark);
 
@@ -1297,7 +1312,7 @@ public class MainActivity extends AppCompatActivity {
         title.setText("AgenCode");
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(getResources().getColor(R.color.text));
+        title.setTextColor(Palette.text(this));
         title.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1307,7 +1322,7 @@ public class MainActivity extends AppCompatActivity {
         TextView desc = new TextView(this);
         desc.setText("写代码、改文档、解释概念、做计划——直接说你的需求。");
         desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        desc.setTextColor(getResources().getColor(R.color.text_dim));
+        desc.setTextColor(Palette.dim(this));
         desc.setGravity(Gravity.CENTER);
         desc.setLineSpacing(dp(3), 1.3f);
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
@@ -1324,7 +1339,7 @@ public class MainActivity extends AppCompatActivity {
             TextView chip = new TextView(this);
             chip.setText(h);
             chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-            chip.setTextColor(getResources().getColor(R.color.text));
+            chip.setTextColor(Palette.text(this));
             chip.setBackgroundResource(R.drawable.card_bg);
             chip.setPadding(dp(14), dp(10), dp(14), dp(10));
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
@@ -1503,7 +1518,7 @@ public class MainActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setText(body);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, msgSp);
-        tv.setTextColor(0xFFFFFFFF);
+        tv.setTextColor(Palette.c(0xFFFFFFFF));
         tv.setLineSpacing(dp(5), 1.5f);
         tv.setTextIsSelectable(false);
         box.addView(tv);
@@ -1625,7 +1640,7 @@ public class MainActivity extends AppCompatActivity {
         title.setText("📎 产出物 · " + exists.size());
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(0xFFAFC2DC);
+        title.setTextColor(Palette.c(0xFFAFC2DC));
         LinearLayout.LayoutParams tlp2 = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tlp2.topMargin = dp(10);
@@ -1669,7 +1684,7 @@ public class MainActivity extends AppCompatActivity {
             nm.setText(name);
             nm.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             nm.setTypeface(Typeface.DEFAULT_BOLD);
-            nm.setTextColor(0xFFE6EEFB);
+            nm.setTextColor(Palette.c(0xFFE6EEFB));
             nm.setMaxLines(1);
             nm.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
             col.addView(nm);
@@ -1679,13 +1694,13 @@ public class MainActivity extends AppCompatActivity {
                     ? apkMeta(new java.io.File(path), sizes.get(i))
                     : info[1] + " · " + humanSize(sizes.get(i)) + " · 点按复制路径");
             meta.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-            meta.setTextColor(0xFF8896AB);
+            meta.setTextColor(Palette.c(0xFF8896AB));
             col.addView(meta);
 
             TextView pt = new TextView(this);
             pt.setText(path);
             pt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-            pt.setTextColor(0xFF5F6C80);
+            pt.setTextColor(Palette.c(0xFF5F6C80));
             pt.setMaxLines(1);
             pt.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
             col.addView(pt);
@@ -1699,7 +1714,7 @@ public class MainActivity extends AppCompatActivity {
                 install.setText("安 装");
                 install.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
                 install.setTypeface(Typeface.DEFAULT_BOLD);
-                install.setTextColor(0xFF08131C);
+                install.setTextColor(Palette.c(0xFF08131C));
                 install.setGravity(Gravity.CENTER);
                 install.setBackground(Ui.roundRect(this, 0xFF35D98F, 0, 20f));
                 install.setPadding(dp(15), dp(6), dp(15), dp(6));
@@ -1903,7 +1918,7 @@ public class MainActivity extends AppCompatActivity {
         final TextView body = new TextView(this);
         body.setText(text);
         body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        body.setTextColor(0xFF9DB3A4);
+        body.setTextColor(Palette.c(0xFF9DB3A4));
         body.setLineSpacing(dp(4), 1.45f);
         body.setPadding(dp(12), dp(2), dp(12), dp(11));
         // 折叠时只露 6 行（末尾省略号），展开后不设上限、整段显示
@@ -1913,7 +1928,7 @@ public class MainActivity extends AppCompatActivity {
 
         final TextView label = com.nebula.aichat.ui.Ui.foldTitle(this,
                 "思考过程 · 用时 " + costSecs + " 秒");
-        label.setTextColor(0xFF7EE787);
+        label.setTextColor(Palette.c(0xFF7EE787));
 
         final TextView chip = greenPill("\u25be 展开");
 
@@ -1987,7 +2002,7 @@ public class MainActivity extends AppCompatActivity {
         statusText = new TextView(this);
         statusText.setText("正在思考…");
         statusText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-        statusText.setTextColor(0xFF8A97AA);
+        statusText.setTextColor(Palette.c(0xFF8A97AA));
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tlp.leftMargin = dp(7);
@@ -2030,7 +2045,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         statusText.setText("思考完成（用时 " + String.format(Locale.US, "%.1f", cost / 1000.0) + " 秒）");
-        statusText.setTextColor(C_OK);
+        statusText.setTextColor(Palette.c(C_OK));
         setStatusTint(C_OK);
         if (spinAnim != null) {
             spinAnim.cancel();
@@ -2084,7 +2099,7 @@ public class MainActivity extends AppCompatActivity {
     private void setStatusBusy(String text) {
         if (statusText == null) return;
         statusText.setText(text);
-        statusText.setTextColor(C_RUN);
+        statusText.setTextColor(Palette.c(C_RUN));
         setStatusTint(C_RUN);
         if (statusIcon != null) {
             // 执行态用应用图标（等比小图）：星形读作「在想」，应用的品牌图标配旋转读作
@@ -2621,7 +2636,7 @@ public class MainActivity extends AppCompatActivity {
                 composer.isBrowserOn(), (btn, on) -> composer.setBrowserOn(on, true), px, py));
 
         View div = new View(this);
-        div.setBackgroundColor(0x1AFFFFFF);
+        div.setBackgroundColor(Palette.c(0x1AFFFFFF));
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, Ui.dp(this, 1)));
         dlp.leftMargin = px;
@@ -2632,7 +2647,7 @@ public class MainActivity extends AppCompatActivity {
         eng.setText("搜索引擎：" + (WebSearch.ENGINE_DDG
                 .equalsIgnoreCase(settings.searchEngine) ? "DuckDuckGo" : "Bing（国内可直连）") + "  ›");
         eng.setTextSize(13.5f);
-        eng.setTextColor(C_TEXT2);
+        eng.setTextColor(Palette.c(C_TEXT2));
         eng.setPadding(px, py, px, py);
         eng.setOnClickListener(v -> chooseSearchEngine());
         box.addView(eng);
@@ -2658,12 +2673,12 @@ public class MainActivity extends AppCompatActivity {
         TextView t = new TextView(this);
         t.setText(title);
         t.setTextSize(15f);
-        t.setTextColor(C_TEXT);
+        t.setTextColor(Palette.c(C_TEXT));
 
         TextView st = new TextView(this);
         st.setText(sub);
         st.setTextSize(12f);
-        st.setTextColor(C_DIM);
+        st.setTextColor(Palette.c(C_DIM));
         st.setPadding(0, Ui.dp(this, 2), Ui.dp(this, 8), 0);
 
         texts.addView(t);
@@ -3527,7 +3542,7 @@ public class MainActivity extends AppCompatActivity {
         int t1 = sb.length();
         sb.append(" ");
 
-        tv.setTextColor(0xFFC9D4E2);
+        tv.setTextColor(Palette.c(0xFFC9D4E2));
         tv.setText(sb);
     }
 
@@ -3580,7 +3595,7 @@ public class MainActivity extends AppCompatActivity {
         // 15dp 的图标和等宽正文在同一条水平中线上，不会一个偏高一个偏低
         body.setPadding(0, dp(9), 0, dp(9));
         body.setGravity(Gravity.CENTER_VERTICAL);
-        body.setTextColor(0xFFD3DDE9);
+        body.setTextColor(Palette.c(0xFFD3DDE9));
         head.addView(body, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -3677,7 +3692,7 @@ public class MainActivity extends AppCompatActivity {
             tv.setTag(TAG_TOOL_SEQ);
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
             tv.setTypeface(Typeface.MONOSPACE);
-            tv.setTextColor(0xFF7C8B9E);
+            tv.setTextColor(Palette.c(0xFF7C8B9E));
             tv.setGravity(Gravity.CENTER_VERTICAL);
             tv.setPadding(dp(6), 0, dp(6), 0);
             int at = head.getChildCount();
@@ -3911,7 +3926,7 @@ public class MainActivity extends AppCompatActivity {
         tag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
         tag.setTypeface(Typeface.DEFAULT_BOLD);
         tag.setGravity(Gravity.CENTER);
-        tag.setTextColor(0xFFB6C7D9);
+        tag.setTextColor(Palette.c(0xFFB6C7D9));
         tag.setBackground(Ui.roundRect(this, 0x2E9DB2CC, 0, 4f));
         // 18 + 12 = 30dp，与工具行「20dp 图标 + 10dp 间距」的正文左缘对齐
         LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(20), dp(18));
@@ -3929,7 +3944,7 @@ public class MainActivity extends AppCompatActivity {
         t.setSingleLine(true);
         t.setEllipsize(TextUtils.TruncateAt.END);
         t.setPadding(dp(0), dp(7), dp(6), dp(7));
-        t.setTextColor(0xFFC6D5E6);
+        t.setTextColor(Palette.c(0xFFC6D5E6));
         row.addView(t, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -4090,7 +4105,7 @@ public class MainActivity extends AppCompatActivity {
         det.setBackground(Ui.roundRect(this, 0x0FFFFFFF, 0, 10f));
 
         View div = new View(this);
-        div.setBackgroundColor(0x16FFFFFF);   // 与翻译框描边同档，别比自己的边框还亮
+        div.setBackgroundColor(Palette.c(0x16FFFFFF));   // 与翻译框描边同档，别比自己的边框还亮
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
         dlp.leftMargin = dp(10);
@@ -4100,7 +4115,7 @@ public class MainActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         tv.setTypeface(Typeface.MONOSPACE);
-        tv.setTextColor(0xFFA6B7CE);
+        tv.setTextColor(Palette.c(0xFFA6B7CE));
         tv.setLineSpacing(dp(2), 1f);
         tv.setTextIsSelectable(true);
         tv.setPadding(dp(12), dp(8), dp(9), dp(2));
@@ -4120,7 +4135,7 @@ public class MainActivity extends AppCompatActivity {
         lbl.setText("结果");
         lbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         lbl.setTypeface(Typeface.MONOSPACE);
-        lbl.setTextColor(0xFF7E93AE);
+        lbl.setTextColor(Palette.c(0xFF7E93AE));
         resHead.addView(lbl, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -4128,7 +4143,7 @@ public class MainActivity extends AppCompatActivity {
         copy.setText("复制");
         copy.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         copy.setTypeface(Typeface.MONOSPACE);
-        copy.setTextColor(0xFFFFB36B);
+        copy.setTextColor(Palette.c(0xFFFFB36B));
         copy.setPadding(dp(12), dp(4), dp(6), dp(4));
         copy.setClickable(true);
         TypedValue ripple = new TypedValue();
@@ -4142,7 +4157,7 @@ public class MainActivity extends AppCompatActivity {
         TextView result = new TextView(this);
         result.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         result.setTypeface(Typeface.MONOSPACE);
-        result.setTextColor(0xFFA6B7CE);
+        result.setTextColor(Palette.c(0xFFA6B7CE));
         result.setLineSpacing(dp(2), 1f);
         result.setPadding(dp(12), dp(3), dp(9), dp(9));
         result.setTextIsSelectable(true);
@@ -4335,7 +4350,7 @@ public class MainActivity extends AppCompatActivity {
         // 内层柔光：2dp 半透明 accent 描边，贴着边给一圈"通电"的晕
         android.graphics.drawable.GradientDrawable glow =
                 new android.graphics.drawable.GradientDrawable();
-        glow.setColor(0x00000000);
+        glow.setColor(Palette.c(0x00000000));
         glow.setStroke(dp(2), (accent & 0x00FFFFFF) | 0x59000000);
         glow.setCornerRadius(r);
 
@@ -4350,7 +4365,7 @@ public class MainActivity extends AppCompatActivity {
         // 顶沿 1dp 高光：光从上方擦过，卡片边缘立起来
         android.graphics.drawable.GradientDrawable hi =
                 new android.graphics.drawable.GradientDrawable();
-        hi.setColor(0x24FFFFFF);
+        hi.setColor(Palette.c(0x24FFFFFF));
         hi.setCornerRadius(r);
 
         android.graphics.drawable.LayerDrawable ld =
@@ -4368,7 +4383,7 @@ public class MainActivity extends AppCompatActivity {
 
         final TextView head = new TextView(this);
         head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        head.setTextColor(0xFF7E93AE);
+        head.setTextColor(Palette.c(0xFF7E93AE));
         head.setPadding(dp(13), dp(5), dp(13), dp(5));
         head.setVisibility(View.GONE);
         head.setClickable(true);
@@ -4480,7 +4495,7 @@ public class MainActivity extends AppCompatActivity {
         final TextView head = new TextView(this);
         head.setTag(TAG_PROC_FOLD);
         head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        head.setTextColor(0xFF8A9CB4);
+        head.setTextColor(Palette.c(0xFF8A9CB4));
         head.setPadding(dp(2), dp(4), dp(2), dp(6));
         head.setIncludeFontPadding(false);
         head.setClickable(true);
@@ -4636,10 +4651,10 @@ public class MainActivity extends AppCompatActivity {
         if (pending > 0) {
             toolTraceCount.setText("\u00b7 " + toolRows.size() + " 次  "
                     + SPIN[spinIdx % SPIN.length] + " 执行中 " + dur(SystemClock.uptimeMillis() - oldest));
-            toolTraceCount.setTextColor(C_RUN);
+            toolTraceCount.setTextColor(Palette.c(C_RUN));
         } else {
             toolTraceCount.setText("\u00b7 " + toolRows.size() + " 次");
-            toolTraceCount.setTextColor(C_DIM);
+            toolTraceCount.setTextColor(Palette.c(C_DIM));
         }
     }
 
@@ -4680,7 +4695,7 @@ public class MainActivity extends AppCompatActivity {
         // 主信息：运行时是工具名（等宽），结束时是中文结论
         runBannerText = new TextView(this);
         runBannerText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        runBannerText.setTextColor(0xFFA9B7C9);
+        runBannerText.setTextColor(Palette.c(0xFFA9B7C9));
         runBannerText.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
         runBannerText.setIncludeFontPadding(false);
         runBannerText.setSingleLine(true);
@@ -4693,7 +4708,7 @@ public class MainActivity extends AppCompatActivity {
         // 并发计数：只有多个同时跑时才出现
         runBannerMeta = new TextView(this);
         runBannerMeta.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-        runBannerMeta.setTextColor(0xFF66768A);
+        runBannerMeta.setTextColor(Palette.c(0xFF66768A));
         runBannerMeta.setIncludeFontPadding(false);
         runBannerMeta.setSingleLine(true);
         runBannerMeta.setVisibility(View.GONE);
@@ -4706,7 +4721,7 @@ public class MainActivity extends AppCompatActivity {
         // 前面补一个动词（执行 / 用时 / 停止），数字才有着落。
         runBannerTimeTag = new TextView(this);
         runBannerTimeTag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-        runBannerTimeTag.setTextColor(0xFF8FA0B4);
+        runBannerTimeTag.setTextColor(Palette.c(0xFF8FA0B4));
         runBannerTimeTag.setIncludeFontPadding(false);
         runBannerTimeTag.setSingleLine(true);
         runBannerTimeTag.setGravity(Gravity.END);
@@ -4719,7 +4734,7 @@ public class MainActivity extends AppCompatActivity {
         runBannerTime = new TextView(this);
         runBannerTime.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
         runBannerTime.setTypeface(Typeface.create("monospace", Typeface.BOLD));
-        runBannerTime.setTextColor(0xFFEDF3FA);
+        runBannerTime.setTextColor(Palette.c(0xFFEDF3FA));
         runBannerTime.setIncludeFontPadding(false);
         runBannerTime.setSingleLine(true);
         runBannerTime.setGravity(Gravity.END);
@@ -4756,7 +4771,7 @@ public class MainActivity extends AppCompatActivity {
             int solid = color & 0x00FFFFFF;
             GradientDrawable g = new GradientDrawable();
             g.setCornerRadius(dp(10));
-            g.setColor(0x0DFFFFFF);
+            g.setColor(Palette.c(0x0DFFFFFF));
             runBanner.setBackground(g);
 
             if (runBannerRailBg != null) {
@@ -4771,7 +4786,7 @@ public class MainActivity extends AppCompatActivity {
             if (runBannerTime != null) {
                 runBannerTime.setTextColor(running ? 0xFFC2F7DC : (solid | 0xFF000000));
             }
-            if (runBannerMeta != null) runBannerMeta.setTextColor(0xFF66768A);
+            if (runBannerMeta != null) runBannerMeta.setTextColor(Palette.c(0xFF66768A));
             if (runBannerLine != null) {
                 runBannerLine.setBackground(new GradientDrawable(
                         GradientDrawable.Orientation.LEFT_RIGHT,
@@ -4873,7 +4888,7 @@ public class MainActivity extends AppCompatActivity {
         // 顶部状态行同步秒数：长回答把气泡底部顶出屏幕时，抬头也能看到还在动
         setStatusBusy(lastToolName() + " 执行中 " + dur(ms)
                 + (pending > 1 ? " · 另有 " + (pending - 1) + " 个" : ""));
-        if (statusText != null) statusText.setTextColor(C_RUN);
+        if (statusText != null) statusText.setTextColor(Palette.c(C_RUN));
         setStatusTint(C_RUN);
     }
 
@@ -4992,7 +5007,7 @@ public class MainActivity extends AppCompatActivity {
     /** 绿体系的小胶囊按钮：思考块、工具卡片这些「过程类」折叠按钮统一用它 */
     private TextView greenPill(String text) {
         TextView tv = Ui.pill(this, text);
-        tv.setTextColor(0xFF7EE787);
+        tv.setTextColor(Palette.c(0xFF7EE787));
         tv.setBackground(Ui.roundRect(this, 0x1A3FB950, 0x4D3FB950, 9f));
         return tv;
     }
@@ -5147,7 +5162,7 @@ public class MainActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setText(msg);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        tv.setTextColor(0xFFFF9BA0);
+        tv.setTextColor(Palette.c(0xFFFF9BA0));
         tv.setPadding(dp(2), dp(7), dp(2), dp(3));
         streamContent.addView(tv, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -5159,7 +5174,7 @@ public class MainActivity extends AppCompatActivity {
             final TextView retry = new TextView(this);
             retry.setText("↻ 重试");
             retry.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-            retry.setTextColor(0xFF7FD4A8);
+            retry.setTextColor(Palette.c(0xFF7FD4A8));
             retry.setPadding(dp(2), dp(2), dp(2), dp(6));
             retry.setOnClickListener(v -> {
                 if (busy || searching) {
@@ -5665,7 +5680,7 @@ public class MainActivity extends AppCompatActivity {
         TextView tag = new TextView(this);
         tag.setText(sb.toString());
         tag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        tag.setTextColor(0xFFA8BCDA);
+        tag.setTextColor(Palette.c(0xFFA8BCDA));
         tag.setBackground(Ui.roundRect(this, 0xFF18202C, 0xFF2E3A4C, 12f));
         int px = dp(10), py = dp(5);
         tag.setPadding(px, py, px, py);
@@ -5875,7 +5890,7 @@ public class MainActivity extends AppCompatActivity {
         TextView name = new TextView(this);
         name.setText(hasCur ? cur.trim() : "未选择模型");
         name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        name.setTextColor(0xFFEDF3FC);
+        name.setTextColor(Palette.c(0xFFEDF3FC));
         name.setTypeface(Typeface.DEFAULT_BOLD);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
@@ -5886,7 +5901,7 @@ public class MainActivity extends AppCompatActivity {
                 ? shortHost(settings.baseUrl) + " · 选中后对下一条提问生效"
                 : "还没配 API Key，先去完整设置里填好");
         vendor.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-        vendor.setTextColor(0xFF7F8C9F);
+        vendor.setTextColor(Palette.c(0xFF7F8C9F));
         vendor.setSingleLine(true);
         vendor.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(
@@ -5897,7 +5912,7 @@ public class MainActivity extends AppCompatActivity {
         TextView closeX = new TextView(this);
         closeX.setText("\u2715");
         closeX.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        closeX.setTextColor(0xFF6F7C8F);
+        closeX.setTextColor(Palette.c(0xFF6F7C8F));
         closeX.setGravity(Gravity.CENTER);
         closeX.setBackground(Ui.roundRect(this, 0x14FFFFFF, 0, 11f));
         closeX.setOnClickListener(v -> d.dismiss());
@@ -5931,7 +5946,7 @@ public class MainActivity extends AppCompatActivity {
         TextView secTitle = new TextView(this);
         secTitle.setText("全部模型");
         secTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        secTitle.setTextColor(0xFF8FA0B5);
+        secTitle.setTextColor(Palette.c(0xFF8FA0B5));
         secTitle.setTypeface(Typeface.DEFAULT_BOLD);
         sec.addView(secTitle, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
@@ -5939,7 +5954,7 @@ public class MainActivity extends AppCompatActivity {
         TextView refresh = new TextView(this);
         refresh.setText("\u21bb 刷新");
         refresh.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        refresh.setTextColor(0xFF7FB0FF);
+        refresh.setTextColor(Palette.c(0xFF7FB0FF));
         refresh.setGravity(Gravity.CENTER);
         // 之前 padding 只有 10/4/2/4dp，可点区域太窄，手指常常点空 → 补到 40dp 级
         refresh.setPadding(dp(14), dp(8), dp(8), dp(8));
@@ -6070,7 +6085,7 @@ public class MainActivity extends AppCompatActivity {
         tv.setGravity(Gravity.CENTER);
         tv.setSingleLine(true);
         tv.setTypeface(Typeface.DEFAULT_BOLD);
-        tv.setTextColor(0xFFC6D8FA);
+        tv.setTextColor(Palette.c(0xFFC6D8FA));
         tv.setLetterSpacing(0.02f);
         tv.setBackground(sheetGhostButton());
         tv.setClickable(true);
@@ -6094,7 +6109,7 @@ public class MainActivity extends AppCompatActivity {
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.RECTANGLE);
         bg.setCornerRadius(dp(14));
-        bg.setColor(0x1F4A86F7);
+        bg.setColor(Palette.c(0x1F4A86F7));
         bg.setStroke(Math.max(1, dp(1)), 0x6B4A86F7);
         return new RippleDrawable(ColorStateList.valueOf(0x3D4A86F7), bg, null);
     }
@@ -6204,7 +6219,7 @@ public class MainActivity extends AppCompatActivity {
             TextView tip = new TextView(this);
             tip.setText(note);
             tip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-            tip.setTextColor(0xFF7F8C9F);
+            tip.setTextColor(Palette.c(0xFF7F8C9F));
             tip.setPadding(dp(2), dp(0), dp(2), dp(8));
             modelListBox.addView(tip);
         }
@@ -6274,7 +6289,7 @@ public class MainActivity extends AppCompatActivity {
             TextView ok = new TextView(this);
             ok.setText("\u2713 使用中");
             ok.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-            ok.setTextColor(0xFF8FB6FF);
+            ok.setTextColor(Palette.c(0xFF8FB6FF));
             ok.setPadding(dp(9), dp(3), dp(9), dp(3));
             ok.setBackground(Ui.roundRect(this, 0x265B93FF, 0x4D5B93FF, 8f));
             LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(
@@ -6311,7 +6326,7 @@ public class MainActivity extends AppCompatActivity {
         TextView plus = new TextView(this);
         plus.setText("\uff0b");
         plus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-        plus.setTextColor(0xFF7FB0FF);
+        plus.setTextColor(Palette.c(0xFF7FB0FF));
         plus.setGravity(Gravity.CENTER);
         plus.setBackground(Ui.roundRect(this, 0x1F5B93FF, 0, 11f));
         row.addView(plus, new LinearLayout.LayoutParams(dp(34), dp(34)));
@@ -6326,14 +6341,14 @@ public class MainActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setText("添加模型");
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        tv.setTextColor(0xFF9CC2FF);
+        tv.setTextColor(Palette.c(0xFF9CC2FF));
         tv.setTypeface(Typeface.DEFAULT_BOLD);
         col.addView(tv);
 
         TextView hint = new TextView(this);
         hint.setText("内置 6 家服务商 · 地址自动配好");
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
-        hint.setTextColor(0xFF6F7C8F);
+        hint.setTextColor(Palette.c(0xFF6F7C8F));
         LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         hlp.topMargin = dp(3);
@@ -6406,7 +6421,7 @@ public class MainActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setText(label + "    " + value + "  \u25be");
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        tv.setTextColor(0xFF9CC2FF);
+        tv.setTextColor(Palette.c(0xFF9CC2FF));
         tv.setSingleLine(true);
         tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
         tv.setGravity(Gravity.CENTER_VERTICAL);
@@ -6426,7 +6441,7 @@ public class MainActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setText(text);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-        tv.setTextColor(0xFF8FA0B5);
+        tv.setTextColor(Palette.c(0xFF8FA0B5));
         tv.setTypeface(Typeface.DEFAULT_BOLD);
         tv.setLetterSpacing(0.06f);
         return tv;
@@ -6445,8 +6460,8 @@ public class MainActivity extends AppCompatActivity {
         EditText et = new EditText(this);
         et.setHint(hint);
         et.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        et.setTextColor(0xFFE6EDF7);
-        et.setHintTextColor(0xFF5E6A7B);
+        et.setTextColor(Palette.c(0xFFE6EDF7));
+        et.setHintTextColor(Palette.c(0xFF5E6A7B));
         et.setTypeface(Typeface.MONOSPACE);
         et.setSingleLine(true);
         et.setBackground(Ui.box(this, 0xFF0F151D, 0xFF2B3644, 12f, 1f));
@@ -6515,14 +6530,14 @@ public class MainActivity extends AppCompatActivity {
         TextView title = new TextView(this);
         title.setText("添加模型");
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        title.setTextColor(0xFFEDF3FC);
+        title.setTextColor(Palette.c(0xFFEDF3FC));
         title.setTypeface(Typeface.DEFAULT_BOLD);
         head.addView(title);
 
         TextView sub = new TextView(this);
         sub.setText("选服务商 · 选模型 · 填 Key，接口地址自动配好");
         sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-        sub.setTextColor(0xFF7F8C9F);
+        sub.setTextColor(Palette.c(0xFF7F8C9F));
         LinearLayout.LayoutParams slp0 = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         slp0.topMargin = dp(5);
@@ -6531,7 +6546,7 @@ public class MainActivity extends AppCompatActivity {
         TextView closeX = new TextView(this);
         closeX.setText("\u2715");
         closeX.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        closeX.setTextColor(0xFF6F7C8F);
+        closeX.setTextColor(Palette.c(0xFF6F7C8F));
         closeX.setGravity(Gravity.CENTER);
         closeX.setBackground(Ui.roundRect(this, 0x14FFFFFF, 0, 11f));
         closeX.setOnClickListener(v -> d.dismiss());
@@ -6636,7 +6651,7 @@ public class MainActivity extends AppCompatActivity {
         final TextView eye = new TextView(this);
         eye.setText("显示");
         eye.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        eye.setTextColor(0xFF7FB0FF);
+        eye.setTextColor(Palette.c(0xFF7FB0FF));
         eye.setGravity(Gravity.CENTER);
         eye.setPadding(dp(10), dp(6), dp(10), dp(6));
         FrameLayout.LayoutParams elp = new FrameLayout.LayoutParams(
@@ -6712,16 +6727,16 @@ public class MainActivity extends AppCompatActivity {
                 String old = settings.apiKey == null ? "" : settings.apiKey.trim();
                 if (same && !old.isEmpty()) {
                     keyHint.setText("这一家的 Key 已经存过，留空就直接用它。");
-                    keyHint.setTextColor(0xFF4CD7A0);
+                    keyHint.setTextColor(Palette.c(0xFF4CD7A0));
                     etKey.setHint("留空 = 用已保存的 Key");
                 } else if (!old.isEmpty()) {
                     keyHint.setText("换服务商要填这一家的 Key；填了会替换现在用的（当前 "
                             + shortHost(settings.baseUrl) + "）");
-                    keyHint.setTextColor(0xFFE0A642);
+                    keyHint.setTextColor(Palette.c(0xFFE0A642));
                     etKey.setHint("sk-...");
                 } else {
                     keyHint.setText("还没有 Key：去服务商后台建一个粘进来，只存在这台手机上。");
-                    keyHint.setTextColor(0xFF66707F);
+                    keyHint.setTextColor(Palette.c(0xFF66707F));
                     etKey.setHint("sk-...");
                 }
                 etKey.setTypeface(Typeface.MONOSPACE);
@@ -6862,14 +6877,14 @@ public class MainActivity extends AppCompatActivity {
         TextView title = new TextView(this);
         title.setText("思考强度");
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-        title.setTextColor(0xFFE6EDF7);
+        title.setTextColor(Palette.c(0xFFE6EDF7));
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title);
 
         TextView sub = new TextView(this);
         sub.setText("对下一条提问生效；支持推理的后端会收到 reasoning_effort，其余后端自动忽略");
         sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        sub.setTextColor(0xFF7F8C9F);
+        sub.setTextColor(Palette.c(0xFF7F8C9F));
         sub.setLineSpacing(dp(3), 1.3f);
         LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -6904,7 +6919,7 @@ public class MainActivity extends AppCompatActivity {
 
             if (i > 0) {
                 View line = new View(this);
-                line.setBackgroundColor(0x14FFFFFF);
+                line.setBackgroundColor(Palette.c(0x14FFFFFF));
                 root.addView(line, new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1) / 2)));
             }
@@ -6923,7 +6938,7 @@ public class MainActivity extends AppCompatActivity {
 
         // 模型联动：重度/极度时把 deepseek-chat 换成 deepseek-reasoner，否则「强度」只是换个说法
         View line2 = new View(this);
-        line2.setBackgroundColor(0x14FFFFFF);
+        line2.setBackgroundColor(Palette.c(0x14FFFFFF));
         root.addView(line2, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1) / 2)));
 
@@ -6938,7 +6953,7 @@ public class MainActivity extends AppCompatActivity {
         TextView autoName = new TextView(this);
         autoName.setText("重度/极度切到推理模型");
         autoName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        autoName.setTextColor(0xFFDCE5F2);
+        autoName.setTextColor(Palette.c(0xFFDCE5F2));
         textCol.addView(autoName);
 
         TextView autoDesc = new TextView(this);
@@ -6948,7 +6963,7 @@ public class MainActivity extends AppCompatActivity {
                 ? "自动改用 deepseek-reasoner 真正开启思维链；工具照常可用"
                 : "仅当模型是 deepseek-chat 时生效，当前为 " + baseModelName);
         autoDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        autoDesc.setTextColor(0xFF7F8C9F);
+        autoDesc.setTextColor(Palette.c(0xFF7F8C9F));
         autoDesc.setLineSpacing(dp(2), 1.25f);
         textCol.addView(autoDesc);
 
@@ -7031,14 +7046,19 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** 侧滑抽屉：会话按天分组 + 底部设置入口 */
+    /** 抽屉遮罩不透明度 */
+    private static final float DRAWER_DIM = 0.45f;
+    /** 会话列表每批渲染条数：几百条一次性 inflate 会把主线程卡住 */
+    private static final int DRAWER_CHUNK = 40;
+
+    /** 侧滑抽屉：会话按天分组 + 底部设置入口；会话多时分批渲染，滚到底自动续载 */
     private void showConversationList() {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         View root = LayoutInflater.from(this).inflate(R.layout.drawer_conversations, null);
-        dialog.setContentView(root);
 
-        Window w = dialog.getWindow();
+        final Window w = dialog.getWindow();
+        final int drawerW;
         if (w != null) {
             w.setBackgroundDrawable(new ColorDrawable(0x00000000));
             w.setGravity(Gravity.START);
@@ -7049,10 +7069,36 @@ public class MainActivity extends AppCompatActivity {
             lp.width = Math.min(dp(330), (int) (sw * 0.86f));
             lp.height = WindowManager.LayoutParams.MATCH_PARENT;
             lp.gravity = Gravity.START;
-            lp.dimAmount = 0.45f;
+            lp.dimAmount = DRAWER_DIM;
             w.setAttributes(lp);
             w.setLayout(lp.width, WindowManager.LayoutParams.MATCH_PARENT);
+            drawerW = lp.width;
+        } else {
+            drawerW = dp(300);
         }
+
+        // 抽屉内左滑跟手收起：窗口跟着手指走，松手过 30% 就直接滑走
+        final float[] curX = {0f};
+        DrawerHost host = new DrawerHost(this, new DrawerHost.SlideListener() {
+            @Override
+            public void onSlide(float offset, float progress) {
+                curX[0] = offset;
+                setDrawerOffset(w, (int) offset, progress);
+            }
+
+            @Override
+            public void onRelease(boolean commit) {
+                if (commit) {
+                    dialog.dismiss();   // 余下的位移交给抽屉退出动画，视觉上是连续的
+                } else {
+                    animateDrawerBack(w, curX[0], drawerW);
+                }
+                curX[0] = 0f;
+            }
+        });
+        host.addView(root, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        dialog.setContentView(host);
 
         final LinearLayout listBox = root.findViewById(R.id.listContainer);
         final ScrollView sc = root.findViewById(R.id.drawerScroll);
@@ -7086,25 +7132,56 @@ public class MainActivity extends AppCompatActivity {
             TextView empty = new TextView(this);
             empty.setText("还没有会话\n右上角 ＋ 新建一个开始聊");
             empty.setGravity(Gravity.CENTER);
-            empty.setTextColor(getResources().getColor(R.color.text_dim));
+            empty.setTextColor(Palette.dim(this));
             empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             empty.setLineSpacing(dp(5), 1f);
             empty.setPadding(0, dp(56), 0, dp(56));
             listBox.addView(empty);
         }
 
-        final View[] activeView = new View[1];
-        String group = null;
-        int rowIndex = -1;
-        for (final Conversation c : items) {
-            rowIndex++;
+        final DrawerState st = new DrawerState();
+        st.dialog = dialog;
+        st.box = listBox;
+        st.scroll = sc;
+        st.items = items;
+        appendDrawerRows(st);
+        // 当前会话排在很后面时，把首批一直铺到它那，打开就能定位
+        int curIdx = indexOfConversation(items, current);
+        while (curIdx >= st.next && st.next < items.size()) appendDrawerRows(st);
+
+        // 滚到接近底部再补下一批，避免一次 inflate 几百行
+        sc.setOnScrollChangeListener((v, sx, sy, ox, oy) -> fillDrawerIfNeeded(st));
+
+        // 会话多时自动定位到当前正在聊的那条，省得往下翻
+        dialog.setOnShowListener(d -> {
+            final View av = st.active;
+            if (av == null) return;
+            sc.post(() -> sc.smoothScrollTo(0, Math.max(0, av.getTop() - dp(56))));
+        });
+
+        dialog.show();
+    }
+
+    private int indexOfConversation(List<Conversation> items, Conversation cur) {
+        if (cur == null) return -1;
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).id.equals(cur.id)) return i;
+        }
+        return -1;
+    }
+
+    /** 再铺一批会话行；日期分组标题跨批次延续，不会重复 */
+    private void appendDrawerRows(final DrawerState st) {
+        int end = Math.min(st.items.size(), st.next + DRAWER_CHUNK);
+        for (int i = st.next; i < end; i++) {
+            final Conversation c = st.items.get(i);
             String g = dayGroup(c.updatedAt);
-            if (!g.equals(group)) {
-                listBox.addView(groupHeader(g));
-                group = g;
+            if (!g.equals(st.group)) {
+                st.box.addView(groupHeader(g));
+                st.group = g;
             }
 
-            View item = LayoutInflater.from(this).inflate(R.layout.item_conversation, listBox, false);
+            View item = LayoutInflater.from(this).inflate(R.layout.item_conversation, st.box, false);
             TextView t = item.findViewById(R.id.tvConvTitle);
             TextView meta = item.findViewById(R.id.tvConvMeta);
             String ct = Conversation.cleanTitle(c.title);
@@ -7114,29 +7191,132 @@ public class MainActivity extends AppCompatActivity {
 
             // 最后一条不画分隔线，避免和底部设置栏之间出现双线
             View divider = item.findViewById(R.id.convDivider);
-            if (divider != null && rowIndex == items.size() - 1) divider.setVisibility(View.GONE);
+            if (divider != null && i == st.items.size() - 1) divider.setVisibility(View.GONE);
 
             if (c.id.equals(current.id)) {
-                t.setTextColor(com.nebula.aichat.ui.Palette.accent(this));
-                item.setBackgroundColor(com.nebula.aichat.ui.Palette.accentSoft(this, 0x1F));
-                activeView[0] = item;
+                t.setTextColor(Palette.accent(this));
+                item.setBackgroundColor(Palette.accentSoft(this, 0x1F));
+                st.active = item;
             }
             item.setOnClickListener(v -> {
-                dialog.dismiss();
+                st.dialog.dismiss();
                 if (!c.id.equals(current.id)) renderConversation(c);
             });
-            item.findViewById(R.id.btnDel).setOnClickListener(v -> confirmDelete(dialog, c));
-            listBox.addView(item);
+            item.findViewById(R.id.btnDel).setOnClickListener(v -> confirmDelete(st.dialog, c));
+            st.box.addView(item);
+        }
+        st.next = end;
+    }
+
+    /** 滚到接近底部就补下一批；补完仍不到一屏高时继续补 */
+    private void fillDrawerIfNeeded(final DrawerState st) {
+        if (st.next >= st.items.size()) return;
+        View child = st.scroll.getChildAt(0);
+        if (child == null) return;
+        if (st.scroll.getScrollY() + st.scroll.getHeight() >= child.getBottom() - dp(160)) {
+            appendDrawerRows(st);
+            st.scroll.post(() -> fillDrawerIfNeeded(st));
+        }
+    }
+
+    /** 抽屉窗口横向偏移：progress=0 完全展开，1 完全滑出屏幕 */
+    private void setDrawerOffset(Window w, int x, float progress) {
+        if (w == null) return;
+        WindowManager.LayoutParams lp = w.getAttributes();
+        lp.x = x;
+        lp.dimAmount = Math.max(0f, DRAWER_DIM * (1f - progress));
+        w.setAttributes(lp);
+    }
+
+    /** 松手没滑够：弹回原位 */
+    private void animateDrawerBack(final Window w, float fromX, final int drawerW) {
+        ValueAnimator a = ValueAnimator.ofFloat(fromX, 0f);
+        a.setDuration(190);
+        a.setInterpolator(new DecelerateInterpolator());
+        a.addUpdateListener(an -> {
+            float x = (Float) an.getAnimatedValue();
+            float p = drawerW <= 0 ? 0f : Math.max(0f, Math.min(1f, -x / drawerW));
+            setDrawerOffset(w, (int) x, p);
+        });
+        a.start();
+    }
+
+    /** 抽屉列表分批渲染的游标状态 */
+    private static class DrawerState {
+        Dialog dialog;
+        LinearLayout box;
+        ScrollView scroll;
+        List<Conversation> items;
+        int next;
+        String group;
+        View active;
+    }
+
+    /**
+     * 抽屉容器：只接管「左滑」一个手势，竖向滑动一律放行给里面的 ScrollView，
+     * 否则会话一多就滚不动了。
+     */
+    private static class DrawerHost extends FrameLayout {
+        interface SlideListener {
+            void onSlide(float offset, float progress);
+
+            void onRelease(boolean commit);
         }
 
-        // 会话多时自动定位到当前正在聊的那条，省得往下翻
-        dialog.setOnShowListener(d -> {
-            final View av = activeView[0];
-            if (av == null) return;
-            sc.post(() -> sc.smoothScrollTo(0, Math.max(0, av.getTop() - dp(56))));
-        });
+        private final SlideListener listener;
+        private float downX;
+        private float downY;
+        private boolean dragging;
+        private boolean decided;
 
-        dialog.show();
+        DrawerHost(Context c, SlideListener l) {
+            super(c);
+            this.listener = l;
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent ev) {
+            final int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+            switch (ev.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downX = ev.getX();
+                    downY = ev.getY();
+                    dragging = false;
+                    decided = false;
+                    break;
+                case MotionEvent.ACTION_MOVE: {
+                    float dx = ev.getX() - downX;
+                    float dy = ev.getY() - downY;
+                    if (!decided) {
+                        if (dx < -slop && Math.abs(dx) > Math.abs(dy) * 1.4f) {
+                            decided = true;
+                            dragging = true;
+                        } else if (Math.abs(dy) > slop) {
+                            decided = true;      // 竖向：让 ScrollView 正常滚
+                        }
+                    }
+                    if (dragging) {
+                        int wd = getWidth();
+                        float off = Math.max(-wd, Math.min(0f, dx));
+                        listener.onSlide(off, wd <= 0 ? 0f : -off / wd);
+                        return true;
+                    }
+                    break;
+                }
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL: {
+                    boolean was = dragging;
+                    dragging = false;
+                    decided = false;
+                    if (was) {
+                        listener.onRelease(ev.getX() - downX < -getWidth() * 0.3f);
+                        return true;
+                    }
+                    break;
+                }
+            }
+            return super.dispatchTouchEvent(ev);
+        }
     }
 
     /** 日期分组标题：今天 / 昨天 / 10月23日 周四 */
@@ -7159,7 +7339,7 @@ public class MainActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setText(text);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        tv.setTextColor(getResources().getColor(R.color.text_dim));
+        tv.setTextColor(Palette.dim(this));
         tv.setLetterSpacing(0.06f);
         tv.setPadding(dp(18), dp(14), dp(18), dp(6));
         return tv;

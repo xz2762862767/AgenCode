@@ -32,7 +32,7 @@ public class CodeGutter extends View {
         this.code = codeView;
         paint.setTextSize(codeView.getTextSize());
         paint.setTypeface(Typeface.MONOSPACE);
-        paint.setColor(0xFF4C566E);
+        paint.setColor(Palette.c(0xFF4C566E));
         paint.setTextAlign(Paint.Align.RIGHT);
     }
 

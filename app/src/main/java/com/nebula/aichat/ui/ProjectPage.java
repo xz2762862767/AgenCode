@@ -84,7 +84,7 @@ public class ProjectPage {
 
     private void build() {
         rootView = Ui.col(act);
-        rootView.setBackgroundColor(0xFF0F1218);
+        rootView.setBackgroundColor(Palette.c(0xFF0F1218));
 
         LinearLayout head = Ui.row(act);
         head.setPadding(Ui.dp(act, 14), Ui.dp(act, 12), Ui.dp(act, 12), Ui.dp(act, 10));
@@ -287,7 +287,7 @@ public class ProjectPage {
         logo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 21f);
         logo.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         logo.setGravity(Gravity.CENTER);
-        logo.setTextColor(0xFFBFD4FF);
+        logo.setTextColor(Palette.c(0xFFBFD4FF));
         logo.setBackground(Ui.roundRect(act, 0xFF1B2B4A, 0xFF2E4A78, 14f));
         int sq = Ui.dp(act, 46);
         top.addView(logo, new LinearLayout.LayoutParams(sq, sq));
@@ -306,7 +306,7 @@ public class ProjectPage {
         card.addView(top);
 
         View sep = new View(act);
-        sep.setBackgroundColor(0xFF1E2632);
+        sep.setBackgroundColor(Palette.c(0xFF1E2632));
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 1);
         slp.topMargin = Ui.dp(act, 12);
@@ -790,7 +790,7 @@ public class ProjectPage {
         final EditText et = new EditText(act);
         et.setText(defaultName(template));
         et.setSelectAllOnFocus(true);
-        et.setTextColor(0xFFE8EDF6);
+        et.setTextColor(Palette.c(0xFFE8EDF6));
         int p = Ui.dp(act, 16);
         et.setPadding(p, Ui.dp(act, 8), p, Ui.dp(act, 8));
 

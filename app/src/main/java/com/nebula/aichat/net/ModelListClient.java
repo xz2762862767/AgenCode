@@ -87,7 +87,7 @@ public class ModelListClient {
             c.setReadTimeout(20000);
             c.setRequestProperty("Authorization", "Bearer " + (s.apiKey == null ? "" : s.apiKey.trim()));
             c.setRequestProperty("Accept", "application/json");
-            c.setRequestProperty("User-Agent", "NebulaAI/1.0");
+            c.setRequestProperty("User-Agent", "AgenCode/1.0");
 
             int code = c.getResponseCode();
             InputStream in = (code >= 200 && code < 300) ? c.getInputStream() : c.getErrorStream();

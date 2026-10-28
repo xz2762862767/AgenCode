@@ -143,7 +143,7 @@ public final class LinuxEnv {
     }
 
     // ---------------- 安装日志 ----------------
-    // 安装失败时把全过程日志写到 Download/NebulaAI-install.log（MediaStore，免权限），
+    // 安装失败时把全过程日志写到 Download/AgenCode-install.log（MediaStore，免权限），
     // 便于用户直接反馈、开发者定位问题。
 
     private final StringBuilder logBuf = new StringBuilder();
@@ -163,13 +163,13 @@ public final class LinuxEnv {
         }
     }
 
-    /** 把日志写到 Download/NebulaAI-install.log */
+    /** 把日志写到 Download/AgenCode-install.log */
     public void dumpLog() {
         String text = logText();
         try {
             if (android.os.Build.VERSION.SDK_INT >= 29) {
                 android.content.ContentValues v = new android.content.ContentValues();
-                v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "NebulaAI-install.log");
+                v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "AgenCode-install.log");
                 v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain");
                 v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
                         android.os.Environment.DIRECTORY_DOWNLOADS);
@@ -396,7 +396,7 @@ public final class LinuxEnv {
         cmd.add("-b");
         cmd.add(exchangeDir().getAbsolutePath() + ":/exchange");
         // 沙箱 ↔ 手机目录：把公共存储 / 应用专属外部目录挂进去，AI 才能直接读写用户看得到的位置，
-        // 同时在 /exchange 里准备好 out 软链（指向「星云产物」）
+        // 同时在 /exchange 里准备好 out 软链（指向「AgenCode」）
         try {
             com.nebula.aichat.apk.SandboxBridge.prepare(app, exchangeDir());
             for (String m : com.nebula.aichat.apk.SandboxBridge.mounts(app)) {
@@ -411,7 +411,7 @@ public final class LinuxEnv {
         cmd.add("/usr/bin/env");
         cmd.add("-i");
         cmd.add("HOME=/root");
-        cmd.add("PATH=/exchange/buildkit/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+        cmd.add("PATH=/exchange/revtools/bin:/exchange/buildkit/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
         cmd.add("TERM=xterm-256color");
         cmd.add("LANG=C.UTF-8");
         cmd.add("PWD=/root");
@@ -502,6 +502,12 @@ public final class LinuxEnv {
 
     /** 异步流式执行（供终端使用），回调在工作线程 */
     public void runAlpine(final String script, final Callback cb) {
+        // 逆向工具箱（jadx/apktool/baksmali/smali）首次使用时释放，幂等且很快返回
+        try {
+            com.nebula.aichat.apk.RevToolbox.ensure(app, null);
+        } catch (Throwable t) {
+            android.util.Log.w("LinuxEnv", "revtools ensure skipped: " + t);
+        }
         Thread t = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -511,10 +517,12 @@ public final class LinuxEnv {
                 try {
                     proc = newBuilder(script, true).start();
             log("exec: " + script);
-                    BufferedReader r = new BufferedReader(
-                            new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8));
+                    // 限长读行：proot 里的命令同样可能吐出一行几百 MB 的无换行输出
+                    // （base64/dd/cat 二进制），用 readLine 会直接把堆撑爆导致闪退
+                    com.nebula.aichat.util.LineReader r =
+                            new com.nebula.aichat.util.LineReader(proc.getInputStream(), 8192);
                     String line;
-                    while ((line = r.readLine()) != null) {
+                    while ((line = r.next()) != null) {
                         if (cb.isCancelled()) break;
                         cb.onOutput(line);
                     }
@@ -526,7 +534,13 @@ public final class LinuxEnv {
                         proc.destroy();
                     } catch (Throwable ignored) {
                     }
-                    if (cb.isCancelled()) code = 130;
+                    if (cb.isCancelled()) {
+                        code = 130;
+                    } else if (code > 128 && err == null) {
+                        // 137/143 这类被信号杀掉的情况要解释清楚，
+                        // 否则用户只看到"退出码 137"，不知道该降内存还是改命令
+                        err = com.nebula.aichat.shell.ShellRunner.explainExit(code);
+                    }
                     cb.onFinish(code, err);
                 }
             }

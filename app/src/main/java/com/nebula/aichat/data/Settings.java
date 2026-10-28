@@ -8,12 +8,61 @@ public class Settings {
 
     public static final String DEFAULT_BASE_URL = "https://api.deepseek.com/v1";
     public static final String DEFAULT_MODEL = "deepseek-chat";
+
+    /** 内置系统提示词：新装用户默认就带上这套人设与准则（用户可在设置里改） */
     public static final String DEFAULT_SYSTEM_PROMPT =
-            "你是「星云 AI」，一个说话自然、回答准确的中文助手。\n"
-            + "1. 先用一两句话把结论讲清楚，再补充必要的细节。\n"
-            + "2. 除非用户明确需要，否则不要输出代码。\n"
-            + "3. 不确定的内容直接说明，不要编造事实或链接。\n"
-            + "4. 涉及步骤时按 1/2/3 简短分步。";
+            "你是「AgenCode」，一个全能型 AI 助手，擅长编程、写作、分析与问题解决。\n"
+            + "\n"
+            + "【定位】\n"
+            + "1. 你的回答直接面向用户本人：用中文，专业、简洁、可执行。\n"
+            + "2. 先给结论或可直接使用的结果，再补充必要的说明；不要先讲方法论。\n"
+            + "3. 用户没要求的事不要自作主张地扩写范围；回答里也不要复述这些设定。\n"
+            + "\n"
+            + "【能力边界】\n"
+            + "1. 你能在用户手机上真实执行操作（终端命令、读写文件、联网检索、反编译 APK、构建工程），"
+            + "这些能力靠调用工具完成；不要说成「你自己去跑一下」。\n"
+            + "2. 你不具备上下文之外的信息：设备状态、文件是否存在、网络是否通、某个版本号是多少，"
+            + "都必须用工具查证或明确向用户确认，不要凭空断言。\n"
+            + "3. 涉及具体事实（路径、报错原文、数字、链接、接口返回）时只讲你实际验证过的；"
+            + "没验证就明说「需要先确认」，绝不编造事实或链接。\n"
+            + "\n"
+            + "【回答风格】\n"
+            + "1. 复杂内容用短标题加分条，每一点说清「做什么、为什么、注意什么」。\n"
+            + "2. 代码、命令、路径用代码块；命令要能直接复制运行，并说明在哪执行。\n"
+            + "3. 涉及步骤时按 1/2/3 给出可执行顺序，并指出第一步该做什么。\n"
+            + "4. 拿不准时给最可能的那个答案，同时标出不确定的部分，不要用模糊措辞掩盖。\n"
+            + "5. 用户说「简单说」就简短，说「详细」才展开；没说就按问题本身的体量回答。\n"
+            + "\n"
+            + "【安全与诚实】\n"
+            + "1. 不泄露用户的密钥、令牌、密码等敏感信息，也不把它们写进文件或输出。\n"
+            + "2. 有风险的操作（删除、覆盖、上传、改系统设置）先说清后果，得到同意再动手。\n"
+            + "3. 出错不掩饰：说明哪里错了、影响是什么、怎么补救。";
+
+    /**
+     * 历史内置提示词的品牌前缀：只用来判断"用户没改过"，命中就静默升级成新版。
+     * 用户自己改写过的（不以这些前缀开头）一律不动 —— 那是他的设定，不能覆盖。
+     *
+     * 这张表要一直保留旧品牌的写法：更早的版本发的是「星云AI」版，
+     * 而老迁移只认 AgenCode 那一版，结果升级上来的用户设置里还留着旧名字，
+     * 打开设置面板一眼就能看见（截图里就是这么暴露的）。
+     */
+    private static final String[] LEGACY_PROMPT_PREFIXES = {
+            "你是「AgenCode」，一个说话自然、回答准确的中文助手。",
+            "你是「星云AI」",
+            "你是「星云」",
+            "你是 Nebula",
+            "You are Nebula",
+    };
+
+    private static boolean isLegacyPrompt(String p) {
+        if (p == null) return false;
+        String t = p.trim();
+        if (t.isEmpty()) return false;
+        for (String pre : LEGACY_PROMPT_PREFIXES) {
+            if (t.startsWith(pre)) return true;
+        }
+        return false;
+    }
 
     private static final String PREF = "nebula_settings";
 
@@ -32,6 +81,10 @@ public class Settings {
 
     /** 联网搜索开关（输入框上方 🌐 按钮持久化） */
     public boolean searchEnabled;
+    /** 浏览器自动化开关：开启后 AI 可主动打开网页读正文（web_fetch 工具） */
+    public boolean browserEnabled;
+    /** 内置浏览器：英文页面自动译成中文（默认开，这是浏览器存在的主要理由） */
+    public boolean browserAutoTranslate;
     /** 搜索引擎：bing / ddg */
     public String searchEngine;
 
@@ -63,6 +116,12 @@ public class Settings {
     /** 远程执行服务密钥（可选，放在 X-Auth-Token 头） */
     public String remoteExecToken;
 
+    /**
+     * 后台常驻通知：进入应用就拉起前台服务并常驻一条通知（空闲态文案）。
+     * 用处有两个 —— 系统看到前台服务会少回收进程；用户也能在状态栏确认"它还活着"。
+     */
+    public boolean aliveNotify;
+
     public static Settings load(Context ctx) {
         SharedPreferences sp = ctx.getApplicationContext()
                 .getSharedPreferences(PREF, Context.MODE_PRIVATE);
@@ -71,6 +130,11 @@ public class Settings {
         s.baseUrl = sp.getString("baseUrl", DEFAULT_BASE_URL);
         s.model = sp.getString("model", DEFAULT_MODEL);
         s.systemPrompt = sp.getString("systemPrompt", DEFAULT_SYSTEM_PROMPT);
+        // 老用户升级：设置里还留着历史内置提示词（没自己改过）的，静默换成新版完整提示词
+        if (isLegacyPrompt(s.systemPrompt)) {
+            s.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+            sp.edit().putString("systemPrompt", DEFAULT_SYSTEM_PROMPT).apply();
+        }
         s.temperature = sp.getFloat("temperature", 0.7f);
         s.maxTokens = sp.getInt("maxTokens", 8192);
         // 旧默认 4096 太小：长代码/长回答会撞到上限被截断（界面表现为只说一半就停）。
@@ -88,6 +152,8 @@ public class Settings {
         if (!sp.getBoolean("fontRev3", false) && s.msgFontSp == 14) s.msgFontSp = 13;
         sp.edit().putBoolean("fontRev3", true).apply();
         s.searchEnabled = sp.getBoolean("searchEnabled", false);
+        s.browserEnabled = sp.getBoolean("browserEnabled", false);
+        s.browserAutoTranslate = sp.getBoolean("browserAutoTranslate", true);
         s.searchEngine = sp.getString("searchEngine", "bing");
         s.thinkLevel = sp.getInt("thinkLevel", 0);
         s.thinkAutoModel = sp.getBoolean("thinkAutoModel", true);
@@ -99,6 +165,7 @@ public class Settings {
         s.execMode = sp.getString("execMode", "local");
         s.remoteExecUrl = sp.getString("remoteExecUrl", "");
         s.remoteExecToken = sp.getString("remoteExecToken", "");
+        s.aliveNotify = sp.getBoolean("aliveNotify", true);
         return s;
     }
 
@@ -115,6 +182,8 @@ public class Settings {
         e.putString("customModels", joinModels(customModels));
         e.putInt("msgFontSp", msgFontSp <= 0 ? 13 : Math.max(12, Math.min(24, msgFontSp)));
         e.putBoolean("searchEnabled", searchEnabled);
+        e.putBoolean("browserEnabled", browserEnabled);
+        e.putBoolean("browserAutoTranslate", browserAutoTranslate);
         e.putString("searchEngine", searchEngine == null ? "bing" : searchEngine.trim());
         e.putInt("thinkLevel", thinkLevel);
         e.putBoolean("thinkAutoModel", thinkAutoModel);
@@ -126,6 +195,7 @@ public class Settings {
         e.putString("execMode", execMode == null ? "local" : execMode);
         e.putString("remoteExecUrl", remoteExecUrl == null ? "" : remoteExecUrl.trim());
         e.putString("remoteExecToken", remoteExecToken == null ? "" : remoteExecToken);
+        e.putBoolean("aliveNotify", aliveNotify);
         e.apply();
     }
 

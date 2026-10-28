@@ -193,7 +193,7 @@ public class ProjectPage {
 
     // ───────────────────────── 本应用工程 ─────────────────────────
 
-    /** 星云 AI 自身工程：应用信息 + 源码树 + 资源 + 构建配置 */
+    /** AgenCode 自身工程：应用信息 + 源码树 + 资源 + 构建配置 */
     private void renderSelf() {
         listBox.removeAllViews();
         List<SelfSource.Entry> all = SelfSource.entries(act);
@@ -282,8 +282,9 @@ public class ProjectPage {
 
         LinearLayout top = Ui.row(act);
         TextView logo = new TextView(act);
-        logo.setText("星");
-        logo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 19f);
+        // 品牌首字母徽标（旧版本这里放的是旧中文名首字）
+        logo.setText("A");
+        logo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 21f);
         logo.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         logo.setGravity(Gravity.CENTER);
         logo.setTextColor(0xFFBFD4FF);
@@ -292,7 +293,7 @@ public class ProjectPage {
         top.addView(logo, new LinearLayout.LayoutParams(sq, sq));
 
         LinearLayout nameBox = Ui.col(act);
-        TextView name = Ui.text(act, "星云 AI", 16f, TEXT_MAIN);
+        TextView name = Ui.text(act, "AgenCode", 16f, TEXT_MAIN);
         name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         TextView pkg = Ui.text(act, act.getPackageName(), 10.5f, TEXT_SUB);
         pkg.setPadding(0, Ui.dp(act, 3), 0, 0);
@@ -842,7 +843,7 @@ public class ProjectPage {
                 break;
             case 3:
                 write(new File(dir, "main.py"), "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\n"
-                        + "def main():\n    print(\"Hello, Nebula!\")\n\n\n"
+                        + "def main():\n    print(\"Hello, AgenCode!\")\n\n\n"
                         + "if __name__ == \"__main__\":\n    main()\n");
                 write(new File(dir, "README.md"), "# Python 脚本\n\n运行：`python3 main.py`\n");
                 break;

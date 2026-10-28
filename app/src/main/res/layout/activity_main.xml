@@ -56,6 +56,17 @@
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
+            <!-- 标题（用户输入内容的显示）与下方模型/余额之间的橙色分隔线 -->
+            <View
+                android:id="@+id/tvTitleDivider"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="2.5dp"
+                android:layout_marginBottom="2.5dp"
+                android:layout_marginEnd="12dp"
+                android:alpha="0.35"
+                android:background="#FFB877" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -64,10 +75,11 @@
 
                 <ImageView
                     android:id="@+id/ivModelIcon"
-                    android:layout_width="17dp"
-                    android:layout_height="12.51dp"
-                    android:layout_marginEnd="5dp"
+                    android:layout_width="13.2dp"
+                    android:layout_height="9.62dp"
+                    android:layout_marginEnd="4dp"
                     android:src="@drawable/ic_deepseek"
+                    android:scaleType="fitCenter"
                     android:contentDescription="模型标识"
                     android:visibility="gone" />
 

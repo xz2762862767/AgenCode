@@ -12,13 +12,19 @@ android {
         // 24/25 上会 NoSuchMethodError，所以底线定在 Android 8.0
         minSdk 26
         targetSdk 34
-        versionCode 183
-        versionName "1.8.59"
+        versionCode 222
+        versionName "1.8.98"
 
         // 内置 proot 仅提供 arm64 版本
         ndk {
             abiFilters 'arm64-v8a'
         }
+    }
+
+    // assets/revtools 里的 jadx/dex2jar/smali 都是 jar（本身已 deflate），
+    // 再压一遍几乎没有收益，却要多花几分钟打包时间，直接原样存。
+    androidResources {
+        noCompress += ['jar']
     }
 
     // ---------------------------------------------------------------

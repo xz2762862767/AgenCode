@@ -80,6 +80,26 @@ public class Ui {
         return ld;
     }
 
+    /**
+     * 主操作按钮：垂直渐变实心 + 1dp 亮边，不套外发光。
+     * 弹窗主按钮总贴着底边，外发光会被 padding/clip 裁掉一半，看起来像被切了一刀；
+     * 改成「顶部亮 → 底部深」的内部渐变，立体感画在按钮里，怎么裁都露不出破绽。
+     */
+    public static android.graphics.drawable.Drawable primaryButton(Context c) {
+        GradientDrawable fill = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xFF5C93FF, 0xFF3E78F2, 0xFF2A61DA});
+        fill.setCornerRadius(dp(c, 14));
+
+        GradientDrawable stroke = new GradientDrawable();
+        stroke.setColor(0);
+        stroke.setCornerRadius(dp(c, 14));
+        stroke.setStroke(Math.max(1, dp(c, 1f)), 0x6689BAFF);
+
+        return new android.graphics.drawable.LayerDrawable(
+                new android.graphics.drawable.Drawable[]{fill, stroke});
+    }
+
     public static LinearLayout card(Context c) {
         LinearLayout box = new LinearLayout(c);
         box.setOrientation(LinearLayout.VERTICAL);

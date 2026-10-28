@@ -21,6 +21,7 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.nebula.aichat.data.Changelog;
 import com.nebula.aichat.ui.Palette;
 
 /** 关于页：版本、运行环境、数据说明、开源致谢 */
@@ -100,7 +101,7 @@ public class AboutActivity extends AppCompatActivity {
             targetSdk = pi.applicationInfo.targetSdkVersion;
         } catch (Throwable ignored) {
         }
-        pkgInfo = "星云 AI v" + verName + " (build " + verCode + ")\n包名：" + getPackageName()
+        pkgInfo = "AgenCode v" + verName + " (build " + verCode + ")\n包名：" + getPackageName()
                 + "\nAndroid " + Build.VERSION.RELEASE + " · " + Build.MODEL;
 
         // —— 头部 ——
@@ -114,7 +115,7 @@ public class AboutActivity extends AppCompatActivity {
         head.addView(icon, new LinearLayout.LayoutParams(dp(64), dp(64)));
 
         TextView name = new TextView(this);
-        name.setText("星云 AI");
+        name.setText("AgenCode");
         name.setTextColor(Palette.text(this));
         name.setTextSize(19f);
         name.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -147,6 +148,9 @@ public class AboutActivity extends AppCompatActivity {
         head.addView(verBadge, badgeLp);
 
         col.addView(head);
+
+        // —— 更新日志：放在版本信息上面，进关于页先看到"最近改了什么" ——
+        changelogCard(col);
 
         // —— 版本信息 ——
         LinearLayout verCard = card(col, "版本信息");
@@ -191,7 +195,7 @@ public class AboutActivity extends AppCompatActivity {
         btnCopy.setOnClickListener(v -> {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (cm != null) {
-                cm.setPrimaryClip(ClipData.newPlainText("星云 AI 版本信息", pkgInfo));
+                cm.setPrimaryClip(ClipData.newPlainText("AgenCode 版本信息", pkgInfo));
                 Toast.makeText(this, "版本信息已复制", Toast.LENGTH_SHORT).show();
             }
         });
@@ -209,7 +213,7 @@ public class AboutActivity extends AppCompatActivity {
         btnPrivacy.setOnClickListener(v -> showPrivacy());
 
         TextView foot = new TextView(this);
-        foot.setText("© 2026 星云 AI · 仅供个人学习与研究使用");
+        foot.setText("© 2026 AgenCode · 仅供个人学习与研究使用");
         foot.setTextColor(Palette.dim(this));
         foot.setTextSize(10.5f);
         foot.setGravity(Gravity.CENTER);
@@ -283,5 +287,69 @@ public class AboutActivity extends AppCompatActivity {
         t.setLineSpacing(dp(3), 1f);
         t.setPadding(0, dp(9), 0, 0);
         parent.addView(t);
+    }
+
+    /**
+     * 更新日志卡片：版本行为标题，点一下展开该版本条目。
+     * 最新一条默认展开 —— 用户点"关于"多半就是想知道刚更新了什么。
+     */
+    private void changelogCard(LinearLayout parent) {
+        LinearLayout card = card(parent, "更新日志");
+        for (int i = 0; i < Changelog.ENTRIES.length; i++) {
+            final Changelog.Entry e = Changelog.ENTRIES[i];
+            final boolean newest = i == 0;
+
+            LinearLayout head = new LinearLayout(this);
+            head.setOrientation(LinearLayout.HORIZONTAL);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+            head.setPadding(0, dp(10), 0, 0);
+
+            TextView ver = new TextView(this);
+            ver.setText("v" + e.version);
+            ver.setTextSize(12.5f);
+            ver.setTextColor(newest ? Palette.accent(this) : Palette.text(this));
+            ver.setTypeface(null, android.graphics.Typeface.BOLD);
+            head.addView(ver);
+
+            if (newest) {
+                TextView tag = new TextView(this);
+                tag.setText("当前");
+                tag.setTextSize(10f);
+                tag.setTextColor(Palette.accent(this));
+                tag.setPadding(dp(7), dp(2), dp(7), dp(2));
+                GradientDrawable bg = new GradientDrawable();
+                bg.setColor(Palette.accentSoft(this, 0x22));
+                bg.setCornerRadius(dp(99));
+                tag.setBackground(bg);
+                LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                tlp.leftMargin = dp(8);
+                head.addView(tag, tlp);
+            }
+
+            TextView arrow = new TextView(this);
+            arrow.setText(newest ? "▾" : "▸");
+            arrow.setTextSize(11f);
+            arrow.setTextColor(Palette.dim(this));
+            arrow.setGravity(Gravity.END);
+            head.addView(arrow, new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            final LinearLayout body = new LinearLayout(this);
+            body.setOrientation(LinearLayout.VERTICAL);
+            body.setPadding(0, dp(2), 0, 0);
+            for (String it : e.items) para(body, "· " + it);
+            body.setVisibility(newest ? LinearLayout.VISIBLE : LinearLayout.GONE);
+
+            head.setOnClickListener(v -> {
+                boolean show = body.getVisibility() != LinearLayout.VISIBLE;
+                body.setVisibility(show ? LinearLayout.VISIBLE : LinearLayout.GONE);
+                arrow.setText(show ? "▾" : "▸");
+            });
+
+            card.addView(head);
+            card.addView(body);
+        }
     }
 }

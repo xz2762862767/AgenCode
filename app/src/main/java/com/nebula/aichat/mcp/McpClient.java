@@ -48,7 +48,7 @@ public class McpClient {
         JSONObject caps = new JSONObject();
         params.put("capabilities", caps);
         JSONObject clientInfo = new JSONObject();
-        clientInfo.put("name", "NebulaAI");
+        clientInfo.put("name", "AgenCode");
         clientInfo.put("version", "1.1");
         params.put("clientInfo", clientInfo);
 

@@ -114,6 +114,9 @@ public final class Toolchain {
     /** 开发工具包（约 245MB：python3 + nodejs + gcc 工具链 + Java 运行时） */
     public static final String DEV_PKGS = "python3 nodejs make gcc musl-dev openjdk17-jre-headless";
 
+    /** 只要 Java 运行时（约 60MB）：内置的 jadx / apktool / baksmali / smali 全部依赖它 */
+    public static final String JRE_PKGS = "openjdk17-jre-headless";
+
     // ------------------------------------------------------------------ 探测
 
     /** 在 proot 里批量探测命令是否存在 */
@@ -145,6 +148,59 @@ public final class Toolchain {
      * @return null 表示成功，否则返回错误说明
      */
     public static String install(Context c, boolean full, ApkWorkbench.Progress p) {
+        return install(c, full ? MANIFEST_FULL : MANIFEST_CORE, full ? DEV_PKGS : CORE_PKGS, p);
+    }
+
+    /** 只装 Java 运行时（约 60MB），给内置反编译工具用，不必拖 245MB 全家桶 */
+    public static String installJre(Context c, ApkWorkbench.Progress p) {
+        return install(c, MANIFEST_JRE, JRE_PKGS, p);
+    }
+
+    /** 基础工具是否已装齐（会起一次 proot，务必在后台线程调用） */
+    public static boolean coreReady(Context c) {
+        if (!LinuxEnv.get(c).isInstalled()) return false;
+        return allInstalled(c, CORE_PKGS);
+    }
+
+    /** Java 运行时是否已装（会起一次 proot，务必在后台线程调用） */
+    public static boolean jreReady(Context c) {
+        if (!LinuxEnv.get(c).isInstalled()) return false;
+        return allInstalled(c, JRE_PKGS);
+    }
+
+    /**
+     * 一键开箱：基础命令包 + Java 运行时。
+     *
+     * 两档必须串行装（同一个 apk 进程不能并发跑），已装好的档自动跳过，
+     * 所以重复调用很便宜。阻塞调用，务必放后台线程。
+     *
+     * @return 都齐了返回 null，否则返回第一处错误说明
+     */
+    public static String provision(Context c, ApkWorkbench.Progress p) {
+        if (!LinuxEnv.get(c).isInstalled()) return "还没有安装内置 Linux 环境";
+        if (running) return "已有安装任务在跑，稍后再试";
+
+        if (!allInstalled(c, CORE_PKGS)) {
+            String err = install(c, MANIFEST_CORE, CORE_PKGS, p);
+            if (err != null) return "基础工具：" + err;
+        }
+        // 内置 jadx / apktool / baksmali / smali 都靠它，缺了整个逆向工具链等于摆设
+        if (!allInstalled(c, JRE_PKGS)) {
+            String err = install(c, MANIFEST_JRE, JRE_PKGS, p);
+            if (err != null) return "Java 运行时：" + err;
+        }
+        return null;
+    }
+
+    /**
+     * 按清单装一档包。
+     *
+     * @param manifest assets 里的包清单文件名
+     * @param pkgs     这一档的目标包集合（用于判定是否装全）
+     */
+    public static String install(Context c, String manifest, String pkgs, ApkWorkbench.Progress p) {
+        // 首启自动补齐 与 装完环境自动补齐 可能撞车，第二个直接让路，避免两个 apk 进程互踩
+        if (running) return "已有安装任务在跑，稍后再试";
         LinuxEnv env = LinuxEnv.get(c);
         if (!env.isInstalled()) {
             return "还没有安装内置 Linux 环境，请先点上面「安装内置 Linux」";
@@ -155,7 +211,7 @@ public final class Toolchain {
         lastLine = "";
         doneMsg = "";
         try {
-            return installInner(c, full, p);
+            return installInner(c, manifest, pkgs, p);
         } finally {
             running = false;
             doneMsg = (System.currentTimeMillis() - startedAt) / 1000 + "s";
@@ -165,6 +221,7 @@ public final class Toolchain {
     /** 内置包清单（assets：repo \t 包名 \t 版本 \t 字节数 \t 文件名） */
     private static final String MANIFEST_FULL = "alpacks.tsv";
     private static final String MANIFEST_CORE = "alpacks-core.tsv";
+    private static final String MANIFEST_JRE = "alpacks-jre.tsv";
 
     /**
      * 离线安装：由 App 自己（走 Android 网络栈）下载 apk 包，再让 proot 里的 apk 本地安装。
@@ -175,14 +232,14 @@ public final class Toolchain {
      *
      * @return null 表示装好了；非 null 为错误说明
      */
-    public static String installOffline(Context c, boolean full, ApkWorkbench.Progress p) {
+    public static String installOffline(Context c, String manifest, String pkgs, ApkWorkbench.Progress p) {
         LinuxEnv env = LinuxEnv.get(c);
         File cache = new File(env.exchangeDir(), "apkcache");
         //noinspection ResultOfMethodCallIgnored
         cache.mkdirs();
 
-        java.util.List<String[]> list = readManifest(c, full ? MANIFEST_FULL : MANIFEST_CORE);
-        if (list.isEmpty()) return "包清单缺失（assets/" + (full ? MANIFEST_FULL : MANIFEST_CORE) + "）";
+        java.util.List<String[]> list = readManifest(c, manifest);
+        if (list.isEmpty()) return "包清单缺失（assets/" + manifest + "）";
 
         long total = 0;
         int need = 0;
@@ -246,7 +303,7 @@ public final class Toolchain {
             out = runStreaming(c,
                     "cd /exchange/apkcache && apk add --allow-untrusted --no-network "
                             + "--repositories-file /dev/null *.apk 2>&1", p, log);
-            if (allInstalled(c, full ? DEV_PKGS : CORE_PKGS)) {
+            if (allInstalled(c, pkgs)) {
                 writeLog(log.toString());
                 return null;
             }
@@ -287,7 +344,7 @@ public final class Toolchain {
             conn.setConnectTimeout(20000);
             conn.setReadTimeout(30000);
             conn.setInstanceFollowRedirects(true);
-            conn.setRequestProperty("User-Agent", "NebulaAI/1.4");
+            conn.setRequestProperty("User-Agent", "AgenCode/1.4");
             if (conn.getResponseCode() != 200) return false;
             java.io.InputStream in = conn.getInputStream();
             java.io.FileOutputStream os = new java.io.FileOutputStream(tmp);
@@ -319,21 +376,25 @@ public final class Toolchain {
         }
     }
 
-    private static String installInner(Context c, boolean full, ApkWorkbench.Progress p) {
+    private static String installInner(Context c, String manifest, String pkgs, ApkWorkbench.Progress p) {
         // 1) 内置静态 aapt2 零流量可用
         linkBuiltinTools(c, p);
 
         // 2) 首选：App 侧下载 + 离线安装（不依赖 proot 网络，避免“下载全 0K”）
-        String err = installOffline(c, full, p);
+        String err = installOffline(c, manifest, pkgs, p);
         if (err == null) return null;
         step = "离线安装失败，改试直连镜像";
         if (p != null) p.onStep(step);
 
         // 3) 回退：proot 内在线 apk add
-        err = apkAdd(c, CORE_PKGS, p);
-        if (err != null) return err;
-        if (full) {
-            err = apkAdd(c, DEV_PKGS, p);
+        //    CORE / DEV 都要先把基础包装上（DEV 不含 zip/curl 等）；
+        //    JRE 只补 java，不拖基础包。
+        if (CORE_PKGS.equals(pkgs) || DEV_PKGS.equals(pkgs)) {
+            err = apkAdd(c, CORE_PKGS, p);
+            if (err != null) return err;
+        }
+        if (!CORE_PKGS.equals(pkgs)) {
+            err = apkAdd(c, pkgs, p);
             if (err != null) return err;
         }
         return null;

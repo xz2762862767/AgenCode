@@ -39,7 +39,7 @@ public final class ApkInstaller {
      * 最近一次成功打包出来的 APK。
      * 存在的意义：模型回答完，界面上要直接把「安装包」摆到正文末尾，
      * 不能指望模型自己在正文里写出完整路径（它经常只写文件名，或者写的是私有目录）。
-     * 公开路径（星云产物/APK）排前面，私有目录那份兜底。
+     * 公开路径（AgenCode/APK）排前面，私有目录那份兜底。
      */
     private static final List<File> LAST_BUILT = new ArrayList<>();
     public static volatile long lastBuiltAt = 0L;
@@ -307,7 +307,7 @@ public final class ApkInstaller {
             // 没有「安装未知应用」权限时系统会抛 ActivityNotFoundException 或 SecurityException
             if (t instanceof SecurityException) {
                 return "被系统拦下了：需要给本应用「安装未知应用」权限。\n"
-                        + "设置 → 应用 → 星云AI → 安装未知应用 → 允许。\n（" + m + "）";
+                        + "设置 → 应用 → AgenCode → 安装未知应用 → 允许。\n（" + m + "）";
             }
             return "打不开系统安装器：" + m
                     + "\n可以手动到「" + apk.getParent() + "」找到文件点击安装。";

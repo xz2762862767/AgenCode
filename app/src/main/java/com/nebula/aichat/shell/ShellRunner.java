@@ -2,6 +2,8 @@ package com.nebula.aichat.shell;
 
 import android.annotation.SuppressLint;
 import com.nebula.aichat.linux.LinuxEnv;
+import com.nebula.aichat.util.Diag;
+import com.nebula.aichat.util.LineReader;
 
 import org.json.JSONObject;
 
@@ -29,6 +31,9 @@ public class ShellRunner {
         boolean isCancelled();
     }
 
+    /** 单行输出上限：超过就截断，别让一行 base64 把堆撑爆 */
+    private static final int MAX_LINE_CHARS = 8192;
+
     private volatile Process proc;
     private volatile boolean cancelled = false;
 
@@ -52,6 +57,29 @@ public class ShellRunner {
                 p.destroy();
             } catch (Exception ignored) {
             }
+        }
+    }
+
+    /**
+     * 退出码 >128 表示进程被信号终止：code = 128 + 信号值。
+     * 不解释的话，"退出码 137" 对人和模型都是一句废话 —— 既可能是内存不够被系统杀，
+     * 也可能是命令自己被 kill，处理方式完全不同。
+     */
+    public static String explainExit(int code) {
+        switch (code) {
+            case 137:
+                return "退出码 137：进程被 SIGKILL 强制终止。非 root 环境下这通常是内存不足被系统回收"
+                        + "（LMK），也可能被系统清理或外部 kill。建议降低单次任务的内存占用后重试："
+                        + "拆分命令、限制堆大小（如构建加 -Xmx512m）、避免一次性读入大文件，"
+                        + "或先关掉其它后台应用。";
+            case 143:
+                return "退出码 143：进程收到 SIGTERM 被要求退出，多为超时或系统清理。";
+            case 139:
+                return "退出码 139：段错误（SIGSEGV），是该程序自身崩溃，不是内存被系统回收。";
+            case 152:
+                return "退出码 152：进程被 SIGXCPU 终止，通常是触发了 CPU 时间限制。";
+            default:
+                return code > 128 ? ("退出码 " + code + "：进程被信号 " + (code - 128) + " 终止。") : null;
         }
     }
 
@@ -95,6 +123,7 @@ public class ShellRunner {
     /** 本地执行；回调发生在工作线程 */
     public void runLocal(final String cmd, final String cwd, final String home, final Callback cb) {
         cancelled = false;
+        if (interceptDiagnostic(cmd, cb)) return;
         Thread t = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -113,10 +142,11 @@ public class ShellRunner {
                     new File(home + "/tmp").mkdirs();
 
                     proc = pb.start();
-                    BufferedReader r = new BufferedReader(
-                            new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8));
+                    // 用限长读行：readLine 遇到没有换行符的超大输出（base64 / dd / cat 二进制）
+                    // 会把整行一次性读进内存，直接 OutOfMemoryError，表现为"跑个命令 App 就没了"
+                    LineReader r = new LineReader(proc.getInputStream(), MAX_LINE_CHARS);
                     String line;
-                    while ((line = r.readLine()) != null) {
+                    while ((line = r.next()) != null) {
                         if (cb.isCancelled()) break;
                         cb.onOutput(line);
                     }
@@ -129,7 +159,14 @@ public class ShellRunner {
                     err = t.getClass().getSimpleName();
                 } finally {
                     proc = null;
-                    if (cancelled) code = 130;
+                    if (cancelled) {
+                        code = 130;
+                    } else if (code > 128 && err == null) {
+                        // 被信号杀掉时 shell 只给一个 128+N 的数字，不解释原因。
+                        // 137（SIGKILL）在安卓上最常见的成因就是内存不足被 LMK 回收，
+                        // 直接写清楚，用户和模型才知道该降内存重试而不是改命令。
+                        err = explainExit(code);
+                    }
                     // 回调自身的异常必须兜住：这个线程没有上层捕获，
                     // 漏一次就整个 App 闪退（历史事故：err 数组越界就是这么炸的）
                     try {
@@ -140,6 +177,47 @@ public class ShellRunner {
             }
         }, "shell-exec");
         t.start();
+    }
+
+    /**
+     * logcat / dumpsys 在没 root 的手机上属于"命令存在但没权限"：
+     * 直接跑只会吐一串 Permission denied，AI 拿到一堆报错反而判断不了现场。
+     * 这里把裸命令换成内置采集，输出依旧是普通终端文本，AI 完全无感知。
+     */
+    private boolean interceptDiagnostic(final String cmd, final Callback cb) {
+        if (nebulaCtx == null || cmd == null) return false;
+        final String c = cmd.trim();
+        boolean isLog = c.startsWith("logcat") || c.startsWith("/system/bin/logcat");
+        boolean isDump = c.startsWith("dumpsys") || c.startsWith("/system/bin/dumpsys");
+        if (!isLog && !isDump) return false;
+        // 只在"命令本身"上拦截：`grep logcat file` 这种不该被劫持
+        if (c.contains("|") && !c.startsWith("logcat") && !c.startsWith("dumpsys")) return false;
+
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String err = null;
+                try {
+                    String out = isLog
+                            ? Diag.rawLogcat(300) + "\n----- 内置日志（应用自己记账）-----\n"
+                            + Diag.allLogs(nebulaCtx, 32 * 1024)
+                            : Diag.snapshot(nebulaCtx);
+                    for (String line : out.split("\n")) {
+                        if (cb.isCancelled()) break;
+                        cb.onOutput(line);
+                    }
+                } catch (Throwable th) {
+                    err = th.getClass().getSimpleName();
+                } finally {
+                    try {
+                        cb.onFinish(err == null ? 0 : 1, err);
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+        }, "shell-diag");
+        t.start();
+        return true;
     }
 
     /**

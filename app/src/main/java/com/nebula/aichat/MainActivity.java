@@ -2,6 +2,8 @@ package com.nebula.aichat;
 
 import android.animation.ObjectAnimator;
 import android.app.AlertDialog;
+import android.widget.CompoundButton;
+import androidx.appcompat.widget.SwitchCompat;
 import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -51,6 +53,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.HorizontalScrollView;
 import android.widget.PopupMenu;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
@@ -133,6 +136,8 @@ public class MainActivity extends AppCompatActivity {
     private final java.util.List<Integer> toolRowState = new java.util.ArrayList<>();
     /** 工具窗口折叠状态：默认展开（窗口只有 3 行高，不占地方） */
     private boolean toolTraceCollapsed = false;
+    /** 「上次任务被系统中断」卡片只弹一次：切会话重建列表时不再重复插 */
+    private boolean runResidueShown = false;
     /** 固定高度的滚动容器：新行从底部推进来，旧行向上滚出，气泡不会被越撑越长 */
     private ScrollView toolScroll;
     /** 每行的完整参数/结果，点行时弹窗查看 */
@@ -262,6 +267,8 @@ public class MainActivity extends AppCompatActivity {
     /** 思考状态行（正文上方）：小图标 + 「正在思考…」，结束后变「（用时 x 秒）」 */
     private TextView statusText;
     private ImageView statusIcon;
+    /** 应用图标（小尺寸），懒加载缓存；执行中状态用它，比通用圆环更有辨识度 */
+    private Drawable statusAppIcon;
     private ObjectAnimator spinAnim;
     private long thinkStartAt;
     private boolean thinkDone = true;
@@ -422,6 +429,17 @@ public class MainActivity extends AppCompatActivity {
                     }
 
                     @Override
+                    public void onBrowserToggle(boolean on) {
+                        settings.browserEnabled = on;
+                        settings.save(MainActivity.this);
+                        // 工具列表按开关重建：关掉时模型不应再看到 web_fetch
+                        tools = null;
+                        Toast.makeText(MainActivity.this,
+                                on ? "浏览器自动化已开启：AI 可以自己打开网页读正文"
+                                        : "浏览器自动化已关闭", Toast.LENGTH_SHORT).show();
+                    }
+
+                    @Override
                     public void onNetMenu() {
                         showNetMenu();
                     }
@@ -435,7 +453,7 @@ public class MainActivity extends AppCompatActivity {
                                 on ? "联网已开启：发送前会先检索最新资料"
                                         : "联网已关闭", Toast.LENGTH_SHORT).show();
                     }
-                }, settings.searchEnabled);
+                }, settings.searchEnabled, settings.browserEnabled);
 
         // 点空白处收起键盘不抢焦点
         scroll.setOnTouchListener((v, e) -> {
@@ -458,6 +476,53 @@ public class MainActivity extends AppCompatActivity {
         }
 
         initTabs();
+        autoProvisionOnce();
+
+        // 等首屏渲染完再弹权限框，避免和主题应用/列表刷新抢主线程
+        ui.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                ensureNotifPermission();
+            }
+        }, 600L);
+    }
+
+    /**
+     * 首启静默开箱：基础命令包（≈5MB）+ Java 运行时（≈60MB，反编译工具依赖）。
+     *
+     * 主要触发点是「Linux 环境装完」那一刻（见 InstallDialog.autoProvision），
+     * 这里是兜底：万一安装过程中 App 被杀了，下次启动接着补。
+     * 只做一次、失败不打扰，环境页随时可手动重试。
+     */
+    private void autoProvisionOnce() {
+        final android.content.SharedPreferences sp = getSharedPreferences("nebula_first_run", MODE_PRIVATE);
+        if (sp.getBoolean("auto_provision", false)) return;
+        if (!com.nebula.aichat.linux.LinuxEnv.get(this).isInstalled()) return;
+        sp.edit().putBoolean("auto_provision", true).apply();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (com.nebula.aichat.linux.Toolchain.running) return;
+                    if (com.nebula.aichat.linux.Toolchain.coreReady(MainActivity.this)
+                            && com.nebula.aichat.linux.Toolchain.jreReady(MainActivity.this)) {
+                        return;
+                    }
+                    String err = com.nebula.aichat.linux.Toolchain.provision(MainActivity.this, null);
+                    if (err == null) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(MainActivity.this,
+                                        "环境已就绪：常用命令 + jadx/apktool 都能用了",
+                                        Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }, "nebula-provision").start();
     }
 
     @Override
@@ -469,6 +534,7 @@ public class MainActivity extends AppCompatActivity {
         int oldSp = msgSp;
         settings = fresh;
         refreshFont();
+        syncAliveService();
         updateSubtitle();
         applyChatBackground();
         // 会话在别处被清空（设置页「清空全部会话」）→ 回到全新会话
@@ -605,7 +671,7 @@ public class MainActivity extends AppCompatActivity {
     private void applySubtitleFit(int rowW) {
         int used = 0;
         if (ivModelIcon != null && ivModelIcon.getVisibility() == View.VISIBLE) {
-            used += ivModelIcon.getWidth() + dp(5);
+            used += ivModelIcon.getWidth() + dp(4);
         }
         if (tvBalance.getVisibility() == View.VISIBLE) {
             tvBalance.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
@@ -721,7 +787,7 @@ public class MainActivity extends AppCompatActivity {
         if (composer != null) composer.clearAttachments();
         chatContainer.removeAllViews();
         String t1 = Conversation.cleanTitle(conv.title);
-        tvTitle.setText(t1.isEmpty() ? "星云 AI" : t1);
+        tvTitle.setText(t1.isEmpty() ? "AgenCode" : t1);
         updateSubtitle();
 
         // 换会话才重置虚拟化窗口；同一会话里「展开更早」时要保留已展开的进度
@@ -781,6 +847,8 @@ public class MainActivity extends AppCompatActivity {
         } else {
             scrollToBottom(true);
         }
+        // 上一次任务是不是被系统杀掉的？是的话在顶部留一张说明卡片（只弹一次）
+        maybeShowRunResidue();
         // 空会话：给几条点一下就填好的入口，省得新用户对着空屏猜这货能干什么
         if (!scrollLockForExpand && current != null
                 && (current.messages == null || current.messages.isEmpty()) && !busy) {
@@ -788,9 +856,99 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * 上次 AI 任务是被系统直接杀掉的：启动时给一次说明，并给出续跑入口。
+     *
+     * 为什么不写进消息列表：那是"对话内容"，会被持久化、还会作为上下文发给模型。
+     * 这条只是本地事件通知，塞进历史会污染下一轮输入，还会让模型以为自己说过这话。
+     * 所以做成会话顶上的一张卡片，看完即弃（RunGuard.consume 已经删档，不会再弹）。
+     */
+    private void maybeShowRunResidue() {
+        if (runResidueShown) return;
+        runResidueShown = true;
+        final com.nebula.aichat.util.RunGuard.Residue r =
+                com.nebula.aichat.util.RunGuard.consume(this);
+        if (r == null || chatContainer == null) return;
+
+        float d = getResources().getDisplayMetrics().density;
+        int pad = (int) (12 * d);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(pad, pad, pad, pad);
+        card.setBackground(com.nebula.aichat.ui.Ui.box(this,
+                com.nebula.aichat.ui.Palette.surface(this),
+                com.nebula.aichat.ui.Palette.accentSoft(this, 0x66), 14f, 1f));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        int side = (int) (10 * d);
+        lp.setMargins(side, side, side, 0);
+        card.setLayoutParams(lp);
+
+        TextView head = new TextView(this);
+        head.setText("上次任务被系统中断");
+        head.setTextColor(com.nebula.aichat.ui.Palette.accent(this));
+        head.setTextSize(13.5f);
+        head.setTypeface(null, android.graphics.Typeface.BOLD);
+        card.addView(head);
+
+        TextView body = new TextView(this);
+        body.setText(r.describe());
+        body.setTextColor(com.nebula.aichat.ui.Palette.text(this));
+        body.setTextSize(12.5f);
+        body.setLineSpacing(0, 1.3f);
+        body.setPadding(0, (int) (5 * d), 0, 0);
+        card.addView(body);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, (int) (9 * d), 0, 0);
+
+        TextView retry = residueChip("继续这个任务");
+        retry.setTextColor(com.nebula.aichat.ui.Palette.accent(this));
+        retry.setOnClickListener(v -> {
+            chatContainer.removeView(card);
+            String title = r.title == null ? "" : r.title.trim();
+            if (title.isEmpty()) {
+                etInput.setText("刚才那个任务被系统中断了，重新做一遍：");
+            } else {
+                etInput.setText("继续上次没做完的任务：" + title);
+            }
+            etInput.setSelection(etInput.getText().length());
+            etInput.requestFocus();
+        });
+        row.addView(retry);
+
+        TextView dismiss = residueChip("知道了");
+        dismiss.setOnClickListener(v -> chatContainer.removeView(card));
+        row.addView(dismiss);
+        card.addView(row);
+
+        // 插在会话最上方：它是"上一轮"的事，压在最新消息下面反而看不到
+        chatContainer.addView(card, 0);
+    }
+
+    private TextView residueChip(String text) {
+        float d = getResources().getDisplayMetrics().density;
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setTextSize(12f);
+        tv.setGravity(android.view.Gravity.CENTER);
+        int ph = (int) (12 * d), pv = (int) (6 * d);
+        tv.setPadding(ph, pv, ph, pv);
+        tv.setTextColor(com.nebula.aichat.ui.Palette.dim(this));
+        tv.setBackground(com.nebula.aichat.ui.Ui.box(this,
+                com.nebula.aichat.ui.Palette.surface2(this),
+                com.nebula.aichat.ui.Palette.stroke(this), 999f, 1f));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = (int) (8 * d);
+        tv.setLayoutParams(lp);
+        return tv;
+    }
+
     /** 新会话的能力引导：点一下就把半成品问题填进输入框，用户接着补就行 */
-    private void addEmptyGuide() {
-        try {
+    private void addEmptyGuide() {        try {
             String[][] items = {
                     {"\uD83D\uDCC4", "整理长文", "贴材料 → 要点 + 结论",
                             "把下面这段内容整理成要点，先给结论再列条目：\n"},
@@ -1136,7 +1294,7 @@ public class MainActivity extends AppCompatActivity {
         box.addView(spark);
 
         TextView title = new TextView(this);
-        title.setText("星云 AI");
+        title.setText("AgenCode");
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(getResources().getColor(R.color.text));
@@ -1182,6 +1340,15 @@ public class MainActivity extends AppCompatActivity {
 
         chatContainer.addView(box);
     }
+
+    /** 浏览器自动化开启时追加：告诉 AI 它有「打开网页读正文」这个工具 */
+    private static final String WEB_HINT =
+            "【浏览器自动化】已开启，你可以调用 web_fetch 打开具体网页读正文（相当于无界面浏览器）：\n"
+            + "1. 搜索摘要不够时（需要原文细节、数据、接口返回），先拿到候选链接，再对最相关的 1-3 个链接调用 web_fetch。\n"
+            + "2. 不要一次打开很多链接，也不要对同一链接反复取；先看正文够不够，不够再换来源。\n"
+            + "3. 需要页面里的下一层链接时，用 web_fetch 的 links=true 取链接列表。\n"
+            + "4. 页面要登录或依赖 JS 渲染时取不到内容，直接说明并换来源，不要硬试。\n"
+            + "5. 引用网页内容时给出链接；没读到的不要写成读到了。";
 
     /**
      * 输出风格约束，始终拼在系统提示最前面。
@@ -1306,6 +1473,9 @@ public class MainActivity extends AppCompatActivity {
                 .replace("\uFFFCnet", "")
                 .replace("\uFFFC", "")
                 .replace("\u200b", "");
+        // 结论协议标记必须在这里清一次：历史消息是原文落盘的，
+        // 早期版本中止/异常那几轮没剥干净，重进会话就会看到 %%CONCLUSION%%
+        s = ConclusionParser.stripAll(s);
         s = s.replaceAll("[ \t]+\n", "\n").replaceAll("\n{3,}", "\n\n");
         return s.trim();
     }
@@ -1803,11 +1973,16 @@ public class MainActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = dp(9);
 
+        // 旋转图标会溢出自身 bounds，父容器不裁剪才不会把四个角切掉
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
+
         statusIcon = new ImageView(this);
         statusIcon.setImageResource(R.drawable.ic_spark);
         statusIcon.setColorFilter(0xFF5B93FF);
+        statusIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);   // 等比缩放，绝不拉伸
         statusIcon.setContentDescription("思考中");
-        row.addView(statusIcon, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        row.addView(statusIcon, new LinearLayout.LayoutParams(dp(18), dp(18)));
 
         statusText = new TextView(this);
         statusText.setText("正在思考…");
@@ -1863,10 +2038,27 @@ public class MainActivity extends AppCompatActivity {
         }
         if (statusIcon != null) {
             statusIcon.setImageResource(R.drawable.ic_tool_stop);
-            statusIcon.setColorFilter(C_OK);
+            statusIcon.setColorFilter(C_OK);   // 单色矢量，这里染色是对的
             statusIcon.setRotation(0f);
             statusIcon.setAlpha(0.55f);
         }
+    }
+
+    /**
+     * 应用图标（小尺寸用），懒加载一次后缓存。
+     *
+     * 直接用 PackageManager 返回的 launcher 图标：系统会按当前屏幕密度挑最合适的那张，
+     * 自适应图标（API 26+）也是矢量化的，18dp 显示不会糊。
+     */
+    private Drawable appIconSmall() {
+        if (statusAppIcon == null) {
+            try {
+                statusAppIcon = getPackageManager().getApplicationIcon(getPackageName());
+            } catch (Throwable ignored) {
+                statusAppIcon = null;
+            }
+        }
+        return statusAppIcon;
     }
 
     private String lastToolName() {
@@ -1895,10 +2087,17 @@ public class MainActivity extends AppCompatActivity {
         statusText.setTextColor(C_RUN);
         setStatusTint(C_RUN);
         if (statusIcon != null) {
-            // 执行态换成 3/4 圆环：星形图标读起来是「在想」，
-            // 圆环配旋转才是「在跑」，两种状态一眼分得开
-            statusIcon.setImageResource(R.drawable.ic_tool_arc);
-            statusIcon.setColorFilter(C_RUN);
+            // 执行态用应用图标（等比小图）：星形读作「在想」，应用的品牌图标配旋转读作
+            // 「AgenCode 在替你跑」，比一个通用圆环更能让人知道是谁在干活。
+            Drawable appIcon = appIconSmall();
+            if (appIcon != null) {
+                statusIcon.setImageDrawable(appIcon);
+                statusIcon.setColorFilter(null);      // 彩色图标不能染色，否则糊成一团
+            } else {
+                // 兜底：万一取不到图标（极少数 ROM），退回原来的圆环，功能不断
+                statusIcon.setImageResource(R.drawable.ic_tool_arc);
+                statusIcon.setColorFilter(C_RUN);
+            }
             statusIcon.setVisibility(View.VISIBLE);
             statusIcon.setAlpha(1f);
             statusIcon.setRotation(0f);
@@ -1950,7 +2149,7 @@ public class MainActivity extends AppCompatActivity {
         bar.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        barLp.topMargin = dp(8);
+        barLp.topMargin = dp(11);
 
         ImageButton btnCopy = chipButton(R.drawable.ic_copy, "复制", COLOR_COPY);
         btnCopy.setOnClickListener(v -> copyToClipboard(cleanBody(m.content)));
@@ -1992,6 +2191,18 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout.LayoutParams againLp = chipLp(false);
         againLp.leftMargin = dp(12);
         bar.addView(btnAgain, againLp);
+
+        // 分隔线：正文和操作行之间拉一道细线，两端淡出，避免做成生硬的通栏横杠
+        View sep = new View(this);
+        android.graphics.drawable.GradientDrawable sepg =
+                new android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                        new int[]{0x0AFFFFFF, 0x26FFFFFF, 0x0AFFFFFF});
+        sep.setBackground(sepg);
+        LinearLayout.LayoutParams seplp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+        seplp.topMargin = dp(10);
+        bubble.addView(sep, seplp);
 
         bubble.addView(bar, barLp);
     }
@@ -2382,7 +2593,7 @@ public class MainActivity extends AppCompatActivity {
             ui.post(() -> {
                 if (p.isEmpty()) {
                     Toast.makeText(this, b > 0
-                                    ? ("已添加 " + a + " 个附件，" + b + " 个文件已存到「星云产物/上传」，AI 可直接处理")
+                                    ? ("已添加 " + a + " 个附件，" + b + " 个文件已存到「AgenCode/上传」，AI 可直接处理")
                                     : ("已添加 " + a + " 个附件"),
                             Toast.LENGTH_SHORT).show();
                 } else {
@@ -2392,22 +2603,81 @@ public class MainActivity extends AppCompatActivity {
         }, "nebula-attach").start();
     }
 
-    /** 联网按钮：把“开关 + 搜索引擎”折叠进一个菜单，功能栏只留一个图标 */
+    /** 联网按钮：面板里放两个滑动开关（联网搜索 / 浏览器自动化）+ 搜索引擎入口 */
     private void showNetMenu() {
-        boolean on = composer.isNetOn();
-        PopupMenu pm = new PopupMenu(this, composer.netChip());
-        pm.getMenu().add(0, 1, 0, on ? "✓ 联网搜索：开启中" : "联网搜索：已关闭");
-        pm.getMenu().add(0, 2, 1, "搜索引擎：" + (WebSearch.ENGINE_DDG
-                .equalsIgnoreCase(settings.searchEngine) ? "DuckDuckGo" : "Bing"));
-        pm.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() == 1) {
-                composer.setNetOn(!composer.isNetOn(), true);
-            } else {
-                chooseSearchEngine();
-            }
-            return true;
-        });
-        pm.show();
+        if (composer == null) return;
+
+        int px = Ui.dp(this, 20);
+        int py = Ui.dp(this, 11);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 2));
+
+        box.addView(switchRow("联网搜索",
+                "发送前自动检索最新资料，把摘要一起交给 AI",
+                composer.isNetOn(), (btn, on) -> composer.setNetOn(on, true), px, py));
+        box.addView(switchRow("浏览器自动化",
+                "AI 可自己打开网页读正文，摘要不够时用",
+                composer.isBrowserOn(), (btn, on) -> composer.setBrowserOn(on, true), px, py));
+
+        View div = new View(this);
+        div.setBackgroundColor(0x1AFFFFFF);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, Ui.dp(this, 1)));
+        dlp.leftMargin = px;
+        dlp.rightMargin = px;
+        box.addView(div, dlp);
+
+        final TextView eng = new TextView(this);
+        eng.setText("搜索引擎：" + (WebSearch.ENGINE_DDG
+                .equalsIgnoreCase(settings.searchEngine) ? "DuckDuckGo" : "Bing（国内可直连）") + "  ›");
+        eng.setTextSize(13.5f);
+        eng.setTextColor(C_TEXT2);
+        eng.setPadding(px, py, px, py);
+        eng.setOnClickListener(v -> chooseSearchEngine());
+        box.addView(eng);
+
+        new AlertDialog.Builder(this)
+                .setTitle("联网与浏览")
+                .setView(box)
+                .setPositiveButton("完成", null)
+                .show();
+    }
+
+    /** 一行「标题 + 说明 + 滑动开关」 */
+    private View switchRow(String title, String sub, boolean checked,
+                           CompoundButton.OnCheckedChangeListener l, int px, int py) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(px, py, px, py);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextSize(15f);
+        t.setTextColor(C_TEXT);
+
+        TextView st = new TextView(this);
+        st.setText(sub);
+        st.setTextSize(12f);
+        st.setTextColor(C_DIM);
+        st.setPadding(0, Ui.dp(this, 2), Ui.dp(this, 8), 0);
+
+        texts.addView(t);
+        texts.addView(st);
+
+        SwitchCompat sw = new SwitchCompat(this);
+        sw.setChecked(checked);
+        if (l != null) sw.setOnCheckedChangeListener(l);
+
+        row.addView(texts, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(sw, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return row;
     }
 
     /** 选择搜索引擎 */
@@ -2467,7 +2737,7 @@ public class MainActivity extends AppCompatActivity {
         return abs;
     }
 
-    /** 二进制附件落盘到 「星云产物/上传」，返回落地文件；失败返回 null */
+    /** 二进制附件落盘到 「AgenCode/上传」，返回落地文件；失败返回 null */
     private File saveToSandbox(Uri uri, String name) {
         InputStream in = null;
         java.io.FileOutputStream out = null;
@@ -2631,8 +2901,10 @@ public class MainActivity extends AppCompatActivity {
                 ? new ArrayList<ComposerBar.FileAttachment>() : composer.files();
         final List<String> images = composer == null
                 ? new ArrayList<String>() : composer.images();
-        // 只有用户真的输入了内容才检索，避免拿空问题去搜
-        final boolean useNet = composer != null && composer.isNetOn() && !text.isEmpty();
+        // 只有用户真的输入了内容才检索，避免拿空问题去搜。
+        // 只开「浏览器自动化」时也先搜一次：AI 需要候选链接才能往下读，不能让它瞎猜 URL。
+        final boolean useNet = composer != null
+                && (composer.isNetOn() || composer.isBrowserOn()) && !text.isEmpty();
         final String askText;
         if (!text.isEmpty()) {
             askText = text;
@@ -2752,7 +3024,7 @@ public class MainActivity extends AppCompatActivity {
         if (current.messages.size() == 1) {
             current.autoTitle();
             String t2 = Conversation.cleanTitle(current.title);
-            tvTitle.setText(t2.isEmpty() ? "星云 AI" : t2);
+            tvTitle.setText(t2.isEmpty() ? "AgenCode" : t2);
         }
         addUserBubble(userMsg);
         current.touch();
@@ -2790,9 +3062,56 @@ public class MainActivity extends AppCompatActivity {
     private final Runnable keepAliveTick = new Runnable() {
         @Override
         public void run() {
-            KeepAliveService.start(MainActivity.this);
+            KeepAliveService.startBusy(MainActivity.this);
         }
     };
+
+    /**
+     * 让前台服务跟设置项的"后台常驻通知"保持一致。
+     * 开启 → 空闲态常驻通知（状态栏能看到"后台运行中"）；关闭 → 撤掉（长任务时仍会临时拉起）。
+     * busy 期间不插手，交给 keepAliveTick 管，避免把"正在处理"刷回"后台运行中"。
+     */
+    private void syncAliveService() {
+        if (busy) return;
+        try {
+            if (settings != null && settings.aliveNotify) KeepAliveService.startIdle(this);
+            else KeepAliveService.stop(this);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static final int REQ_POST_NOTIF = 4101;
+
+    /**
+     * Android 13+ 的通知是运行时权限，不申请就一直是"拒绝"状态：
+     * 前台服务照跑，但那条常驻通知会被系统直接丢掉 —— 用户看到的就是"后台在跑，状态栏什么都没有"。
+     * 所以进应用时补一次申请（已授予/低版本直接跳过）。
+     */
+    private void ensureNotifPermission() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < 33) return;
+            if (checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_POST_NOTIF);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(req, perms, res);
+        if (req != REQ_POST_NOTIF) return;
+        boolean ok = res != null && res.length > 0
+                && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        if (ok) {
+            syncAliveService();
+        } else {
+            Toast.makeText(this, "没给通知权限：后台仍在跑，但状态栏不会显示（设置 → 权限与后台 → 通知设置 里可开）",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
 
     private void startRequest() {
         busy = true;
@@ -2894,6 +3213,7 @@ public class MainActivity extends AppCompatActivity {
         String skillInject = com.nebula.aichat.skill.SkillStore.buildIndex(this);
         client.extraSystem = STYLE_HINT + "\n\n" + TASK_HINT + "\n\n" + CONFIRM_HINT
                 + "\n\n" + CONCLUSION_HINT + "\n\n" + timeContext()
+                + (settings.browserEnabled ? "\n\n" + WEB_HINT : "")
                 + (skillInject == null || skillInject.isEmpty() ? "" : "\n\n" + skillInject)
                 + "\n\n" + com.nebula.aichat.apk.SandboxBridge.describe(this);
         client.send(settings, history, new ChatClient.Listener() {
@@ -4914,10 +5234,11 @@ public class MainActivity extends AppCompatActivity {
     private void finishStream(boolean ok, String text, String error, MarkdownRenderer renderer) {
         // 已经收尾过（比如用户先点了停止，后台线程随后回调），直接忽略
         if (streamMessage == null) return;
-        // 任务结束：撤掉保活通知
+        // 任务结束：有常驻通知就退回空闲态，否则整个撤掉
         try {
             ui.removeCallbacks(keepAliveTick);
-            KeepAliveService.stop(this);
+            if (settings != null && settings.aliveNotify) KeepAliveService.startIdle(this);
+            else KeepAliveService.stop(this);
         } catch (Throwable ignored) {
         }
         busy = false;
@@ -4940,8 +5261,9 @@ public class MainActivity extends AppCompatActivity {
             if (cr.hasConclusion()) {
                 streamMessage.conclusionTitle = cr.title;
                 streamMessage.conclusionDetail = cr.detail;
-                text = cr.body;
             }
+            // 无论有没有拆出结论，标记本身都不许留在正文里
+            text = cr.body;
             // 定稿前抹掉 `- [ ]` 的复选框：卡片已停用，正文按普通列表显示
             text = TaskParser.uncheck(text);
             boolean blank = (text == null || text.trim().isEmpty());
@@ -4965,7 +5287,8 @@ public class MainActivity extends AppCompatActivity {
             attachArtifacts(streamContent, streamMessage.content, true);
             if (hasTaskList) attachTasks(streamContent, streamMessage);
         } else {
-            String shown = (text == null ? "" : text);
+            // 中断/失败这一轮同样要剥：模型常常先吐了 %%CONCLUSION%% 才断流
+            String shown = ConclusionParser.stripAll(text);
             streamMessage.error = true;
             current.messages.add(streamMessage);
             if (hasToolSteps()) {
@@ -5503,6 +5826,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String[] BUILTIN_MODELS = {"deepseek-chat", "deepseek-reasoner"};
     /** 最近一次服务端返回的模型名：添加/删除自定义模型后要就地重建列表，不能又拉一次 */
     private java.util.List<String> lastServerModels;
+    private TextView sheetRefreshBtn;
+    private boolean fetchingModels;
 
     private void showModelSheet() {
         if (modelSheet != null && modelSheet.isShowing()) return;
@@ -5510,71 +5835,168 @@ public class MainActivity extends AppCompatActivity {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         modelSheet = d;
+        // 上一轮若在拉取途中关掉弹窗，标志位会挂着不放，导致再次打开时「刷新」永远提示在拉取
+        fetchingModels = false;
+        sheetRefreshBtn = null;
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(Ui.roundRect(this, 0xFF161C26, 0xFF2A3240, 18f));
-        root.setPadding(dp(16), dp(16), dp(16), dp(12));
+        root.setBackground(Ui.roundRect(this, 0xFF141A23, 0xFF2A3240, 20f));
+        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setClipChildren(false);
+        root.setClipToPadding(false);   // 主按钮已改为内部渐变，留着这行防将来加阴影再被裁
 
-        TextView title = new TextView(this);
-        title.setText("选择模型");
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-        title.setTextColor(0xFFE6EDF7);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title);
+        // ---------- 头部：当前模型的字母徽标 + 名字 + 厂商，右上角关闭 ----------
+        FrameLayout headWrap = new FrameLayout(this);
+        root.addView(headWrap, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView sub = new TextView(this);
-        sub.setText(settings.isConfigured()
-                ? "对下一条提问生效 · 长按顶栏图标进完整设置"
-                : "还没配 API Key · 点下方「完整设置」先填好");
-        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        sub.setTextColor(0xFF7F8C9F);
-        sub.setLineSpacing(dp(3), 1.3f);
-        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(
+        String cur = Settings.effectiveModel(settings);
+        boolean hasCur = cur != null && !cur.trim().isEmpty();
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        headWrap.addView(head, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView badge = modelBadge(hasCur ? cur : "?", 46);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(dp(46), dp(46));
+        head.addView(badge, blp);
+
+        LinearLayout names = new LinearLayout(this);
+        names.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        nlp.leftMargin = dp(13);
+        nlp.rightMargin = dp(30);          // 给右上角 ✕ 让位
+        head.addView(names, nlp);
+
+        TextView name = new TextView(this);
+        name.setText(hasCur ? cur.trim() : "未选择模型");
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        name.setTextColor(0xFFEDF3FC);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        names.addView(name);
+
+        TextView vendor = new TextView(this);
+        vendor.setText(settings.isConfigured()
+                ? shortHost(settings.baseUrl) + " · 选中后对下一条提问生效"
+                : "还没配 API Key，先去完整设置里填好");
+        vendor.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+        vendor.setTextColor(0xFF7F8C9F);
+        vendor.setSingleLine(true);
+        vendor.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        vlp.topMargin = dp(4);
+        names.addView(vendor, vlp);
+
+        TextView closeX = new TextView(this);
+        closeX.setText("\u2715");
+        closeX.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        closeX.setTextColor(0xFF6F7C8F);
+        closeX.setGravity(Gravity.CENTER);
+        closeX.setBackground(Ui.roundRect(this, 0x14FFFFFF, 0, 11f));
+        closeX.setOnClickListener(v -> d.dismiss());
+        FrameLayout.LayoutParams xlp = new FrameLayout.LayoutParams(dp(28), dp(28));
+        xlp.gravity = Gravity.TOP | Gravity.END;
+        headWrap.addView(closeX, xlp);
+
+        // ---------- 一条从蓝到透明的光条，把头部和列表分开 ----------
+        View line = new View(this);
+        android.graphics.drawable.GradientDrawable gd =
+                new android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                        new int[]{0x805B93FF, 0x332F6BE8, 0x00000000});
+        gd.setCornerRadius(dp(1f));
+        gd.setGradientType(android.graphics.drawable.GradientDrawable.LINEAR_GRADIENT);
+        line.setBackground(gd);
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1.5f));
+        llp.topMargin = dp(15);
+        root.addView(line, llp);
+
+        // ---------- 小节标题：全部模型 · 右侧刷新 ----------
+        LinearLayout sec = new LinearLayout(this);
+        sec.setOrientation(LinearLayout.HORIZONTAL);
+        sec.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams secLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        subLp.topMargin = dp(4);
-        subLp.bottomMargin = dp(10);
-        root.addView(sub, subLp);
+        secLp.topMargin = dp(14);
+        root.addView(sec, secLp);
 
-        ScrollView sv = new ScrollView(this);
+        TextView secTitle = new TextView(this);
+        secTitle.setText("全部模型");
+        secTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        secTitle.setTextColor(0xFF8FA0B5);
+        secTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        sec.addView(secTitle, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView refresh = new TextView(this);
+        refresh.setText("\u21bb 刷新");
+        refresh.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        refresh.setTextColor(0xFF7FB0FF);
+        refresh.setGravity(Gravity.CENTER);
+        // 之前 padding 只有 10/4/2/4dp，可点区域太窄，手指常常点空 → 补到 40dp 级
+        refresh.setPadding(dp(14), dp(8), dp(8), dp(8));
+        refresh.setMinHeight(dp(38));
+        refresh.setMinWidth(dp(58));
+        refresh.setOnClickListener(v -> fetchModelsForSheet());
+        sheetRefreshBtn = refresh;
+        sec.addView(refresh);
+
+        // ---------- 列表 ----------
+        // 限一个最大高度即可：内容少时弹窗跟着内容收紧，内容多时在弹窗内部滚动。
+        // 之前这里是 weight=1，弹窗又固定 86% 屏高，模型只有六个时下方会撑出一大片空白。
+        final int listMaxH = (int) (getResources().getDisplayMetrics().heightPixels * 0.62f);
+        // 再给一个下限：纯为上下留白匀称，内容偏少时把弹窗往下舒展一点，避免贴得太紧
+        final int listMinH = (int) (getResources().getDisplayMetrics().heightPixels * 0.53f);
+        ScrollView sv = new ScrollView(this) {
+            @Override
+            protected void onMeasure(int wSpec, int hSpec) {
+                super.onMeasure(wSpec,
+                        MeasureSpec.makeMeasureSpec(listMaxH, MeasureSpec.AT_MOST));
+                if (getMeasuredHeight() < listMinH) {
+                    setMeasuredDimension(getMeasuredWidth(), listMinH);
+                }
+            }
+        };
+        sv.setVerticalScrollBarEnabled(false);
+        sv.setClipToPadding(false);
         modelListBox = new LinearLayout(this);
         modelListBox.setOrientation(LinearLayout.VERTICAL);
-        sv.addView(modelListBox, new FrameLayout.LayoutParams(
+        // 列表和底部按钮包在同一层里，按钮跟着列表一起滚，不做固定底栏
+        LinearLayout listWrap = new LinearLayout(this);
+        listWrap.setOrientation(LinearLayout.VERTICAL);
+        listWrap.addView(modelListBox, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        sv.addView(listWrap, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
-        root.addView(sv, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(46 * 4)));
-
-        LinearLayout foot = new LinearLayout(this);
-        foot.setOrientation(LinearLayout.HORIZONTAL);
-        foot.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams footLp = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams svlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        footLp.topMargin = dp(12);
-        root.addView(foot, footLp);
+        svlp.topMargin = dp(10);
+        root.addView(sv, svlp);
 
-        TextView settingsBtn = Ui.pill(this, "\u2699 完整设置");
+        // ---------- 底部：一条通栏主按钮，比摆两三个小胶囊利落 ----------
+        TextView settingsBtn = sheetPrimary("\u2699 完整设置 · 地址 / Key / 提示词");
         settingsBtn.setOnClickListener(v -> {
             d.dismiss();
             startActivityForResult(new Intent(MainActivity.this, SettingsActivity.class), 100);
         });
-        foot.addView(settingsBtn);
+        LinearLayout.LayoutParams seplp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+        seplp.topMargin = dp(14);
+        listWrap.addView(sheetSeparator(), seplp);
 
-        TextView refresh = Ui.pillGhost(this, "\u21bb 拉取模型列表");
-        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rlp.leftMargin = dp(8);
-        refresh.setOnClickListener(v -> fetchModelsForSheet());
-        foot.addView(refresh, rlp);
+        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        flp.topMargin = dp(13);
+        listWrap.addView(settingsBtn, flp);
 
-        // 中间塞弹性占位，「关闭」贴右，但不拉伸按钮本身
-        View spacer = new View(this);
-        foot.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-
-        TextView close = Ui.pillGhost(this, "关闭");
-        close.setOnClickListener(v -> d.dismiss());
-        foot.addView(close);
-
-        // 先用「当前 + 自定义 + 内置」铺满，能连上再补一份服务端列表
         rebuildModelList(composeModelList(lastServerModels), Settings.effectiveModel(settings),
                 settings.isConfigured() ? "正在拉取服务器模型列表…" : null);
 
@@ -5582,33 +6004,167 @@ public class MainActivity extends AppCompatActivity {
 
         d.setContentView(root);
         d.show();
-        // 宽度要在 show() 之后设置才可靠，否则会被 Dialog 默认布局覆盖回满屏
         Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
-            w.setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.86f),
+            // 宽度固定 90%，高度交给内容（列表自己封顶），不再固定 86% 屏高
+            w.setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.9f),
                     android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
         }
     }
 
+    /** 模型列表行高：列表可视高度、滚动量都按它算，改这一处即可 */
+    private static final int MODEL_ROW_H = 58;
+
+    /** 徽标配色池：按模型名 hash 取，同一个模型每次打开都是同一个颜色 */
+    private static final int[] MODEL_ACCENTS = {
+            0xFF5B93FF, 0xFF4CD7E8, 0xFF7C6BFF, 0xFF3FBF8F,
+            0xFFE0A642, 0xFFE06C8B, 0xFF3FB6E0, 0xFF9B7BFF };
+
+    private int accentOf(String model) {
+        if (model == null || model.isEmpty()) return MODEL_ACCENTS[0];
+        return MODEL_ACCENTS[Math.abs(model.hashCode()) % MODEL_ACCENTS.length];
+    }
+
+    /** 圆形（或大圆角）字母徽标：取模型名里第一个字母/数字，配一个固定颜色 */
+    private TextView modelBadge(String model, int sizeDp) {
+        String src = model == null ? "" : model.trim();
+        String ch = "?";
+        for (int i = 0; i < src.length(); i++) {
+            char c = src.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                ch = String.valueOf(Character.toUpperCase(c));
+                break;
+            }
+        }
+        int a = accentOf(src);
+        int rgb = a & 0x00FFFFFF;
+
+        TextView tv = new TextView(this);
+        tv.setText(ch);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeDp >= 40 ? 18f : 13.5f);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setTextColor(a);
+        tv.setGravity(Gravity.CENTER);
+        tv.setBackground(Ui.box(this, rgb | 0x26000000, rgb | 0x59000000,
+                sizeDp / 2f, 1f));
+        return tv;
+    }
+
+    /** 模型属于哪家内置服务商；不在内置表里就是用户自己加的 */
+    private String providerOf(String model) {
+        if (model == null) return "自定义";
+        for (String[] p : MODEL_PROVIDERS) {
+            for (int i = 2; i < p.length; i++) {
+                if (p[i].equals(model)) return p[0];
+            }
+        }
+        return "自定义";
+    }
+
+    /** 弹窗底部主按钮：渐变底 + 一层外发光，和次级按钮不是一个量级 */
+    private TextView sheetPrimary(String text) {
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        tv.setGravity(Gravity.CENTER);
+        tv.setSingleLine(true);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setTextColor(0xFFC6D8FA);
+        tv.setLetterSpacing(0.02f);
+        tv.setBackground(sheetGhostButton());
+        tv.setClickable(true);
+        tv.setFocusable(true);
+        // 按压时轻微内缩，代替被裁掉的外发光，手感靠动效找回来
+        tv.setOnTouchListener((v, e) -> {
+            int a = e.getActionMasked();
+            if (a == android.view.MotionEvent.ACTION_DOWN) {
+                v.animate().scaleX(0.985f).scaleY(0.985f).setDuration(90).start();
+            } else if (a == android.view.MotionEvent.ACTION_UP
+                    || a == android.view.MotionEvent.ACTION_CANCEL) {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(130).start();
+            }
+            return false;
+        });
+        return tv;
+    }
+
+    /** 弹窗底部按钮：淡蓝染底 + 细描边 + 柔光文字。整块饱和蓝在深色弹窗里太抢眼，压一档 */
+    private Drawable sheetGhostButton() {
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.RECTANGLE);
+        bg.setCornerRadius(dp(14));
+        bg.setColor(0x1F4A86F7);
+        bg.setStroke(Math.max(1, dp(1)), 0x6B4A86F7);
+        return new RippleDrawable(ColorStateList.valueOf(0x3D4A86F7), bg, null);
+    }
+
+    /** 底部操作区上方的分隔线：中段微亮、两端透明，比通栏实线轻，不会割裂弹窗 */
+    private View sheetSeparator() {
+        View v = new View(this);
+        android.graphics.drawable.GradientDrawable gd =
+                new android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                        new int[]{0x00FFFFFF, 0x3DFFFFFF, 0x00FFFFFF});
+        v.setBackground(gd);
+        return v;
+    }
+
     private void fetchModelsForSheet() {
-        if (!settings.isConfigured()) return;
+        // 之前这里直接 return，没配 Key 时点「刷新」毫无反应，被当成按钮坏了
+        if (!settings.isConfigured()) {
+            Toast.makeText(this, "还没填 API Key · 点下面「完整设置」配好就能拉取",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (fetchingModels) {
+            Toast.makeText(this, "正在拉取，稍等一下", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        fetchingModels = true;
+        final TextView btn = sheetRefreshBtn;
+        if (btn != null) {
+            btn.setText("拉取中…");
+            btn.setEnabled(false);
+            btn.setAlpha(0.45f);
+        }
         modelListClient.fetch(settings, new ModelListClient.Callback() {
             @Override
             public void onSuccess(java.util.List<String> models) {
                 runOnUiThread(() -> {
+                    resetRefreshState();
                     lastServerModels = models;
+                    int n = models == null ? 0 : models.size();
                     rebuildModelList(composeModelList(models), Settings.effectiveModel(settings),
-                            models == null || models.isEmpty() ? "服务器没返回可用模型，先用内置候选" : null);
+                            n == 0 ? "服务器没返回可用模型，先用内置候选" : null);
+                    Toast.makeText(MainActivity.this,
+                            n == 0 ? "服务器没返回模型" : "已更新 " + n + " 个模型",
+                            Toast.LENGTH_SHORT).show();
                 });
             }
 
             @Override
             public void onError(String message) {
-                runOnUiThread(() -> rebuildModelList(composeModelList(lastServerModels),
-                        Settings.effectiveModel(settings), "拉取失败 · " + message));
+                runOnUiThread(() -> {
+                    resetRefreshState();
+                    rebuildModelList(composeModelList(lastServerModels),
+                            Settings.effectiveModel(settings), "拉取失败 · " + message);
+                    Toast.makeText(MainActivity.this, "拉取失败：" + message,
+                            Toast.LENGTH_LONG).show();
+                });
             }
         });
+    }
+
+    /** 拉取结束（无论成败）把「刷新」恢复成可点状态 */
+    private void resetRefreshState() {
+        fetchingModels = false;
+        TextView btn = sheetRefreshBtn;
+        if (btn != null) {
+            btn.setText("\u21bb 刷新");
+            btn.setEnabled(true);
+            btn.setAlpha(1f);
+        }
     }
 
     /**
@@ -5643,23 +6199,23 @@ public class MainActivity extends AppCompatActivity {
     private void rebuildModelList(java.util.List<String> models, String current, String note) {
         if (modelListBox == null) return;
         modelListBox.removeAllViews();
-        int extra = 0;
-        if (note != null && !note.isEmpty()) {
+        boolean hasNote = note != null && !note.isEmpty();
+        if (hasNote) {
             TextView tip = new TextView(this);
             tip.setText(note);
-            tip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+            tip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
             tip.setTextColor(0xFF7F8C9F);
-            tip.setPadding(dp(12), dp(2), dp(12), dp(8));
+            tip.setPadding(dp(2), dp(0), dp(2), dp(8));
             modelListBox.addView(tip);
-            extra = 1;
         }
         for (String m : models) addModelRow(m, m != null && m.equals(current));
         addCustomModelEntryRow();
         View sv = (View) modelListBox.getParent();
         if (sv != null) {
-            int rows = Math.min(models.size() + extra + 1, 4);
+            // 高度交给内容自适应：ScrollView 的 onMeasure 已经封了最大高度，内容再多也是它自己滚。
+            // 原来这里按「min(行数+1, 4) 行」硬算高度，行数少时反而把列表撑出空白。
             android.view.ViewGroup.LayoutParams lp = sv.getLayoutParams();
-            lp.height = Math.max(dp(46), rows * dp(46));
+            lp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
             sv.setLayoutParams(lp);
         }
     }
@@ -5668,12 +6224,31 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(12), dp(12), dp(12));
-        row.setBackground(Ui.roundRect(this, current ? 0xFF1E3A6B : 0x00000000, 0, 11f));
+        row.setPadding(dp(10), 0, dp(12), 0);
+
+        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed},
+                Ui.box(this, current ? 0xFF22355A : 0x1F5B93FF, 0, 14f, 0f));
+        // 选中行用「深蓝底 + 细蓝框」而不是高饱和实底：整屏只有一处发光（底部主按钮）
+        bg.addState(new int[]{}, current
+                ? Ui.box(this, 0xFF1B2A47, 0x665B93FF, 14f, 1f)
+                : Ui.box(this, 0x00000000, 0, 14f, 0f));
+        row.setBackground(bg);
         row.setOnClickListener(v -> pickModel(name));
 
         final boolean custom = settings.customModels != null && name != null
                 && settings.customModels.contains(name);
+
+        row.addView(modelBadge(name, 34),
+                new LinearLayout.LayoutParams(dp(34), dp(34)));
+
+        // 名称 + 一行小字（厂商 / 自定义），两行结构比单行更耐看，也塞下了更多信息
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams tclp = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        tclp.leftMargin = dp(12);
+        row.addView(textCol, tclp);
 
         TextView tv = new TextView(this);
         tv.setText(name == null ? "" : name);
@@ -5681,36 +6256,41 @@ public class MainActivity extends AppCompatActivity {
         tv.setTypeface(Typeface.MONOSPACE);
         tv.setMaxLines(1);
         tv.setEllipsize(TextUtils.TruncateAt.END);
-        tv.setTextColor(current ? 0xFFCFE0FF : 0xFFC9D6E8);
-        row.addView(tv, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        tv.setTextColor(current ? 0xFFDCE8FF : 0xFFC9D6E8);
+        textCol.addView(tv);
 
-        if (custom) {
-            // 「自定义」小标：把自己加的模型和服务器返回的分开，长按才知道能删
-            TextView ck = new TextView(this);
-            ck.setText("自定义");
-            ck.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
-            ck.setTextColor(0xFF9CC3FF);
-            ck.setPadding(dp(7), dp(2), dp(7), dp(3));
-            ck.setBackground(Ui.roundRect(this, 0x265B93FF, 0, 5f));
-            LinearLayout.LayoutParams cklp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            cklp.rightMargin = dp(8);
-            row.addView(ck, cklp);
-        }
+        TextView sub = new TextView(this);
+        String prov = providerOf(name);
+        sub.setText("自定义".equals(prov) ? "自己添加 · 长按删除" : prov);
+        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
+        sub.setTextColor(custom ? 0xFF7FB0FF : 0xFF6F7C8F);
+        sub.setSingleLine(true);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        slp.topMargin = dp(3);
+        textCol.addView(sub, slp);
 
         if (current) {
             TextView ok = new TextView(this);
             ok.setText("\u2713 使用中");
-            ok.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-            ok.setTextColor(C_OK);
-            row.addView(ok);
+            ok.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+            ok.setTextColor(0xFF8FB6FF);
+            ok.setPadding(dp(9), dp(3), dp(9), dp(3));
+            ok.setBackground(Ui.roundRect(this, 0x265B93FF, 0x4D5B93FF, 8f));
+            LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            olp.leftMargin = dp(6);
+            row.addView(ok, olp);
         }
+
         if (custom) row.setOnLongClickListener(v -> {
             confirmRemoveModel(name);
             return true;
         });
-        modelListBox.addView(row);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(MODEL_ROW_H));
+        rlp.bottomMargin = dp(4);
+        modelListBox.addView(row, rlp);
     }
 
     /** 列表末尾那行「＋ 添加自定义模型」：点了弹输入框 */
@@ -5719,33 +6299,49 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(12), dp(12), dp(12));
+        row.setPadding(dp(10), 0, dp(12), 0);
         android.graphics.drawable.StateListDrawable bg =
                 new android.graphics.drawable.StateListDrawable();
         bg.addState(new int[]{android.R.attr.state_pressed},
-                Ui.roundRect(this, 0x1F5B93FF, 0, 10f));
-        bg.addState(new int[]{}, Ui.roundRect(this, 0x00000000, 0, 10f));
+                Ui.box(this, 0x265B93FF, 0, 14f, 0f));
+        bg.addState(new int[]{}, Ui.box(this, 0x0F5B93FF, 0x2E5B93FF, 14f, 1f));
         row.setBackground(bg);
 
+        // 和模型行同宽同高的「＋」方块，保证列表左边缘是一条直线
         TextView plus = new TextView(this);
         plus.setText("\uff0b");
-        plus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        plus.setTextColor(0xFF5B93FF);
+        plus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+        plus.setTextColor(0xFF7FB0FF);
         plus.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(dp(18), dp(18));
-        plp.rightMargin = dp(10);
-        row.addView(plus, plp);
+        plus.setBackground(Ui.roundRect(this, 0x1F5B93FF, 0, 11f));
+        row.addView(plus, new LinearLayout.LayoutParams(dp(34), dp(34)));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        clp.leftMargin = dp(12);
+        row.addView(col, clp);
 
         TextView tv = new TextView(this);
-        tv.setText("添加模型（内置 6 家服务商，选完就能用）");
+        tv.setText("添加模型");
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        tv.setTextColor(0xFF7FB0FF);
+        tv.setTextColor(0xFF9CC2FF);
         tv.setTypeface(Typeface.DEFAULT_BOLD);
-        row.addView(tv, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        col.addView(tv);
+
+        TextView hint = new TextView(this);
+        hint.setText("内置 6 家服务商 · 地址自动配好");
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
+        hint.setTextColor(0xFF6F7C8F);
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        hlp.topMargin = dp(3);
+        col.addView(hint, hlp);
 
         row.setOnClickListener(v -> showAddModelDialog());
-        modelListBox.addView(row);
+        modelListBox.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(MODEL_ROW_H)));
     }
 
     /** 内置服务商：{显示名, OpenAI 兼容地址, 模型…}，地址都支持 /chat/completions */
@@ -5825,89 +6421,298 @@ public class MainActivity extends AppCompatActivity {
      * <p>以前这里只让手打模型名，地址和 Key 还得自己进设置页配，
      * 结果加了个名字却用不了。现在三件事在同一个框里一次做完。</p>
      */
+    /** 小节标题：比正文小一号、加粗、弱色，用来分段而不抢眼 */
+    private TextView sheetLabel(String text) {
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+        tv.setTextColor(0xFF8FA0B5);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setLetterSpacing(0.06f);
+        return tv;
+    }
+
+    private LinearLayout.LayoutParams labelLp(boolean first) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(first ? 0 : 18);
+        lp.bottomMargin = dp(8);
+        return lp;
+    }
+
+    /** 弹窗里的输入框：深底 + 细边，比系统默认下划线输入框干净 */
+    private EditText sheetInput(String hint) {
+        EditText et = new EditText(this);
+        et.setHint(hint);
+        et.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        et.setTextColor(0xFFE6EDF7);
+        et.setHintTextColor(0xFF5E6A7B);
+        et.setTypeface(Typeface.MONOSPACE);
+        et.setSingleLine(true);
+        et.setBackground(Ui.box(this, 0xFF0F151D, 0xFF2B3644, 12f, 1f));
+        et.setPadding(dp(13), dp(11), dp(13), dp(11));
+        return et;
+    }
+
+    /** 服务商卡片：只画底和两行字，选中态由 styleProviderCard 统一改 */
+    private LinearLayout providerCard(int idx) {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+        TextView n = new TextView(this);
+        n.setText(MODEL_PROVIDERS[idx][0]);
+        n.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        n.setTypeface(Typeface.DEFAULT_BOLD);
+        n.setSingleLine(true);
+        c.addView(n);
+
+        TextView h = new TextView(this);
+        h.setText(shortHost(MODEL_PROVIDERS[idx][1]));
+        h.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        h.setSingleLine(true);
+        h.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        hlp.topMargin = dp(4);
+        c.addView(h, hlp);
+        return c;
+    }
+
+    private void styleProviderCard(LinearLayout c, boolean on) {
+        c.setBackground(on
+                ? Ui.box(this, 0xFF1B2A47, 0x665B93FF, 13f, 1.2f)
+                : Ui.box(this, 0xFF10161F, 0x1F2A3240, 13f, 1f));
+        TextView n = (TextView) c.getChildAt(0);
+        n.setTextColor(on ? 0xFFDCE8FF : 0xFFB9C6D8);
+        TextView h = (TextView) c.getChildAt(1);
+        h.setTextColor(on ? 0xFF8FB6FF : 0xFF6F7C8F);
+    }
+
     private void showAddModelDialog() {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(Ui.roundRect(this, 0xFF161C26, 0xFF2A3240, 18f));
-        root.setPadding(dp(18), dp(16), dp(18), dp(14));
+        root.setBackground(Ui.roundRect(this, 0xFF141A23, 0xFF2A3240, 20f));
+        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setClipChildren(false);
+        root.setClipToPadding(false);   // 主按钮已改为内部渐变，留着这行防将来加阴影再被裁
 
-        TextView title = Ui.text(this, "添加模型", 15f, 0xFFE6EDF7);
+        // ---------- 头部 ----------
+        FrameLayout headWrap = new FrameLayout(this);
+        root.addView(headWrap, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout.LayoutParams hlp0 = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        hlp0.rightMargin = dp(34);
+        headWrap.addView(head, hlp0);
+
+        TextView title = new TextView(this);
+        title.setText("添加模型");
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        title.setTextColor(0xFFEDF3FC);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title);
+        head.addView(title);
 
-        TextView tip = Ui.text(this,
-                "选服务商、选模型，接口地址自动配好；Key 填一次，以后加同一家的模型不用再填。",
-                11.5f, 0xFF7F8C9F);
-        tip.setLineSpacing(dp(2), 1.25f);
-        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        tlp.topMargin = dp(5);
-        tlp.bottomMargin = dp(12);
-        root.addView(tip, tlp);
+        TextView sub = new TextView(this);
+        sub.setText("选服务商 · 选模型 · 填 Key，接口地址自动配好");
+        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+        sub.setTextColor(0xFF7F8C9F);
+        LinearLayout.LayoutParams slp0 = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        slp0.topMargin = dp(5);
+        head.addView(sub, slp0);
+
+        TextView closeX = new TextView(this);
+        closeX.setText("\u2715");
+        closeX.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        closeX.setTextColor(0xFF6F7C8F);
+        closeX.setGravity(Gravity.CENTER);
+        closeX.setBackground(Ui.roundRect(this, 0x14FFFFFF, 0, 11f));
+        closeX.setOnClickListener(v -> d.dismiss());
+        FrameLayout.LayoutParams xlp = new FrameLayout.LayoutParams(dp(28), dp(28));
+        xlp.gravity = Gravity.TOP | Gravity.END;
+        headWrap.addView(closeX, xlp);
+
+        // ---------- 光条 ----------
+        View line = new View(this);
+        android.graphics.drawable.GradientDrawable gd =
+                new android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                        new int[]{0x805B93FF, 0x332F6BE8, 0x00000000});
+        gd.setCornerRadius(dp(1f));
+        gd.setGradientType(android.graphics.drawable.GradientDrawable.LINEAR_GRADIENT);
+        line.setBackground(gd);
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1.5f));
+        llp.topMargin = dp(15);
+        root.addView(line, llp);
+
+        // ---------- 内容区（可滚动，避免小屏把底部按钮挤出去） ----------
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        sv.setClipToPadding(false);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(0, dp(14), 0, 0);
+        sv.addView(body, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout.LayoutParams svLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        root.addView(sv, svLp);
 
         final int[] sel = new int[]{providerIndexOfCurrent()};
         final String[] mdl = new String[]{modelsOf(sel[0])[0]};
+        final LinearLayout[] cardViews = new LinearLayout[MODEL_PROVIDERS.length];
+        final LinearLayout chipBox = new LinearLayout(this);
 
-        final TextView rowProv = valueRow("服务商", MODEL_PROVIDERS[sel[0]][0]);
-        root.addView(rowProv, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        final TextView rowModel = valueRow("模型", mdl[0]);
-        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        mlp.topMargin = dp(8);
-        root.addView(rowModel, mlp);
-
-        final EditText etManual = new EditText(this);
-        etManual.setHint("列表里没有？在这儿填模型名（可留空）");
-        etManual.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        etManual.setTextColor(0xFFE6EDF7);
-        etManual.setHintTextColor(0xFF66707F);
-        etManual.setTypeface(Typeface.MONOSPACE);
-        etManual.setSingleLine(true);
-        etManual.setBackground(Ui.roundRect(this, 0xFF0F151D, 0xFF2E3A49, 10f));
-        etManual.setPadding(dp(12), dp(10), dp(12), dp(10));
-        LinearLayout.LayoutParams mlp2 = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        mlp2.topMargin = dp(8);
-        root.addView(etManual, mlp2);
-
-        final EditText etKey = new EditText(this);
-        etKey.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        etKey.setTextColor(0xFFE6EDF7);
-        etKey.setHintTextColor(0xFF66707F);
-        etKey.setHint("sk-...");
-        etKey.setTypeface(Typeface.MONOSPACE);
-        etKey.setSingleLine(true);
+        // 这三个控件先创建、稍后再按顺序 addView：
+        // 卡片点击和 Key 提示都要先引用到它们，而界面顺序要求它们排在卡片后面
+        final EditText etManual = sheetInput("可留空，留空就用上面选中的");
+        final EditText etKey = sheetInput("sk-...");
         etKey.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        etKey.setBackground(Ui.roundRect(this, 0xFF0F151D, 0xFF2E3A49, 10f));
-        etKey.setPadding(dp(12), dp(10), dp(12), dp(10));
-        LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        klp.topMargin = dp(8);
-        root.addView(etKey, klp);
+        etKey.setPadding(dp(13), dp(11), dp(56), dp(11));
+        final TextView keyHint = new TextView(this);
+        keyHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
+        keyHint.setLineSpacing(dp(2), 1.25f);
 
-        final TextView keyHint = Ui.text(this, "", 10.5f, 0xFF66707F);
-        keyHint.setLineSpacing(dp(2), 1.2f);
-        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        hlp.topMargin = dp(5);
-        root.addView(keyHint, hlp);
+        // 1) 服务商：2 列网格，一屏看全 6 家，不用再点开二级对话框
+        body.addView(sheetLabel("服务商"), labelLp(true));
+        for (int base = 0; base < MODEL_PROVIDERS.length; base += 2) {
+            LinearLayout rowLine = new LinearLayout(this);
+            rowLine.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams rllp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            if (base > 0) rllp.topMargin = dp(8);
+            for (int k = 0; k < 2; k++) {
+                int idx = base + k;
+                if (idx >= MODEL_PROVIDERS.length) {
+                    View fill = new View(this);
+                    LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(0, 1, 1f);
+                    if (k == 0) flp.rightMargin = dp(8);
+                    rowLine.addView(fill, flp);
+                    continue;
+                }
+                final int fi = idx;
+                LinearLayout card = providerCard(idx);
+                cardViews[idx] = card;
+                LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                if (k == 0) clp.rightMargin = dp(8);
+                rowLine.addView(card, clp);
+            }
+            body.addView(rowLine, rllp);
+        }
 
-        final Runnable refresh = new Runnable() {
+        // 2) 模型：横向 chip，点一下就选中；数量多也不会把弹窗顶长
+        body.addView(sheetLabel("模型"), labelLp(false));
+        chipBox.setOrientation(LinearLayout.HORIZONTAL);
+        HorizontalScrollView hsv = new HorizontalScrollView(this);
+        hsv.setHorizontalScrollBarEnabled(false);
+        hsv.setClipToPadding(false);
+        hsv.addView(chipBox, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+        body.addView(hsv, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // 3) 自定义模型名（可选）
+        body.addView(sheetLabel("列表里没有？直接填模型名"), labelLp(false));
+        body.addView(etManual, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // 4) API Key + 显隐切换
+        body.addView(sheetLabel("API Key"), labelLp(false));
+        FrameLayout keyWrap = new FrameLayout(this);
+        keyWrap.addView(etKey, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        final TextView eye = new TextView(this);
+        eye.setText("显示");
+        eye.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        eye.setTextColor(0xFF7FB0FF);
+        eye.setGravity(Gravity.CENTER);
+        eye.setPadding(dp(10), dp(6), dp(10), dp(6));
+        FrameLayout.LayoutParams elp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        elp.gravity = Gravity.CENTER_VERTICAL | Gravity.END;
+        elp.rightMargin = dp(8);
+        keyWrap.addView(eye, elp);
+        body.addView(keyWrap, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        final boolean[] keyShown = {false};
+        eye.setOnClickListener(v -> {
+            keyShown[0] = !keyShown[0];
+            etKey.setInputType(keyShown[0]
+                    ? android.text.InputType.TYPE_CLASS_TEXT
+                    : android.text.InputType.TYPE_CLASS_TEXT
+                    | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            // setInputType 会把字体重置回默认，这里补回来
+            etKey.setTypeface(Typeface.MONOSPACE);
+            eye.setText(keyShown[0] ? "隐藏" : "显示");
+            if (!etKey.getText().toString().isEmpty()) {
+                etKey.setSelection(etKey.getText().length());
+            }
+        });
+
+        LinearLayout.LayoutParams khlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        khlp.topMargin = dp(7);
+        body.addView(keyHint, khlp);
+
+        // ---------- 选中态刷新（卡片 + chips 由同一个 runnable 驱动） ----------
+        final Runnable[] refresh = new Runnable[1];
+        final Runnable renderChips = new Runnable() {
             @Override
             public void run() {
-                rowProv.setText("服务商    " + MODEL_PROVIDERS[sel[0]][0] + "  \u25be");
-                rowModel.setText("模型    " + mdl[0] + "  \u25be");
+                chipBox.removeAllViews();
+                String[] ms = modelsOf(sel[0]);
+                for (int i = 0; i < ms.length; i++) {
+                    final String m = ms[i];
+                    boolean on = m.equals(mdl[0]);
+                    TextView chip = new TextView(MainActivity.this);
+                    chip.setText(m);
+                    chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+                    chip.setTypeface(Typeface.MONOSPACE);
+                    chip.setSingleLine(true);
+                    chip.setTextColor(on ? 0xFFDCE8FF : 0xFF9AA7BA);
+                    chip.setPadding(dp(12), dp(8), dp(12), dp(8));
+                    chip.setBackground(on
+                            ? Ui.box(MainActivity.this, 0x2E5B93FF, 0x665B93FF, 11f, 1f)
+                            : Ui.box(MainActivity.this, 0x00000000, 0x2E3A4C, 11f, 1f));
+                    chip.setOnClickListener(v -> {
+                        mdl[0] = m;
+                        refresh[0].run();
+                    });
+                    LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT);
+                    if (i > 0) clp.leftMargin = dp(8);
+                    chipBox.addView(chip, clp);
+                }
+            }
+        };
+
+        refresh[0] = new Runnable() {
+            @Override
+            public void run() {
+                for (int i = 0; i < cardViews.length; i++) {
+                    if (cardViews[i] != null) styleProviderCard(cardViews[i], i == sel[0]);
+                }
+                renderChips.run();
+
                 boolean same = normBase(MODEL_PROVIDERS[sel[0]][1]).equals(normBase(settings.baseUrl));
                 String old = settings.apiKey == null ? "" : settings.apiKey.trim();
                 if (same && !old.isEmpty()) {
                     keyHint.setText("这一家的 Key 已经存过，留空就直接用它。");
-                    keyHint.setTextColor(0xFF5FD08A);
+                    keyHint.setTextColor(0xFF4CD7A0);
                     etKey.setHint("留空 = 用已保存的 Key");
                 } else if (!old.isEmpty()) {
                     keyHint.setText("换服务商要填这一家的 Key；填了会替换现在用的（当前 "
@@ -5919,70 +6724,24 @@ public class MainActivity extends AppCompatActivity {
                     keyHint.setTextColor(0xFF66707F);
                     etKey.setHint("sk-...");
                 }
+                etKey.setTypeface(Typeface.MONOSPACE);
             }
         };
-        refresh.run();
+        // 卡片点击放在这里绑：切换服务商要顺带清空 Key 输入、重建 chips
+        for (int i = 0; i < cardViews.length; i++) {
+            final int fi = i;
+            if (cardViews[i] == null) continue;
+            cardViews[i].setOnClickListener(v -> {
+                if (sel[0] == fi) return;
+                sel[0] = fi;
+                mdl[0] = modelsOf(fi)[0];
+                etKey.setText("");
+                refresh[0].run();
+            });
+        }
+        refresh[0].run();
 
-        final String[] provNames = new String[MODEL_PROVIDERS.length];
-        for (int i = 0; i < MODEL_PROVIDERS.length; i++) provNames[i] = MODEL_PROVIDERS[i][0];
-
-        rowProv.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                pickOne("选择服务商", provNames, sel[0],
-                        new android.content.DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(android.content.DialogInterface dd, int which) {
-                                dd.dismiss();
-                                if (which == sel[0]) return;
-                                sel[0] = which;
-                                mdl[0] = modelsOf(which)[0];
-                                etKey.setText("");
-                                refresh.run();
-                            }
-                        });
-            }
-        });
-
-        rowModel.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                final String[] ms = modelsOf(sel[0]);
-                int checked = 0;
-                for (int i = 0; i < ms.length; i++) if (ms[i].equals(mdl[0])) checked = i;
-                pickOne("选择模型", ms, checked,
-                        new android.content.DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(android.content.DialogInterface dd, int which) {
-                                dd.dismiss();
-                                mdl[0] = ms[which];
-                                refresh.run();
-                            }
-                        });
-            }
-        });
-
-        LinearLayout foot = new LinearLayout(this);
-        foot.setOrientation(LinearLayout.HORIZONTAL);
-        foot.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        flp.topMargin = dp(14);
-        root.addView(foot, flp);
-
-        TextView ok = Ui.pill(this, "添加并使用");
-        foot.addView(ok);
-        View spacer = new View(this);
-        foot.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-        TextView cancel = Ui.pillGhost(this, "取消");
-        cancel.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                d.dismiss();
-            }
-        });
-        foot.addView(cancel);
-
+        // ---------- 底部主按钮 ----------
         final Runnable submit = new Runnable() {
             @Override
             public void run() {
@@ -6025,20 +6784,29 @@ public class MainActivity extends AppCompatActivity {
                 d.dismiss();
             }
         };
-        ok.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                submit.run();
-            }
-        });
+
+        TextView ok = sheetPrimary("添加并使用");
+        ok.setOnClickListener(v -> submit.run());
+        // 分隔线和主按钮都塞进滚动区：跟上面的字段一起上下滑，不做固定底栏
+        LinearLayout.LayoutParams seplp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+        seplp.topMargin = dp(16);
+        body.addView(sheetSeparator(), seplp);
+
+        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        flp.topMargin = dp(13);
+        flp.bottomMargin = dp(6);
+        body.addView(ok, flp);
 
         d.setContentView(root);
         d.show();
         Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
+            // 铺满：高度按屏幕比例固定，字段多就在弹窗内部滚动
             w.setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.92f),
-                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+                    (int) (getResources().getDisplayMetrics().heightPixels * 0.86f));
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
     }
@@ -6300,6 +7068,14 @@ public class MainActivity extends AppCompatActivity {
         root.findViewById(R.id.btnDrawerNew).setOnClickListener(v -> {
             dialog.dismiss();
             newConversation();
+        });
+        root.findViewById(R.id.rowDrawerBrowser).setOnClickListener(v -> {
+            dialog.dismiss();
+            try {
+                startActivity(new Intent(MainActivity.this, BrowserActivity.class));
+            } catch (Throwable t) {
+                Toast.makeText(this, "打不开浏览器：" + t.getMessage(), Toast.LENGTH_SHORT).show();
+            }
         });
         root.findViewById(R.id.rowDrawerSettings).setOnClickListener(v -> {
             dialog.dismiss();

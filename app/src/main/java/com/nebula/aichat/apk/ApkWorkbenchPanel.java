@@ -183,8 +183,8 @@ public class ApkWorkbenchPanel {
         sb.append("产物目录：").append(ArtifactStore.describe(act));
         sb.append('\n');
         sb.append(ApkExporter.canWritePublicDir(act)
-                ? "✓ 存储权限就绪（产物直接写进「星云产物」）"
-                : "⚠ 没有「所有文件访问」权限：产物会写进「下载/星云产物」，或退回应用私有目录");
+                ? "✓ 存储权限就绪（产物直接写进「AgenCode」）"
+                : "⚠ 没有「所有文件访问」权限：产物会写进「下载/AgenCode」，或退回应用私有目录");
         sb.append('\n');
         sb.append(issue == null ? "✓ Java 运行时就绪（可以解包了）" : "⚠ " + issue
                 + (issue.contains("Linux") ? "（先去「环境」页安装内置 Linux）"
@@ -192,7 +192,7 @@ public class ApkWorkbenchPanel {
         return sb.toString();
     }
 
-    /** 把工程整个复制进 星云产物/工程/，体积大会先问一声 */
+    /** 把工程整个复制进 AgenCode/工程/，体积大会先问一声 */
     private void exportProject(final String name) {
         final File src = new File(new File(ApkWorkbench.root(act), "projects"), name);
         if (!src.isDirectory()) {
@@ -201,7 +201,7 @@ public class ApkWorkbenchPanel {
         }
         final long[] size = ArtifactStore.sizeOf(src);
         new AlertDialog.Builder(act)
-                .setTitle("导出工程到「星云产物」")
+                .setTitle("导出工程到「AgenCode」")
                 .setMessage(name + "\n" + size[0] + " 个文件，" + ApkWorkbench.fmtSize(size[1])
                         + "\n\n会整个复制到：" + ArtifactStore.writableSub(act, ArtifactStore.SUB_PROJECT).getAbsolutePath()
                         + "\n（只是副本，原工程不动）")
@@ -232,7 +232,7 @@ public class ApkWorkbenchPanel {
                     @Override
                     public void run() {
                         log(msg);
-                        toast(msg.startsWith("✅") ? "工程已导出到「星云产物」" : "导出失败，见日志");
+                        toast(msg.startsWith("✅") ? "工程已导出到「AgenCode」" : "导出失败，见日志");
                     }
                 });
             }
@@ -241,7 +241,7 @@ public class ApkWorkbenchPanel {
 
     // ------------------------------------------------------------ 产物目录
 
-    /** 「星云产物」在哪、里面有什么、怎么打开 */
+    /** 「AgenCode」在哪、里面有什么、怎么打开 */
     private void showArtifactDir() {
         final File dir = ArtifactStore.writableDir(act);
         boolean pub = ApkExporter.canWritePublicDir(act);
@@ -262,7 +262,7 @@ public class ApkWorkbenchPanel {
             sb.append('\n');
         }
         new AlertDialog.Builder(act)
-                .setTitle("星云产物")
+                .setTitle("AgenCode")
                 .setMessage(sb.toString())
                 .setPositiveButton("打开文件夹", new DialogInterface.OnClickListener() {
                     @Override
@@ -450,9 +450,9 @@ public class ApkWorkbenchPanel {
                     String note;
                     try {
                         String where = ApkExporter.exportToDownload(act, signed, signed.getName());
-                        note = "✅ 已导出到「星云产物」：" + where;
+                        note = "✅ 已导出到「AgenCode」：" + where;
                     } catch (Exception e) {
-                        note = "⚠ 没能导出到「星云产物」：" + shortMsg(e)
+                        note = "⚠ 没能导出到「AgenCode」：" + shortMsg(e)
                                 + "\n   文件仍在应用内：" + signed.getAbsolutePath();
                     }
                     final String tailNote = note;
@@ -673,7 +673,7 @@ public class ApkWorkbenchPanel {
                                     android.net.Uri.parse("package:" + act.getPackageName()));
                             act.startActivity(i);
                         } catch (Throwable t) {
-                            toast("请手动到 设置 → 应用 → 星云AI → 所有文件访问 打开");
+                            toast("请手动到 设置 → 应用 → AgenCode → 所有文件访问 打开");
                         }
                     }
                 })

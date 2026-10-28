@@ -7,7 +7,7 @@ import android.os.Environment;
 import java.io.File;
 
 /**
- * 统一产物目录：手机里叫「星云产物」的那个文件夹。
+ * 统一产物目录：手机里叫「AgenCode」的那个文件夹。
  *
  * 为什么要单独一个类：
  *  1) 以前产物散落在「下载」根目录里，和别人的文件混在一起，时间一长就找不到了；
@@ -15,26 +15,77 @@ import java.io.File;
  *     这些降级逻辑必须只有一份，否则各处调用会给出互相矛盾的路径。
  *
  * 目录结构：
- *   星云产物/APK/      打包签名后的安装包
- *   星云产物/工程/     反编译出来的可编辑工程
- *   星云产物/日志/     构建日志等
+ *   AgenCode/APK/      打包签名后的安装包
+ *   AgenCode/工程/     反编译出来的可编辑工程
+ *   AgenCode/日志/     构建日志等
  *
- * 有权限 → /sdcard/星云产物
- * 没权限 → 用 MediaStore 写 Download/星云产物（文件管理器里同样叫「星云产物」）
+ * 有权限 → /sdcard/AgenCode
+ * 没权限 → 用 MediaStore 写 Download/AgenCode（文件管理器里同样叫「AgenCode」）
  */
 public final class ArtifactStore {
 
     private ArtifactStore() {
     }
 
-    public static final String NAME = "星云产物";
+    public static final String NAME = "AgenCode";
+    /**
+     * 老版本（1.8.70 及更早）用的目录名。
+     * 改名后如果老目录已经存在，就继续用它 —— 否则升级一次，用户之前导出的
+     * APK / 工程会像被删掉一样从界面里集体消失，还要自己去文件夹里翻。
+     */
+    private static final String LEGACY_NAME = "星云产物";
     public static final String SUB_APK = "APK";
     public static final String SUB_PROJECT = "工程";
     public static final String SUB_LOG = "日志";
 
-    /** 首选的公共产物目录：/sdcard/星云产物 */
+    /** 首选的公共产物目录：/sdcard/AgenCode（老目录会尝试就地改名） */
     public static File publicDir() {
-        return new File(Environment.getExternalStorageDirectory(), NAME);
+        File root = Environment.getExternalStorageDirectory();
+        File legacy = migrate(root);
+        if (legacy != null) return legacy;
+        return new File(root, NAME);
+    }
+
+    /**
+     * 把老名字目录就地改成新名字。
+     * 返回 null = 请使用新目录；返回老目录 = 改名失败，继续用它（宁可名字难看，也不能让用户的文件凭空消失）。
+     */
+    private static File migrate(File parent) {
+        if (parent == null) return null;
+        try {
+            File old = new File(parent, LEGACY_NAME);
+            File fresh = new File(parent, NAME);
+            if (!old.isDirectory()) return null;
+            if (fresh.exists()) {
+                // 两个目录并存：把老目录里剩下的东西搬进来，避免旧文件看起来"消失"
+                merge(old, fresh);
+                return null;
+            }
+            if (old.renameTo(fresh)) return null;     // 改名成功
+            return old;                               // 改不动，沿用老目录
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 尽力把 from 下的条目搬进 to（同名不覆盖），搬空的 from 直接删掉 */
+    private static void merge(File from, File to) {
+        try {
+            File[] kids = from.listFiles();
+            if (kids == null) return;
+            for (File k : kids) {
+                File dest = new File(to, k.getName());
+                if (dest.exists()) continue;
+                //noinspection ResultOfMethodCallIgnored
+                k.renameTo(dest);
+            }
+            File[] rest = from.listFiles();
+            if (rest != null && rest.length == 0) {
+                //noinspection ResultOfMethodCallIgnored
+                from.delete();
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     public static File publicSub(String sub) {
@@ -46,7 +97,7 @@ public final class ArtifactStore {
 
     /**
      * 当前真正可写的产物目录。
-     * 有「所有文件访问」→ /sdcard/星云产物；否则退回应用外部私有目录（同名的「星云产物」）。
+     * 有「所有文件访问」→ /sdcard/AgenCode；否则退回应用外部私有目录（同名的「AgenCode」）。
      */
     public static File writableDir(Context c) {
         if (c != null && ApkExporter.canWritePublicDir(c)) {
@@ -60,6 +111,8 @@ public final class ArtifactStore {
         }
         if (priv == null) priv = c == null ? new File("/sdcard") : c.getFilesDir();
         File d = new File(priv, NAME);
+        File legacy = migrate(priv);
+        if (legacy != null) d = legacy;   // 私有目录里的老产物同样改名，改不动就沿用
         //noinspection ResultOfMethodCallIgnored
         d.mkdirs();
         return d;
@@ -78,7 +131,7 @@ public final class ArtifactStore {
             return publicDir().getAbsolutePath();
         }
         if (Build.VERSION.SDK_INT >= 29) {
-            return "Download/" + NAME + "（存到「下载」里的「星云产物」文件夹）";
+            return "Download/" + NAME + "（存到「下载」里的「AgenCode」文件夹）";
         }
         return writableDir(c).getAbsolutePath() + "（应用私有目录）";
     }
@@ -89,7 +142,7 @@ public final class ArtifactStore {
         return d != null && d.isDirectory();
     }
 
-    /** 把工程目录复制进 星云产物/工程/，返回目标目录 */
+    /** 把工程目录复制进 AgenCode/工程/，返回目标目录 */
     public static File exportProject(Context c, File projectDir) throws java.io.IOException {
         if (projectDir == null || !projectDir.isDirectory()) {
             throw new java.io.IOException("工程目录不存在");

@@ -1,4 +1,4 @@
-# 星云 AI（Nebula AI）
+# AgenCode（Android AI 智能体）
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/Android-7.0%2B-green)
@@ -56,7 +56,7 @@
 ### APK 工程化
 - 反编译 APK → 在「工程」目录里直接改 smali / 资源 / 清单 → 一键回编译签名
 - 自动修 `AndroidManifest.xml` 常见冲突（权限、`exported`、`debuggable`）
-- 产物统一进「星云产物」目录，按 `APK / 工程 / 日志` 分类
+- 产物统一进 `/sdcard/AgenCode` 目录（老版本名为「星云产物」，升级后就地改名），按 `APK / 工程 / 日志` 分类
 - 有存储权限时直接写公共目录，没有就走 MediaStore 或应用私有目录
 - 面板里可以打开或复制路径、导出整个工程、导入外部签名密钥
 

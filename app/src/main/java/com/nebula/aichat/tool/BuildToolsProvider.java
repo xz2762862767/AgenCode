@@ -88,7 +88,7 @@ final class BuildToolsProvider {
                             sb.append("\nAndroid 侧路径：").append(r.apkPath);
                             sb.append("\n终端里取走：cp ").append(BuildKit.P_DIR).append("/")
                                     .append(new java.io.File(r.apkPath).getName()).append(" /exchange/");
-                            // 复制一份到「星云产物/APK」并记下，回答完界面直接给安装卡片
+                            // 复制一份到「AgenCode/APK」并记下，回答完界面直接给安装卡片
                             try {
                                 java.io.File af = new java.io.File(r.apkPath);
                                 String pub = af.isFile()

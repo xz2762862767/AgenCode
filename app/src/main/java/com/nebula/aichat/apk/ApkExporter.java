@@ -62,7 +62,7 @@ public final class ApkExporter {
     }
 
     /**
-     * 导出到「星云产物」目录，返回用户可见的真实路径。
+     * 导出到「AgenCode」目录，返回用户可见的真实路径。
      * 成功一定返回描述字符串，失败抛 IOException（调用方必须把异常显示给用户）。
      *
      * @param sub 产物分类子目录，如 ArtifactStore.SUB_APK
@@ -74,26 +74,26 @@ public final class ApkExporter {
         }
         String dir = (sub == null || sub.trim().isEmpty()) ? ArtifactStore.SUB_APK : sub.trim();
 
-        // 1) 有「所有文件访问」→ 直接写 /sdcard/星云产物/<分类>
+        // 1) 有「所有文件访问」→ 直接写 /sdcard/AgenCode/<分类>
         if (canWritePublicDir(c)) {
             File dst = new File(ArtifactStore.publicSub(dir), displayName);
             copy(src, dst);
             scan(c, dst);
             return dst.getAbsolutePath();
         }
-        // 2) MediaStore：写 Download/星云产物/<分类>（免权限，用户同样看得到「星云产物」文件夹）
+        // 2) MediaStore：写 Download/AgenCode/<分类>（免权限，用户同样看得到「AgenCode」文件夹）
         if (Build.VERSION.SDK_INT >= 29) {
             String p = exportViaMediaStore(c, src, dir, displayName);
             if (p != null) return p;
         }
-        // 3) 退回应用私有目录的「星云产物」，再用「安装产物」按钮装
+        // 3) 退回应用私有目录的「AgenCode」，再用「安装产物」按钮装
         File fallback = ArtifactStore.writableSub(c, dir);
         File dst = new File(fallback, displayName);
         copy(src, dst);
-        return dst.getAbsolutePath() + "（应用私有目录，未授权存储，无法写进公共的「星云产物」）";
+        return dst.getAbsolutePath() + "（应用私有目录，未授权存储，无法写进公共的「AgenCode」）";
     }
 
-    /** 兼容旧调用：APK 产物固定放 星云产物/APK */
+    /** 兼容旧调用：APK 产物固定放 AgenCode/APK */
     public static String exportToDownload(Context c, File src, String displayName) throws IOException {
         return exportToArtifacts(c, src, ArtifactStore.SUB_APK, displayName);
     }
@@ -147,7 +147,7 @@ public final class ApkExporter {
         return "application/octet-stream";
     }
 
-    /** Android 10+ 免权限写 Download/星云产物/<sub> */
+    /** Android 10+ 免权限写 Download/AgenCode/<sub> */
     @SuppressLint("NewApi")   // 只在 SDK_INT >= 29 分支里被调用
     private static String exportViaMediaStore(Context c, File src, String sub, String displayName) {
         return exportViaMediaStore(c, src, sub, displayName, APK_MIME);

@@ -1,14 +1,21 @@
 package com.nebula.aichat;
 
 import android.content.Intent;
+import android.app.Dialog;
+import android.content.res.ColorStateList;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.Window;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.widget.Button;
@@ -38,7 +45,10 @@ public class SettingsActivity extends AppCompatActivity {
     private EditText etKey, etBase, etModel, etSystem, etMaxTokens;
     private SeekBar sbTemp, sbFont;
     private TextView tvTemp, tvFont, tvToggleKey, tvPickModel, tvModelHint;
+    private TextView tvBatteryState;
     private SwitchCompat swStream;
+    /** 后台常驻通知开关（权限与后台分组） */
+    private SwitchCompat swAlive;
     private Button btnTest;
     private boolean keyVisible = false;
     private final ChatClient testClient = new ChatClient();
@@ -77,6 +87,20 @@ public class SettingsActivity extends AppCompatActivity {
         etBase.setText(settings.baseUrl);
         etModel.setText(settings.model);
         etSystem.setText(settings.systemPrompt);
+        // 一键回填内置提示词（用户改乱了可以立刻回到出厂人设）
+        findViewById(R.id.tvResetSystem).setOnClickListener(v ->
+                new android.app.AlertDialog.Builder(this)
+                        .setTitle("恢复内置系统提示词")
+                        .setMessage("输入框内容会替换为「AgenCode」的内置提示词，你当前的修改将被覆盖。\n"
+                                + "点保存后生效。")
+                        .setPositiveButton("恢复", (d, w) -> {
+                            etSystem.setText(Settings.DEFAULT_SYSTEM_PROMPT);
+                            etSystem.setSelection(etSystem.getText().length());
+                            Toast.makeText(this, "已填入内置提示词，点保存生效",
+                                    Toast.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton("取消", null)
+                        .show());
         etMaxTokens.setText(String.valueOf(settings.maxTokens));
         sbTemp.setProgress(Math.round(settings.temperature * 10));
         int fs = settings.msgFontSp <= 0 ? 13 : settings.msgFontSp;
@@ -177,7 +201,7 @@ public class SettingsActivity extends AppCompatActivity {
                 startActivity(new Intent(this, AboutActivity.class)));
     }
 
-    /** "星云 AI  v1.8.26  (build 150)" 这样的一行 */
+    /** "AgenCode  v1.8.26  (build 150)" 这样的一行 */
     static String versionLine(android.content.Context ctx) {
         String ver = "";
         int vc = 0;
@@ -188,7 +212,7 @@ public class SettingsActivity extends AppCompatActivity {
             vc = Build.VERSION.SDK_INT >= 28 ? (int) pi.getLongVersionCode() : pi.versionCode;
         } catch (Throwable ignored) {
         }
-        return "星云 AI  v" + ver + "  (build " + vc + ")";
+        return "AgenCode  v" + ver + "  (build " + vc + ")";
     }
 
     private String versionLine() {
@@ -307,7 +331,8 @@ public class SettingsActivity extends AppCompatActivity {
             if (!b.isEmpty()) settings.baseUrl = b;
             String m = etModel.getText().toString().trim();
             if (!m.isEmpty()) settings.model = m;
-            settings.systemPrompt = etSystem.getText().toString();
+            String sysTxt = etSystem.getText().toString().trim();
+        settings.systemPrompt = sysTxt.isEmpty() ? Settings.DEFAULT_SYSTEM_PROMPT : sysTxt;
             try {
                 int mt = Integer.parseInt(etMaxTokens.getText().toString().trim());
                 if (mt > 0) settings.maxTokens = mt;
@@ -475,9 +500,19 @@ public class SettingsActivity extends AppCompatActivity {
         LinearLayout card = newCard("权限与后台");
 
         row(card, "应用信息", "通知、权限、存储占用等系统设置", v -> openAppDetails());
-        row(card, "电池优化", "设为「不限制」，后台长任务才不会被系统掐断", v -> openBattery());
+        // 状态直接写在副标题上：用户最需要知道的是"到底生效了没"，而不是"点进去看看"
+        tvBatteryState = row(card, "电池优化", batterySubText(), v -> openBattery());
         row(card, "通知设置", "长任务完成的提醒需要通知权限", v -> openNotifications());
+
+        // 常驻通知：开着才能在状态栏确认"后台还在跑"，同时也算一层轻度保活
+        swAlive = switchRow(card, "后台常驻通知",
+                settings.aliveNotify ? "状态栏常驻「后台运行中」，可减少被系统回收"
+                        : "已关闭 · 只在长任务进行时临时出现",
+                settings.aliveNotify, this::applyAliveSwitch);
+
         row(card, "自启动 / 后台运行", "部分系统需在「手机管家」里额外放行", v -> openAppDetails());
+        row(card, "运行诊断", "闪退、卡顿、任务中断时采集现场，可一键复制",
+                v -> startActivity(new Intent(this, DiagActivity.class)));
 
         TextView tip = new TextView(this);
         tip.setText("提示：选择聊天背景图走系统选择器，不需要存储权限；只有把产物导出到公共目录时才会请求授权。");
@@ -490,21 +525,134 @@ public class SettingsActivity extends AppCompatActivity {
         insertBeforeSaveButton(card);
     }
 
+    /**
+     * 常驻开关立即生效，不用等"保存"：切了就该在状态栏看到（或消失）。
+     * 通知权限没开时会静默失败（服务在跑，通知被系统丢掉），所以这里补一句提示。
+     */
+    private void applyAliveSwitch() {
+        if (swAlive == null) return;
+        settings.aliveNotify = swAlive.isChecked();
+        settings.save(this);
+        try {
+            if (settings.aliveNotify) KeepAliveService.startIdle(this);
+            else KeepAliveService.stop(this);
+        } catch (Throwable ignored) {
+        }
+        if (settings.aliveNotify && !notifEnabled()) {
+            Toast.makeText(this, "通知权限没开：服务照跑，但状态栏不会显示。点上面「通知设置」去开",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** 通知总开关（含 Android 13+ 的运行时权限结果） */
+    private boolean notifEnabled() {
+        try {
+            android.app.NotificationManager nm =
+                    (android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            return nm == null || nm.areNotificationsEnabled();
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
     private void openAppDetails() {
         Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         i.setData(Uri.parse("package:" + getPackageName()));
         safeStart(i, "无法打开应用信息页");
     }
 
+    // ---------------- 电池优化：逐级降级，保证一定有反馈 ----------------
+
+    /**
+     * 为什么不能只 startActivity 一次：
+     * ColorOS / OriginOS 这类 ROM 会把 ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+     * 的落地页吃掉一部分，导致 startActivity 不抛异常但页面秒退回——
+     * 用户看到的就是"点了没反应"。所以这里每一级都先确认真的有人接，
+     * 接不上就往下试，最后一定给一句 toast，绝不静默返回。
+     */
     private void openBattery() {
+        if (batteryUnrestricted()) {
+            Toast.makeText(this, "当前已设为「不限制」，后台长任务不会被掐断",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 1. 标准系统对话框（让用户二选一）
         try {
             Intent i = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
             i.setData(Uri.parse("package:" + getPackageName()));
             startActivity(i);
-        } catch (Throwable t) {
-            safeStart(new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
-                    "无法打开电池优化设置");
+            return;
+        } catch (Throwable ignored) {
         }
+
+        // 2. OPPO / OnePlus 自家电池管理页（ColorOS 上经常只剩这条路）
+        String[][] roms = {
+                {"com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"},
+                {"com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity"},
+                {"com.oplus.battery", "com.oplus.powermanager.fuelgaue.PowerUsageModelActivity"},
+                {"com.oplus.battery", "com.oplus.powermanager.fuelgaue.PowerConsumptionActivity"},
+                {"com.miui.powerkeeper", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"},
+        };
+        for (String[] c : roms) {
+            android.content.ComponentName cn = new android.content.ComponentName(c[0], c[1]);
+            try {
+                if (getPackageManager().resolveActivity(new Intent().setComponent(cn), 0) == null) {
+                    continue;
+                }
+                startActivity(new Intent().setComponent(cn));
+                return;
+            } catch (Throwable ignored) {
+            }
+        }
+
+        // 3. 系统电池优化列表页
+        if (launchIfResolvable(new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))) {
+            return;
+        }
+
+        // 4. 兜底：应用详情页，至少让用户能自己找
+        if (launchIfResolvable(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + getPackageName())))) {
+            Toast.makeText(this, "本机没有直达入口，请在「耗电管理 / 应用管理」里手动选择「不限制」",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        Toast.makeText(this, "本机无法打开电池设置，请到「手机管家 → 应用管理 → 耗电管理」手动放行",
+                Toast.LENGTH_LONG).show();
+    }
+
+    private boolean launchIfResolvable(Intent i) {
+        try {
+            if (getPackageManager().resolveActivity(i, 0) == null) return false;
+            startActivity(i);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private boolean batteryUnrestricted() {
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            return pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private String batterySubText() {
+        return batteryUnrestricted()
+                ? "当前：已设为「不限制」✓ 后台长任务不会被掐断"
+                : "当前：受系统限制 · 点此放行，否则长任务可能被中断";
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 从系统设置返回后立刻刷新，用户能直接看到是否生效
+        if (tvBatteryState != null) tvBatteryState.setText(batterySubText());
     }
 
     private void openNotifications() {
@@ -619,6 +767,53 @@ public class SettingsActivity extends AppCompatActivity {
 
         card.addView(r, lpTop(dp(4)));
         return t2;
+    }
+
+    /**
+     * 带开关的行：右侧一个 SwitchCompat，点整行也能切。
+     * 用 Runnable 而不是监听器接口，省一个 import，调用处也短。
+     */
+    private SwitchCompat switchRow(LinearLayout card, String title, String sub, boolean checked,
+                                   final Runnable onChange) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(0, dp(11), 0, dp(11));
+        TypedValue tv = new TypedValue();
+        if (getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                && tv.resourceId != 0) {
+            r.setBackgroundResource(tv.resourceId);
+        }
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        r.addView(texts, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView t1 = new TextView(this);
+        t1.setText(title);
+        t1.setTextColor(Palette.text(this));
+        t1.setTextSize(13.5f);
+        texts.addView(t1);
+
+        TextView t2 = new TextView(this);
+        t2.setText(sub);
+        t2.setTextColor(Palette.dim(this));
+        t2.setTextSize(11f);
+        t2.setPadding(0, dp(3), dp(8), 0);
+        texts.addView(t2);
+
+        final SwitchCompat sw = new SwitchCompat(this);
+        sw.setChecked(checked);
+        sw.setPadding(0, 0, 0, 0);
+        sw.setOnCheckedChangeListener((b, isChecked) -> {
+            if (onChange != null) onChange.run();
+        });
+        r.addView(sw);
+        r.setOnClickListener(v -> sw.toggle());
+
+        card.addView(r, lpTop(dp(4)));
+        return sw;
     }
 
     private TextView chip(String text, boolean selected) {
@@ -776,25 +971,279 @@ public class SettingsActivity extends AppCompatActivity {
                     "Qwen/Qwen2.5-72B-Instruct"}
     };
 
+    /** 各家服务商的品牌色，用于列表左侧的字母徽标 */
+    private static final int[] PROVIDER_COLORS = {
+            0xFF4D6BFE, // DeepSeek
+            0xFF6F5CF1, // 通义千问
+            0xFF8B5CF6, // Kimi
+            0xFF2E7BE6, // 智谱 GLM
+            0xFF10A37F, // OpenAI
+            0xFF3AA6BD  // SiliconFlow
+    };
+
     /** 一级：选服务商（末项为从账号拉取真实列表） */
     private void showProviderDialog() {
-        final String[] items = new String[PROVIDERS.length + 1];
-        for (int i = 0; i < PROVIDERS.length; i++) {
-            items[i] = PROVIDERS[i][0] + "  ·  " + hostOf(PROVIDERS[i][1]);
-        }
-        items[PROVIDERS.length] = "从账号拉取模型列表（需先填 Key）";
+        final Dialog d = new Dialog(this);
+        LinearLayout root = sheetRoot(d);
+        sheetHeader(root, "选择服务商", "内置 " + PROVIDERS.length + " 家 · 选完自动填好地址和模型");
 
-        new AlertDialog.Builder(this)
-                .setTitle("选择服务商")
-                .setItems(items, (dialog, which) -> {
-                    if (which == PROVIDERS.length) {
-                        fetchModels();
-                        return;
-                    }
-                    showProviderModels(PROVIDERS[which]);
-                })
-                .setNegativeButton("取消", null)
-                .show();
+        final String curHost = hostOf(etBase.getText().toString().trim());
+
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(list, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        final int rowH = dp(54);
+        int maxH = (int) (getResources().getDisplayMetrics().heightPixels * 0.44f);
+        LinearLayout.LayoutParams svLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Math.min(rowH * (PROVIDERS.length + 1) + dp(3) * PROVIDERS.length, maxH));
+        svLp.topMargin = dp(12);
+        root.addView(sv, svLp);
+
+        for (int i = 0; i < PROVIDERS.length; i++) {
+            final String[] p = PROVIDERS[i];
+            String host = hostOf(p[1]);
+            boolean active = host.equals(curHost);
+            View row = providerRow(String.valueOf(p[0].charAt(0)), p[0], host,
+                    PROVIDER_COLORS[i % PROVIDER_COLORS.length], active ? 1 : 0, v -> {
+                        d.dismiss();
+                        showProviderModels(p);
+                    });
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, rowH);
+            if (i > 0) rlp.topMargin = dp(3);
+            list.addView(row, rlp);
+        }
+
+        // 从账号拉取：与上面同构，徽标换成下载箭头，走中性色
+        View fetchRow = providerRow("\u21e3", "从账号拉取模型列表", "需先在下方填好 API Key",
+                0xFF3E6E8C, 2, v -> {
+                    d.dismiss();
+                    fetchModels();
+                });
+        LinearLayout.LayoutParams frlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, rowH);
+        frlp.topMargin = dp(3);
+        list.addView(fetchRow, frlp);
+
+        root.addView(sheetLine(14));
+
+        TextView cancel = sheetBtn("取消", false);
+        cancel.setOnClickListener(v -> d.dismiss());
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(46));
+        clp.topMargin = dp(13);
+        root.addView(cancel, clp);
+
+        showSheetWindow(d);
+    }
+
+    // ---------------- 弹窗外观：与主界面模型弹窗保持一致 ----------------
+
+    /** 深色圆角底板，底色 / 描边 / 内边距统一收在这里 */
+    private LinearLayout sheetRoot(Dialog d) {
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable gd = new GradientDrawable();
+        gd.setShape(GradientDrawable.RECTANGLE);
+        gd.setCornerRadius(dp(20));
+        gd.setColor(0xFF141A23);
+        gd.setStroke(Math.max(1, dp(1)), 0xFF2A3240);
+        root.setBackground(gd);
+        root.setPadding(dp(18), dp(18), dp(18), dp(14));
+        d.setContentView(root);
+        return root;
+    }
+
+    private void showSheetWindow(Dialog d) {
+        d.show();
+        Window w = d.getWindow();
+        if (w == null) return;
+        w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
+        w.setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.88f),
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
+
+    private void sheetHeader(LinearLayout root, String title, String sub) {
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTextColor(0xFFEDF2FA);
+        root.addView(t);
+        if (!TextUtils.isEmpty(sub)) {
+            TextView s = new TextView(this);
+            s.setText(sub);
+            s.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+            s.setTextColor(0xFF7F8C9F);
+            s.setPadding(0, dp(5), 0, 0);
+            root.addView(s);
+        }
+    }
+
+    /** 分隔线：中段微亮、两端透明，比通栏实线轻 */
+    private View sheetLine(int topDp) {
+        View v = new View(this);
+        GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0x00FFFFFF, 0x26FFFFFF, 0x00FFFFFF});
+        v.setBackground(gd);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+        lp.topMargin = dp(topDp);
+        v.setLayoutParams(lp);
+        return v;
+    }
+
+    private GradientDrawable pill(int fill, int stroke, float radiusDp) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setShape(GradientDrawable.RECTANGLE);
+        gd.setCornerRadius(dp(radiusDp));
+        gd.setColor(fill);
+        if (stroke != 0) gd.setStroke(Math.max(1, dp(1)), stroke);
+        return gd;
+    }
+
+    /**
+     * 服务商行：字母徽标 + 名称 + 域名 + 右侧状态。
+     *
+     * @param tail 0=箭头（可进入） 1=使用中 2=无
+     */
+    private View providerRow(String badge, String title, String sub, int color, int tail,
+                             final View.OnClickListener click) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(9), 0, dp(9), 0);
+        row.setClickable(true);
+        row.setFocusable(true);
+
+        boolean active = tail == 1;
+        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x1FFFFFFF),
+                pill(active ? 0x1A63C8FF : 0x08FFFFFF,
+                        active ? 0x6663C8FF : 0x14FFFFFF, 12f), null));
+
+        TextView b = new TextView(this);
+        b.setText(badge);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setTextColor(0xFFFFFFFF);
+        b.setGravity(Gravity.CENTER);
+        b.setBackground(pill(color, 0, 10f));
+        row.addView(b, new LinearLayout.LayoutParams(dp(34), dp(34)));
+
+        LinearLayout mid = new LinearLayout(this);
+        mid.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams midLp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        midLp.leftMargin = dp(11);
+
+        TextView n = new TextView(this);
+        n.setText(title);
+        n.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        n.setTextColor(active ? 0xFFBEE3FF : 0xFFE7ECF4);
+        n.setSingleLine(true);
+        n.setEllipsize(TextUtils.TruncateAt.END);
+        mid.addView(n);
+
+        if (!TextUtils.isEmpty(sub)) {
+            TextView h = new TextView(this);
+            h.setText(sub);
+            h.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+            h.setTextColor(0xFF7C8A9C);
+            h.setSingleLine(true);
+            h.setEllipsize(TextUtils.TruncateAt.END);
+            h.setPadding(0, dp(3), 0, 0);
+            mid.addView(h);
+        }
+        row.addView(mid, midLp);
+
+        if (tail == 1) {
+            TextView t = new TextView(this);
+            t.setText("使用中");
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+            t.setTextColor(0xFF63C8FF);
+            t.setBackground(pill(0x1A63C8FF, 0x5563C8FF, 8f));
+            t.setPadding(dp(7), dp(3), dp(7), dp(3));
+            row.addView(t);
+        } else if (tail == 0) {
+            TextView t = new TextView(this);
+            t.setText("\u203A");
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+            t.setTextColor(0xFF66768C);
+            t.setPadding(dp(6), 0, dp(2), 0);
+            row.addView(t);
+        }
+
+        row.setOnClickListener(click);
+        return row;
+    }
+
+    /** 模型行：左侧品牌色圆点 + 名称 + 右侧「当前」标记 */
+    private View modelRow(String name, int color, boolean current, final View.OnClickListener click) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), 0, dp(12), 0);
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x1FFFFFFF),
+                pill(current ? 0x1A63C8FF : 0x06FFFFFF,
+                        current ? 0x6663C8FF : 0x12FFFFFF, 12f), null));
+
+        View dot = new View(this);
+        dot.setBackground(pill(color, 0, 4f));
+        row.addView(dot, new LinearLayout.LayoutParams(dp(8), dp(8)));
+
+        TextView n = new TextView(this);
+        n.setText(name);
+        n.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        n.setTextColor(current ? 0xFFBEE3FF : 0xFFE7ECF4);
+        n.setSingleLine(true);
+        n.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        nlp.leftMargin = dp(11);
+        row.addView(n, nlp);
+
+        if (current) {
+            TextView t = new TextView(this);
+            t.setText("当前");
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+            t.setTextColor(0xFF63C8FF);
+            t.setBackground(pill(0x1A63C8FF, 0x5563C8FF, 8f));
+            t.setPadding(dp(7), dp(3), dp(7), dp(3));
+            row.addView(t);
+        }
+
+        row.setOnClickListener(click);
+        return row;
+    }
+
+    /** 弹窗底部按钮：primary=淡蓝描边，否则中性灰 */
+    private TextView sheetBtn(String text, boolean primary) {
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+        tv.setGravity(Gravity.CENTER);
+        tv.setSingleLine(true);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setClickable(true);
+        tv.setFocusable(true);
+        if (primary) {
+            tv.setTextColor(0xFFC6D8FA);
+            tv.setBackground(new RippleDrawable(ColorStateList.valueOf(0x3D4A86F7),
+                    pill(0x1F4A86F7, 0x6B4A86F7, 14f), null));
+        } else {
+            tv.setTextColor(0xFF8FA0B5);
+            tv.setBackground(new RippleDrawable(ColorStateList.valueOf(0x1FFFFFFF),
+                    pill(0x0AFFFFFF, 0x1FFFFFFF, 14f), null));
+        }
+        return tv;
     }
 
     /** 二级：选该服务商的模型，选中即把地址和模型一起填好 */
@@ -803,30 +1252,68 @@ public class SettingsActivity extends AppCompatActivity {
         final String[] models = new String[p.length - 2];
         System.arraycopy(p, 2, models, 0, models.length);
 
-        String cur = etModel.getText().toString().trim();
-        int checked = -1;
-        for (int i = 0; i < models.length; i++) {
-            if (models[i].equals(cur)) {
-                checked = i;
+        final String curHost = hostOf(etBase.getText().toString().trim());
+        final String curModel = etModel.getText().toString().trim();
+        final boolean sameBase = hostOf(base).equals(curHost);
+
+        int color = 0xFF4D6BFE;
+        for (int i = 0; i < PROVIDERS.length; i++) {
+            if (PROVIDERS[i] == p) {
+                color = PROVIDER_COLORS[i % PROVIDER_COLORS.length];
                 break;
             }
         }
+        final int brandColor = color;
 
-        new AlertDialog.Builder(this)
-                .setTitle(p[0] + " · 选择模型")
-                .setSingleChoiceItems(models, checked, (dialog, which) -> {
-                    etBase.setText(base);          // 地址自动填
-                    etModel.setText(models[which]); // 模型自动填
-                    if (TextUtils.isEmpty(etKey.getText().toString().trim())) {
-                        tvModelHint.setText("地址和模型已填好，只差上面的 Key");
-                        etKey.requestFocus();
-                    } else {
-                        tvModelHint.setText("已选好，点「保存设置」生效");
-                    }
-                    dialog.dismiss();
-                })
-                .setNegativeButton("取消", null)
-                .show();
+        final Dialog d = new Dialog(this);
+        LinearLayout root = sheetRoot(d);
+        sheetHeader(root, p[0] + " · 选择模型", "内置候选 · 选完自动填好地址 " + hostOf(base));
+
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(list, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        final int rowH = dp(48);
+        int maxH = (int) (getResources().getDisplayMetrics().heightPixels * 0.46f);
+        LinearLayout.LayoutParams svLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Math.min(rowH * models.length + dp(3) * models.length, maxH));
+        svLp.topMargin = dp(12);
+        root.addView(sv, svLp);
+
+        for (int i = 0; i < models.length; i++) {
+            final String m = models[i];
+            boolean current = sameBase && m.equals(curModel);
+            View row = modelRow(m, brandColor, current, v -> {
+                etBase.setText(base);   // 地址自动填
+                etModel.setText(m);     // 模型自动填
+                if (TextUtils.isEmpty(etKey.getText().toString().trim())) {
+                    tvModelHint.setText("地址和模型已填好，只差上面的 Key");
+                    etKey.requestFocus();
+                } else {
+                    tvModelHint.setText("已选好，点「保存设置」生效");
+                }
+                d.dismiss();
+            });
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, rowH);
+            if (i > 0) rlp.topMargin = dp(3);
+            list.addView(row, rlp);
+        }
+
+        root.addView(sheetLine(14));
+
+        TextView cancel = sheetBtn("取消", false);
+        cancel.setOnClickListener(v -> d.dismiss());
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(46));
+        clp.topMargin = dp(13);
+        root.addView(cancel, clp);
+
+        showSheetWindow(d);
     }
 
     private static String hostOf(String url) {
@@ -839,24 +1326,67 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     /** 弹出模型单选列表 */
+    /** 从账号拉取到的模型列表（数量不定，统一走滚动弹窗） */
     private void showModelDialog() {
         if (cachedModels.isEmpty()) {
             fetchModels();
             return;
         }
         final String[] items = cachedModels.toArray(new String[0]);
-        String cur = etModel.getText().toString().trim();
-        int checked = cachedModels.indexOf(cur);
+        final String cur = etModel.getText().toString().trim();
 
-        new AlertDialog.Builder(this)
-                .setTitle("选择模型")
-                .setSingleChoiceItems(items, checked, (dialog, which) -> {
-                    etModel.setText(items[which]);
-                    tvModelHint.setText("已选好，点「保存设置」生效");
-                    dialog.dismiss();
-                })
-                .setNegativeButton("取消", null)
-                .show();
+        // 品牌色按当前地址匹配，匹配不到就走中性青
+        int color = 0xFF63C8FF;
+        String host = hostOf(etBase.getText().toString().trim());
+        for (int i = 0; i < PROVIDERS.length; i++) {
+            if (hostOf(PROVIDERS[i][1]).equals(host)) {
+                color = PROVIDER_COLORS[i % PROVIDER_COLORS.length];
+                break;
+            }
+        }
+        final int brandColor = color;
+
+        final Dialog d = new Dialog(this);
+        LinearLayout root = sheetRoot(d);
+        sheetHeader(root, "选择模型", "从账号拉取到 " + items.length + " 个");
+
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(list, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        final int rowH = dp(48);
+        int maxH = (int) (getResources().getDisplayMetrics().heightPixels * 0.5f);
+        LinearLayout.LayoutParams svLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.min(rowH * items.length, maxH));
+        svLp.topMargin = dp(12);
+        root.addView(sv, svLp);
+
+        for (int i = 0; i < items.length; i++) {
+            final String m = items[i];
+            View row = modelRow(m, brandColor, m.equals(cur), v -> {
+                etModel.setText(m);
+                tvModelHint.setText("已选好，点「保存设置」生效");
+                d.dismiss();
+            });
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, rowH);
+            if (i > 0) rlp.topMargin = dp(3);
+            list.addView(row, rlp);
+        }
+
+        root.addView(sheetLine(14));
+
+        TextView cancel = sheetBtn("取消", false);
+        cancel.setOnClickListener(v -> d.dismiss());
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(46));
+        clp.topMargin = dp(13);
+        root.addView(cancel, clp);
+
+        showSheetWindow(d);
     }
 
     private boolean collectAndSave() {
@@ -893,11 +1423,13 @@ public class SettingsActivity extends AppCompatActivity {
         settings.apiKey = key;
         settings.baseUrl = base;
         settings.model = model;
-        settings.systemPrompt = etSystem.getText().toString();
+        String sysTxt = etSystem.getText().toString().trim();
+        settings.systemPrompt = sysTxt.isEmpty() ? Settings.DEFAULT_SYSTEM_PROMPT : sysTxt;
         settings.temperature = sbTemp.getProgress() / 10f;
         settings.maxTokens = maxTokens;
         settings.stream = swStream.isChecked();
         settings.msgFontSp = 12 + sbFont.getProgress();
+        if (swAlive != null) settings.aliveNotify = swAlive.isChecked();
         settings.save(this);
         return true;
     }

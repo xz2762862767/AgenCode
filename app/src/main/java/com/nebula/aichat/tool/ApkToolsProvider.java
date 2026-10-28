@@ -282,10 +282,10 @@ final class ApkToolsProvider {
                         try {
                             String where = com.nebula.aichat.apk.ApkExporter
                                     .exportToDownload(c, signed, signed.getName());
-                            exportNote = "\n导出位置（星云产物）：" + where;
+                            exportNote = "\n导出位置（AgenCode）：" + where;
                             exportPath = where;
                         } catch (Exception e) {
-                            exportNote = "\n（导出到「星云产物」失败：" + e.getMessage()
+                            exportNote = "\n（导出到「AgenCode」失败：" + e.getMessage()
                                     + "\n文件在应用私有目录，可用工作台「安装产物」处理）";
                         }
                         // 记下这一份，界面回答完会在正文末尾直接挂「安装」卡片
@@ -445,7 +445,7 @@ final class ApkToolsProvider {
         if (noAllFiles) {
             sb.append("\n\n【多半是权限问题】Android 11 起，没有「所有文件访问」权限时，应用连 /sdcard 下的 .apk 都读不到"
                     + "（READ_EXTERNAL_STORAGE 只管图片和音频，不管 APK）。\n"
-                    + "请手动开启：设置 → 应用 → 星云 AI → 权限 → 所有文件访问 → 允许，然后重试。");
+                    + "请手动开启：设置 → 应用 → AgenCode → 权限 → 所有文件访问 → 允许，然后重试。");
         }
         List<String> found = listApksInCommonDirs(c);
         if (found.isEmpty()) {

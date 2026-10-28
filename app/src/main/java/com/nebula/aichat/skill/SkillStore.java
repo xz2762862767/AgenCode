@@ -168,6 +168,20 @@ public class SkillStore {
     private static final Object CACHE_LOCK = new Object();
     private static final java.util.HashMap<String, CacheEntry> CACHE = new java.util.HashMap<>();
 
+    /**
+     * 内存告急时把整份技能缓存丢掉。
+     * 技能正文是纯文本（单个技能可达几十 KB），每个入口一次全量解析的副本
+     * 常驻在堆里，内存紧张时先还给它。失效是安全的：下次访问会按指纹重建。
+     */
+    public static void clearCache() {
+        try {
+            synchronized (CACHE_LOCK) {
+                CACHE.clear();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 技能目录有改动（新建/导入/编辑/删除）后调用，让缓存失效 */
     public static void invalidate(Context c) {
         try {

@@ -1,0 +1,27 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 状态栏图标必须是纯单色剪影：系统会整体染色，彩色或带渐变的图标在这里会被压成一坨白块 -->
+    <path
+        android:pathData="M12,3.2 L19.6,7.6 L19.6,16.4 L12,20.8 L4.4,16.4 L4.4,7.6 Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round" />
+
+    <path
+        android:pathData="M9.5,9.1 L13.1,12 L9.5,14.9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round" />
+
+    <path
+        android:pathData="M14.0,15.2 L16.6,15.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round" />
+</vector>

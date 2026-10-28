@@ -5,11 +5,13 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -37,9 +39,14 @@ public class SandboxPage {
     private File cur;
 
     private LinearLayout listBox;
-    private TextView tvPath;
-    private TextView tvSummary;
+    /** 面包屑：路径拆成可点的段，工作区 › projects › app */
+    private LinearLayout crumbBox;
+    private android.widget.HorizontalScrollView crumbScroll;
+    /** 统计行：目录数 / 文件数 / 总大小，三个小胶囊 */
+    private LinearLayout statBox;
     private ScrollView scroll;
+    /** 上一级按钮，到顶时淡化并禁用 */
+    private TextView btnUp;
 
     private LinearLayout rootView;
     /** 列表刷新的世代号：快速连点切换时，只认最后一次的结果 */
@@ -86,71 +93,214 @@ public class SandboxPage {
 
     private void build() {
         rootView = Ui.col(act);
-        rootView.setBackgroundColor(0xFF0F1218);
+        rootView.setBackgroundColor(Palette.bg(act));
 
-        LinearLayout head = Ui.row(act);
-        head.setPadding(Ui.dp(act, 12), Ui.dp(act, 8), Ui.dp(act, 8), Ui.dp(act, 8));
+        LinearLayout head = Ui.col(act);
+        head.setPadding(Ui.dp(act, 12), Ui.dp(act, 10), Ui.dp(act, 12), Ui.dp(act, 8));
 
-        LinearLayout info = Ui.col(act);
-        tvPath = Ui.text(act, "", 12f, 0xFFE8EDF6);
-        tvPath.setTypeface(Typeface.DEFAULT_BOLD);
-        tvPath.setSingleLine(true);
-        tvPath.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        tvSummary = Ui.text(act, "", 11f, 0xFF8B97A9);
-        info.addView(tvPath);
-        info.addView(tvSummary);
-        head.addView(info, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        // ---- 第一行：返回上级 + 面包屑 + 位置切换
+        LinearLayout topRow = Ui.row(act);
 
-        // 位置切换收进一个下拉：沙盒 / 手机存储 / 星云产物三种落点，
-        // 不再在工具行里跟「APK 工作台」抢同一个「产物目录」入口
+        btnUp = Ui.text(act, "‹", 19f, Palette.text(act));
+        btnUp.setGravity(Gravity.CENTER);
+        GradientDrawable upBg = new GradientDrawable();
+        upBg.setColor(Palette.surface2(act));
+        upBg.setCornerRadius(Ui.dp(act, 10));
+        btnUp.setBackground(Ui.pressable(act, upBg));
+        btnUp.setClickable(true);
+        btnUp.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                File parent = cur.getParentFile();
+                openDir(parent != null && inScope(parent) ? parent : root);
+            }
+        });
+        topRow.addView(btnUp, new LinearLayout.LayoutParams(Ui.dp(act, 32), Ui.dp(act, 32)));
+
+        // 面包屑横向滚动：路径再深也不会把「位置」按钮挤出去
+        crumbScroll = new android.widget.HorizontalScrollView(act);
+        crumbScroll.setHorizontalScrollBarEnabled(false);
+        crumbScroll.setFillViewport(false);
+        LinearLayout.LayoutParams csLp = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        csLp.leftMargin = Ui.dp(act, 8);
+        csLp.rightMargin = Ui.dp(act, 8);
+        crumbBox = Ui.row(act);
+        crumbScroll.addView(crumbBox);
+        topRow.addView(crumbScroll, csLp);
+
         TextView btnLoc = Ui.ghostChip(act, "位置 ▾", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 showLocationMenu();
             }
         });
-        head.addView(btnLoc);
+        topRow.addView(btnLoc);
 
-        TextView btnUp = Ui.ghostChip(act, "上级", new View.OnClickListener() {
+        head.addView(topRow);
+
+        // ---- 第二行：统计胶囊 + 新建 / 刷新
+        LinearLayout statRow = Ui.row(act);
+        LinearLayout.LayoutParams srLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        srLp.topMargin = Ui.dp(act, 9);
+
+        statBox = Ui.row(act);
+        statRow.addView(statBox, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView btnRefresh = statChip("⟳", false, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                File parent = cur.getParentFile();
-                if (parent != null && inScope(parent)) {
-                    openDir(parent);
-                } else {
-                    openDir(root);
-                }
+                refresh();
             }
         });
-        LinearLayout.LayoutParams upLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        upLp.leftMargin = Ui.dp(act, 6);
-        head.addView(btnUp, upLp);
+        statRow.addView(btnRefresh);
 
-        TextView btnNew = Ui.ghostChip(act, "新建", new View.OnClickListener() {
+        TextView btnNew = statChip("＋ 新建", true, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 showNewDialog();
             }
         });
-        LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        np.leftMargin = Ui.dp(act, 6);
-        head.addView(btnNew, np);
+        nlp.leftMargin = Ui.dp(act, 6);
+        statRow.addView(btnNew, nlp);
 
+        head.addView(statRow, srLp);
         rootView.addView(head);
-        rootView.addView(Ui.divider(act));
-
         rootView.addView(Ui.divider(act));
 
         scroll = new ScrollView(act);
         scroll.setFillViewport(true);
         listBox = Ui.col(act);
-        int p = Ui.dp(act, 8);
+        int p = Ui.dp(act, 10);
         listBox.setPadding(p, p, p, Ui.dp(act, 24));
         scroll.addView(listBox);
         rootView.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+    }
+
+    /**
+     * 统计行 / 工具行的统一胶囊。
+     * primary=true 时用强调色描边，用来突出「新建」这个主动作。
+     */
+    private TextView statChip(String s, boolean primary, View.OnClickListener l) {
+        TextView tv = Ui.text(act, s, 11.5f,
+                primary ? Palette.accent(act) : Palette.dim(act));
+        tv.setPadding(Ui.dp(act, 10), Ui.dp(act, 5), Ui.dp(act, 10), Ui.dp(act, 5));
+        tv.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(primary ? Palette.accentSoft(act, 0x1F) : 0x00000000);
+        bg.setCornerRadius(Ui.dp(act, 10));
+        if (primary) bg.setStroke(Math.max(1, Ui.dp(act, 1)), Palette.accentSoft(act, 0x55));
+        else bg.setStroke(Math.max(1, Ui.dp(act, 0.8f)), Palette.stroke(act));
+        tv.setBackground(Ui.pressable(act, bg));
+        tv.setClickable(true);
+        if (l != null) tv.setOnClickListener(l);
+        return tv;
+    }
+
+    /** 统计行里的只读小标签（目录数 / 文件数 / 总大小） */
+    private TextView infoPill(String s, int color) {
+        TextView tv = Ui.text(act, s, 11f, color);
+        tv.setPadding(Ui.dp(act, 8), Ui.dp(act, 4), Ui.dp(act, 8), Ui.dp(act, 4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Palette.surface2(act));
+        bg.setCornerRadius(Ui.dp(act, 8));
+        tv.setBackground(bg);
+        return tv;
+    }
+
+    /** 统计胶囊：小矢量图标 + 数字，和列表里的类型图标同一套语言 */
+    private View statPill(int kind, String count) {
+        LinearLayout box = new LinearLayout(act);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(Ui.dp(act, 8), Ui.dp(act, 5), Ui.dp(act, 9), Ui.dp(act, 5));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Palette.surface2(act));
+        bg.setCornerRadius(Ui.dp(act, 8));
+        box.setBackground(bg);
+        ImageView ic = new ImageView(act);
+        ic.setImageDrawable(new FileGlyph(kind, tintOf(kind)));
+        box.addView(ic, new LinearLayout.LayoutParams(Ui.dp(act, 13), Ui.dp(act, 13)));
+        TextView tv = Ui.text(act, count, 11f, Palette.dim(act));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = Ui.dp(act, 4);
+        box.addView(tv, lp);
+        return box;
+    }
+
+    /** 重建面包屑：每一段都能点回那一级 */
+    private void renderCrumbs(File dir) {
+        if (crumbBox == null) return;
+        crumbBox.removeAllViews();
+        List<File> chain = chainOf(dir);
+        for (int i = 0; i < chain.size(); i++) {
+            final File f = chain.get(i);
+            boolean last = i == chain.size() - 1;
+            if (i > 0) {
+                TextView sep = Ui.text(act, "›", 12f, Palette.stroke(act));
+                sep.setPadding(Ui.dp(act, 4), 0, Ui.dp(act, 4), 0);
+                crumbBox.addView(sep);
+            }
+            TextView tv = Ui.text(act, crumbName(f), last ? 13f : 12.5f,
+                    last ? Palette.text(act) : Palette.dim(act));
+            if (last) tv.setTypeface(Typeface.DEFAULT_BOLD);
+            tv.setSingleLine(true);
+            tv.setPadding(Ui.dp(act, 2), 0, Ui.dp(act, 2), 0);
+            if (!last) {
+                tv.setClickable(true);
+                tv.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        openDir(f);
+                    }
+                });
+            }
+            crumbBox.addView(tv);
+        }
+        // 滚动到最右，深目录时默认看到当前层
+        if (crumbScroll != null) {
+            crumbScroll.post(new Runnable() {
+                @Override
+                public void run() {
+                    crumbScroll.fullScroll(View.FOCUS_RIGHT);
+                }
+            });
+        }
+
+        File parent = dir.getParentFile();
+        boolean atTop = parent == null || !inScope(parent);
+        btnUp.setEnabled(!atTop);
+        btnUp.setAlpha(atTop ? 0.3f : 1f);
+    }
+
+    /** 从根(工作区或手机存储)到当前目录的链路 */
+    private List<File> chainOf(File dir) {
+        List<File> chain = new ArrayList<File>();
+        if (dir == null) return chain;
+        String sd = android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
+        File stop = dir.getAbsolutePath().startsWith(root.getAbsolutePath()) ? root : new File(sd);
+        File f = dir;
+        while (f != null) {
+            chain.add(0, f);
+            if (f.equals(stop)) break;
+            if (!f.getAbsolutePath().startsWith(stop.getAbsolutePath())) break;
+            f = f.getParentFile();
+        }
+        return chain;
+    }
+
+    private String crumbName(File f) {
+        if (f.equals(root)) return "工作区";
+        String sd = android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
+        if (f.getAbsolutePath().equals(sd)) return "手机存储";
+        String n = f.getName();
+        return n == null || n.isEmpty() ? "/" : n;
     }
 
     // -------------------------------------------------------------- 文件列表
@@ -171,9 +321,9 @@ public class SandboxPage {
         final File dir = cur;
 
         // 先给出即时反馈：点按钮后马上看到路径变了、正在读，而不是站在原地不动
-        tvPath.setText(displayPath(dir));
+        renderCrumbs(dir);
         listBox.removeAllViews();
-        tvSummary.setText("读取中…");
+        showStats(-1, -1, null);
         TextView loading = Ui.text(act, "读取中…", 13f, 0xFF8B97A9);
         loading.setGravity(Gravity.CENTER);
         loading.setPadding(0, Ui.dp(act, 40), 0, 0);
@@ -212,8 +362,11 @@ public class SandboxPage {
     private void render(File[] files, java.util.Map<String, Integer> counts, long[] size) {
         if (files == null) {
             listBox.removeAllViews();
-            listBox.addView(Ui.text(act, "无法读取该目录（权限限制）", 13f, 0xFFFF8A80));
-            tvSummary.setText("");
+            listBox.addView(emptyState("🔒", "无法读取该目录", "可能是系统权限限制，换个位置再试", 0xFFFF8A80));
+            if (statBox != null) {
+                statBox.removeAllViews();
+                statBox.addView(infoPill("不可读", 0xFFFF8A80));
+            }
             return;
         }
         List<File> list = new ArrayList<File>(Arrays.asList(files));
@@ -233,10 +386,8 @@ public class SandboxPage {
         }
 
         if (list.isEmpty()) {
-            TextView empty = Ui.text(act, "空目录\n点右上「新建」添加文件或文件夹", 13f, 0xFF8B97A9);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, Ui.dp(act, 40), 0, 0);
-            listBox.addView(empty);
+            listBox.addView(emptyState("📂", "这里还是空的",
+                    "点右上角「＋ 新建」写个文件，或「导入」从手机里挑", Palette.dim(act)));
         }
 
         int shown = Math.min(list.size(), MAX_ROWS);
@@ -245,13 +396,74 @@ public class SandboxPage {
         }
         if (list.size() > shown) {
             TextView more = Ui.text(act, "还有 " + (list.size() - shown)
-                    + " 项未显示（用终端 ls 查看更完整）", 12f, 0xFF8B97A9);
+                    + " 项未显示（用终端 ls 查看更完整）", 11.5f, Palette.dim(act));
             more.setGravity(Gravity.CENTER);
-            more.setPadding(0, Ui.dp(act, 10), 0, Ui.dp(act, 10));
+            more.setPadding(0, Ui.dp(act, 12), 0, Ui.dp(act, 12));
             listBox.addView(more);
         }
         String total = Ui.humanSize(size[0]) + (size[1] == 1 ? "+" : "");
-        tvSummary.setText(dirs + " 个目录 · " + fileCount + " 个文件 · " + total);
+        showStats(dirs, fileCount, total);
+    }
+
+    /** 统计行：dirs&lt;0 表示还在读取 */
+    private void showStats(int dirs, int files, String size) {
+        if (statBox == null) return;
+        statBox.removeAllViews();
+        if (dirs < 0) {
+            statBox.addView(infoPill("读取中…", Palette.dim(act)));
+            return;
+        }
+        boolean any = false;
+        if (dirs > 0) {
+            statBox.addView(statPill(FileGlyph.DIR, String.valueOf(dirs)));
+            any = true;
+        }
+        if (files > 0) {
+            View p = statPill(FileGlyph.TEXT, String.valueOf(files));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.leftMargin = Ui.dp(act, 6);
+            statBox.addView(p, lp);
+            any = true;
+        }
+        if (size != null) {
+            TextView p = infoPill(size, Palette.dim(act));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.leftMargin = Ui.dp(act, 6);
+            statBox.addView(p, lp);
+            any = true;
+        }
+        if (!any) statBox.addView(infoPill("空", Palette.dim(act)));
+    }
+
+    /** 空态：大图标 + 一行说明，比原来干巴巴一行字好认 */
+    private View emptyState(String icon, String title, String desc, int titleColor) {
+        LinearLayout box = Ui.col(act);
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
+        box.setPadding(0, Ui.dp(act, 56), 0, Ui.dp(act, 24));
+
+        TextView ic = Ui.text(act, icon, 32f, Palette.dim(act));
+        ic.setGravity(Gravity.CENTER);
+        ic.setAlpha(0.55f);
+        box.addView(ic);
+
+        TextView t = Ui.text(act, title, 13.5f, titleColor);
+        t.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        tlp.topMargin = Ui.dp(act, 10);
+        box.addView(t, tlp);
+
+        if (desc != null) {
+            TextView d = Ui.text(act, desc, 11.5f, Palette.dim(act));
+            d.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            dlp.topMargin = Ui.dp(act, 5);
+            box.addView(d, dlp);
+        }
+        return box;
     }
 
     /** 带时间预算的目录总大小；超时就不算了，返回的已统计部分是下界 */
@@ -291,33 +503,76 @@ public class SandboxPage {
         return p;
     }
 
+    /** 半透明色：给图标块、选中态用 */
+    private static int soft(int color, int alpha) {
+        return (color & 0x00FFFFFF) | ((alpha & 0xFF) << 24);
+    }
+
+    /** 类型色：目录跟随主题强调色，其余固定色，深色/纯黑主题下都够亮 */
+    private int tintOf(int kind) {
+        switch (kind) {
+            case FileGlyph.DIR:     return Palette.accent(act);
+            case FileGlyph.CODE:    return 0xFF5AD8F0;
+            case FileGlyph.TEXT:    return 0xFF8FB4FF;
+            case FileGlyph.IMAGE:   return 0xFFB388FF;
+            case FileGlyph.MEDIA:   return 0xFFFF8AB0;
+            case FileGlyph.ARCHIVE: return 0xFFFFD166;
+            case FileGlyph.APK:     return 0xFFFFA85C;
+            case FileGlyph.DOC:     return 0xFFFF7B72;
+            default:                return Palette.dim(act);
+        }
+    }
+
     private View buildRow(final File f, java.util.Map<String, Integer> counts) {
         LinearLayout row = Ui.row(act);
-        row.setBackground(Ui.roundRect(act, 0xFF161B24, 0, 10f));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Palette.surface(act));
+        bg.setCornerRadius(Ui.dp(act, 12));
+        bg.setStroke(Math.max(1, Ui.dp(act, 0.8f)), Palette.stroke(act));
+        row.setBackground(Ui.pressable(act, bg));
         int p = Ui.dp(act, 10);
         row.setPadding(p, p, p, p);
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rlp.bottomMargin = Ui.dp(act, 6);
+        rlp.bottomMargin = Ui.dp(act, 8);
         row.setLayoutParams(rlp);
 
-        TextView icon = Ui.text(act, f.isDirectory() ? "📁" : iconOf(f.getName()), 16f, 0xFFFFFFFF);
-        row.addView(icon);
+        // 图标块：矢量描边图标 + 类型色底纹，替代原来的 emoji（深色底上会糊、且各 ROM 字形不一）
+        int kind = FileGlyph.kindOf(f.getName(), f.isDirectory());
+        int tint = tintOf(kind);
+        ImageView icon = new ImageView(act);
+        icon.setImageDrawable(new FileGlyph(kind, tint));
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        int ip = Ui.dp(act, 9);
+        icon.setPadding(ip, ip, ip, ip);
+        GradientDrawable ib = new GradientDrawable();
+        ib.setColor(soft(tint, 0x24));
+        ib.setCornerRadius(Ui.dp(act, 11));
+        icon.setBackground(ib);
+        row.addView(icon, new LinearLayout.LayoutParams(Ui.dp(act, 38), Ui.dp(act, 38)));
 
         LinearLayout mid = Ui.col(act);
         LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        mp.leftMargin = Ui.dp(act, 10);
-        TextView name = Ui.text(act, f.getName(), 13.5f, 0xFFE8EDF6);
+        mp.leftMargin = Ui.dp(act, 12);
+        TextView name = Ui.text(act, f.getName(), 13.5f, Palette.text(act));
         name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
         Integer n = f.isDirectory() ? counts.get(f.getAbsolutePath()) : null;
         TextView meta = Ui.text(act, f.isDirectory()
-                ? "目录" + (n == null ? "" : " · " + n + " 项")
-                : Ui.humanSize(f.length()) + " · " + timeOf(f.lastModified()), 11f, 0xFF8B97A9);
+                ? "文件夹" + (n == null ? "" : " · " + n + " 项")
+                : Ui.humanSize(f.length()) + " · " + timeOf(f.lastModified()), 11f, Palette.dim(act));
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        mlp.topMargin = Ui.dp(act, 3);
         mid.addView(name);
-        mid.addView(meta);
+        mid.addView(meta, mlp);
         row.addView(mid, mp);
+
+        // 只有目录带箭头，明确「点进去」而不是「打开文件」
+        TextView arrow = Ui.text(act, f.isDirectory() ? "›" : "", 17f, Palette.stroke(act));
+        arrow.setPadding(Ui.dp(act, 6), 0, 0, 0);
+        row.addView(arrow);
 
         row.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -334,17 +589,6 @@ public class SandboxPage {
             }
         });
         return row;
-    }
-
-    private String iconOf(String name) {
-        String n = name.toLowerCase(java.util.Locale.ROOT);
-        if (n.endsWith(".apk")) return "📦";
-        if (n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".webp")) return "🖼";
-        if (n.endsWith(".md")) return "📝";
-        if (n.endsWith(".json") || n.endsWith(".xml") || n.endsWith(".java")
-                || n.endsWith(".gradle") || n.endsWith(".sh") || n.endsWith(".py")) return "📄";
-        if (n.endsWith(".zip") || n.endsWith(".jar")) return "🗜";
-        return "📃";
     }
 
     private String timeOf(long ts) {
@@ -484,43 +728,69 @@ public class SandboxPage {
         }
         final File[] targets = {root, sd, prod};
         String here = cur == null ? "" : cur.getAbsolutePath();
-        String[] items = new String[3];
-        items[0] = "🗂 沙盒工作区" + (here.equals(root.getAbsolutePath()) ? "　·　当前" : "");
-        items[1] = "📱 手机存储" + (sd != null && here.equals(sd.getAbsolutePath()) ? "　·　当前" : "");
-        items[2] = "📦 星云产物" + (prod != null && here.equals(prod.getAbsolutePath()) ? "　·　当前" : "");
-        new AlertDialog.Builder(act)
-                .setTitle("跳转到")
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int which) {
-                        File t = targets[which];
-                        if (t == null || !t.isDirectory()) {
-                            Toast.makeText(act, which == 1
-                                    ? "读不到手机存储，请先开启「所有文件访问」"
-                                    : "目录还不可用", Toast.LENGTH_LONG).show();
-                            return;
-                        }
-                        openDir(t);
+
+        String[] icons = {"🗂", "📱", "📦"};
+        String[] titles = {"沙盒工作区", "手机存储", "AgenCode 产物"};
+        String[] descs = {
+                root.getAbsolutePath(),
+                sd == null ? "当前不可用" : sd.getAbsolutePath(),
+                prod == null ? "当前不可用，先跑一次构建" : prod.getAbsolutePath()
+        };
+
+        List<Picker.Opt> opts = new ArrayList<Picker.Opt>();
+        for (int i = 0; i < 3; i++) {
+            final int idx = i;
+            final File t = targets[i];
+            boolean isCur = t != null && here.equals(t.getAbsolutePath());
+            opts.add(new Picker.Opt(icons[i], titles[i], descs[i], isCur, new Runnable() {
+                @Override
+                public void run() {
+                    if (t == null || !t.isDirectory()) {
+                        Toast.makeText(act, idx == 1
+                                ? "读不到手机存储，请先开启「所有文件访问」"
+                                : "目录还不可用", Toast.LENGTH_LONG).show();
+                        return;
                     }
-                })
-                .show();
+                    openDir(t);
+                }
+            }));
+        }
+        Picker.show(act, "跳转到", displayPath(cur), opts);
     }
 
     private void showNewDialog() {
-        final String[] items = {"新建文件夹", "新建文本文件", "新建 Markdown", "新建 shell 脚本", "导入文件…"};
-        new AlertDialog.Builder(act)
-                .setTitle("新建 / 导入")
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int which) {
-                        if (which == 0) createNameDialog(true, "untitled", "");
-                        else if (which == 1) createNameDialog(false, "note.txt", "");
-                        else if (which == 2) createNameDialog(false, "note.md", "# 标题\n\n");
-                        else if (which == 3) createNameDialog(false, "script.sh", "#!/system/bin/sh\n\n");
-                        else importFile();
-                    }
-                })
-                .show();
+        List<Picker.Opt> opts = new ArrayList<Picker.Opt>();
+        opts.add(new Picker.Opt("📁", "新建文件夹", "在当前目录建一个空文件夹", new Runnable() {
+            @Override
+            public void run() {
+                createNameDialog(true, "untitled", "");
+            }
+        }));
+        opts.add(new Picker.Opt("📄", "新建文本文件", "note.txt", new Runnable() {
+            @Override
+            public void run() {
+                createNameDialog(false, "note.txt", "");
+            }
+        }));
+        opts.add(new Picker.Opt("📝", "新建 Markdown", "note.md，自带一个标题", new Runnable() {
+            @Override
+            public void run() {
+                createNameDialog(false, "note.md", "# 标题\n\n");
+            }
+        }));
+        opts.add(new Picker.Opt("⌨️", "新建 shell 脚本", "script.sh，带 shebang", new Runnable() {
+            @Override
+            public void run() {
+                createNameDialog(false, "script.sh", "#!/system/bin/sh\n\n");
+            }
+        }));
+        opts.add(new Picker.Opt("📥", "从手机导入…", "选一个文件复制到当前目录", new Runnable() {
+            @Override
+            public void run() {
+                importFile();
+            }
+        }));
+        Picker.show(act, "新建 / 导入", displayPath(cur), opts);
     }
 
     private void createNameDialog(final boolean dir, String defName, final String initial) {

@@ -20,6 +20,16 @@
     <color name="stroke_black">#202028</color>
     <color name="code_black">#000000</color>
 
+
+    <!-- ===== 默认白（浅色）主题 ===== -->
+    <color name="bg_light">#F4F6FA</color>
+    <color name="surface_light">#FFFFFF</color>
+    <color name="surface2_light">#EDF1F7</color>
+    <color name="stroke_light">#DBE1EB</color>
+    <color name="text_light">#171C26</color>
+    <color name="text_dim_light">#65707F</color>
+    <color name="code_light">#F1F4F9</color>
+
     <!-- ===== 强调色可选档 ===== -->
     <color name="accent_blue">#5B93FF</color>
     <color name="accent_purple">#A97BFF</color>

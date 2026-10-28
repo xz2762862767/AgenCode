@@ -68,7 +68,8 @@ public class ShellToolProvider {
                 "在手机内置终端里真实执行一条 shell 命令并拿到输出。"
                         + "适合：跑用户要求的命令、用脚本验证结果、查看/改动文件、装依赖、编译运行代码。"
                         + "命令默认在沙盒工作目录执行，可用 && 串多步。"
-                        + "不要执行破坏性命令（rm -rf /、格式化、清空用户数据等）。",
+                        + "不要执行破坏性命令（rm -rf /、格式化、清空用户数据等）。"
+                        + "内置可用命令：jadx、apktool、baksmali、smali、apkinfo、unzip。",
                 ToolDef.schema(ToolDef.props(
                                 "command", ToolDef.prop("string", "要执行的完整命令，如 python3 hello.py"),
                                 "timeout", ToolDef.prop("integer", "超时秒数，默认 120，最大 600")),
@@ -175,7 +176,7 @@ public class ShellToolProvider {
             res.append(out.trim());
         }
 
-        // 产物落盘：把这次命令新生成的东西复制进「星云产物」。
+        // 产物落盘：把这次命令新生成的东西复制进「AgenCode」。
         // 用户在文件管理器里点不到 /data 深处的文件，APK 也就装不了 —— 统一搬到产物目录就解决了。
         try {
             long since = startedAt - 1000L;
@@ -186,12 +187,12 @@ public class ShellToolProvider {
             }
             synced.addAll(SandboxBridge.syncArtifacts(ctx, home, since));
             if (!synced.isEmpty()) {
-                res.append("\n\n📦 产物已同步到「星云产物」：");
+                res.append("\n\n📦 产物已同步到「AgenCode」：");
                 for (String x : synced) res.append("\n  · ").append(x);
                 res.append("\n（APK 可在「APK 工具 → 安装产物」里直接安装）");
                 Mirror m2 = mirror;
                 if (m2 != null) {
-                    m2.line("📦 产物已同步到「星云产物」：");
+                    m2.line("📦 产物已同步到「AgenCode」：");
                     for (String x : synced) m2.line("  · " + x);
                 }
             }

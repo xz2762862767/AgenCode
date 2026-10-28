@@ -8,6 +8,7 @@ import com.nebula.aichat.data.Message;
 import com.nebula.aichat.data.Settings;
 import com.nebula.aichat.tool.ToolRegistry;
 import com.nebula.aichat.util.JsonOpt;
+import com.nebula.aichat.util.RunGuard;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -193,6 +194,24 @@ public class ChatClient {
         main.post(r);
     }
 
+    /** 任务摘要：取最后一条用户消息，落盘用于"上次任务没跑完"的提示 */
+    private static String summarizeTask(List<Message> history) {
+        if (history == null || history.isEmpty()) return "";
+        for (int i = history.size() - 1; i >= 0; i--) {
+            Message m = history.get(i);
+            if (m == null || m.content == null) continue;
+            if (!Message.ROLE_USER.equals(m.role)) continue;
+            String s = m.content;
+            // 附件正文很长，摘要只要人话部分
+            int cut = s.indexOf("\n\n【附件");
+            if (cut > 0) s = s.substring(0, cut);
+            s = s.replace('\n', ' ').trim();
+            if (s.isEmpty()) continue;
+            return s.length() > 60 ? s.substring(0, 60) + "…" : s;
+        }
+        return "";
+    }
+
     public void send(final Settings settings, final List<Message> history, final Listener listener) {
         cancelled = false;
         toolRound = 0;
@@ -212,7 +231,20 @@ public class ChatClient {
         failedNotes.clear();
         noResultCalls = 0;
         emptyRoundStreak = 0;
-        Thread t = new Thread(() -> doSend(settings, history, listener), "chat-client");
+        // 任务现场落盘：这一轮从开始到结束都会被 RunGuard 记录。
+        // 进程若在这个过程中被系统 SIGKILL（LMK 回收），finally 不会执行，
+        // 记录残留下来，下次启动就能明确告知用户"上次任务是被系统终止的"，
+        // 而不是让任务静默消失、让人以为是自己点错了。
+        RunGuard.begin(summarizeTask(history));
+        Thread t = new Thread(() -> {
+            try {
+                doSend(settings, history, listener);
+            } catch (Throwable ignored) {
+                // 线程顶层异常无需再抛：doSend 内部已经把错误转成 onError
+            } finally {
+                RunGuard.end();
+            }
+        }, "chat-client");
         t.setDaemon(true);
         t.start();
     }
@@ -264,7 +296,7 @@ public class ChatClient {
             // 明确要求不压缩；万一服务端仍然压缩，下面 wrap() 会按魔数自动解压
             c.setRequestProperty("Accept-Encoding", "identity");
             c.setRequestProperty("Authorization", "Bearer " + s.apiKey.trim());
-            c.setRequestProperty("User-Agent", "NebulaAI/1.0 (Android)");
+            c.setRequestProperty("User-Agent", "AgenCode/1.0 (Android)");
 
             try (OutputStream os = c.getOutputStream()) {
                 os.write(payload);
@@ -674,7 +706,14 @@ public class ChatClient {
                     + "把真实输出讲给用户，不要只贴命令让他自己跑。\n"
                     + "2. 用户要你先写好程序再验证时，可以先写文件再执行，中间用简短一句话说明在做什么。\n"
                     + "3. 命令失败就读输出定位原因，修正后重试，最多试几次；仍失败就把报错原样告诉用户。\n"
-                    + "4. 不要执行破坏性命令（rm -rf /、mkfs、清空用户数据等）；不要在没有用户意图时擅自改他的文件。");
+                    + "4. 不要执行破坏性命令（rm -rf /、mkfs、清空用户数据等）；不要在没有用户意图时擅自改他的文件。\n"
+                    + "5. 内置反编译链直接当命令用：jadx（dex/APK → Java）、apktool（解包/回打包）、"
+                    + "baksmali 与 smali（dex ↔ smali）、apkinfo（看清单与体积构成）。"
+                    + "大 APK 先用 apkinfo 看规模再只反编译目标 dex，全量反编译在手机上会被内存限制打断。\n"
+                    + "6. 排查闪退/卡顿/任务中断时直接执行 `dumpsys`（返回内存水位、进程优先级、电池限制、"
+                    + "保活状态等现场快照）与 `logcat`（返回应用自己记账的崩溃堆栈、主线程卡死现场）。"
+                    + "没 root 的手机读不到系统日志，这两条命令已由内置采集接管，一定有内容返回，"
+                    + "不要因为「普通应用没有日志权限」就放弃排查。");
         }
         String hint = Settings.thinkHint(s.thinkLevel);
         if (!hint.isEmpty()) {
@@ -1016,6 +1055,8 @@ public class ChatClient {
         }
         toolRound++;
         noResultCalls = 0;
+        // 每进一轮工具调用刷一次现场（内部有限流，不会造成磁盘抖动）
+        RunGuard.beat(toolRound);
 
         // 1) 把 assistant 的 tool_calls 消息加入上下文
         JSONArray calls = new JSONArray();

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">星云 AI</string>
+    <string name="app_name">AgenCode</string>
     <string name="new_chat">新建对话</string>
     <string name="settings">设置</string>
     <string name="send">发送</string>

@@ -11,7 +11,6 @@ import android.text.Spanned;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.LeadingMarginSpan;
 import android.text.style.ReplacementSpan;
@@ -42,6 +41,9 @@ public class MarkdownRenderer {
     private final int colorDim;
     private final int colorAccent;
     private final int colorCodeBg;
+
+    /** 加粗重点句超过这个字数就不铺底色：整段加粗铺出来是一大块色，反而更乱 */
+    private static final int BOLD_HL_MAX = 40;
 
     /** 长回答整体折叠：超过约一屏的 60% 就只显示前面部分 */
     private boolean autoCollapse = false;
@@ -801,7 +803,7 @@ public class MarkdownRenderer {
             android.graphics.drawable.GradientDrawable gd =
                     new android.graphics.drawable.GradientDrawable();
             gd.setColor((colorAccent & 0x00FFFFFF) | 0x22000000);
-            gd.setCornerRadius(dp(4));
+            gd.setCornerRadius(0f);   // 与正文标记保持一致：直角
             chip.setBackground(gd);
             head.addView(chip);
 
@@ -842,6 +844,8 @@ public class MarkdownRenderer {
     private void addTableFallback(String table) {
         HorizontalScrollView hsv = new HorizontalScrollView(ctx);
         hsv.setHorizontalScrollBarEnabled(false);
+        // 内容比屏窄时把底色撑满，左右边缘与正文对齐；内容超宽仍可横滑
+        hsv.setFillViewport(true);
         StringBuilder cleaned = new StringBuilder();
         for (String row : table.split("\n")) {
             String r = row.trim();
@@ -1107,6 +1111,62 @@ public class MarkdownRenderer {
         }
     }
 
+    /**
+     * 重点句标记：比 BackgroundColorSpan 那种硬方框轻得多。
+     * 画一块极淡的圆角底（左右留白，不贴字），文字本身用强调色，
+     * 换行时每行各自一段 —— 像荧光笔扫过，而不是给句子套个色块。
+     */
+    static final class MarkSpan extends ReplacementSpan {
+        private final int colorTxt;
+        private final int colorFill;
+        private final float radius;
+        private final float padH;
+        private final float padV;
+        private final Paint tp = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint bp = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+
+        MarkSpan(int colorTxt, int colorFill, float radius, float padH, float padV) {
+            this.colorTxt = colorTxt;
+            this.colorFill = colorFill;
+            this.radius = radius;
+            this.padH = padH;
+            this.padV = padV;
+        }
+
+        @Override
+        public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+            tp.set(paint);
+            tp.setFakeBoldText(true);
+            if (fm != null) {
+                Paint.FontMetricsInt m = tp.getFontMetricsInt();
+                fm.ascent = m.ascent;
+                fm.descent = m.descent;
+                fm.top = m.top;
+                fm.bottom = m.bottom;
+            }
+            return (int) Math.ceil(tp.measureText(text, start, end)) + Math.round(padH * 2);
+        }
+
+        @Override
+        public void draw(Canvas canvas, CharSequence text, int start, int end, float x,
+                         int top, int y, int bottom, Paint paint) {
+            tp.set(paint);
+            tp.setFakeBoldText(true);
+            // 宽度必须先算：下面的 setColor 之后不能再 set(paint)，否则颜色被重置
+            float w = (float) Math.ceil(tp.measureText(text, start, end)) + padH * 2;
+            Paint.FontMetricsInt m = tp.getFontMetricsInt();
+            rect.set(x, y + m.ascent - padV, x + w, y + m.descent + padV);
+            tp.setColor(colorTxt);
+
+            bp.setStyle(Paint.Style.FILL);
+            bp.setColor(colorFill);
+            canvas.drawRoundRect(rect, radius, radius, bp);
+
+            canvas.drawText(text, start, end, x + padH, y, tp);
+        }
+    }
+
     // ---------- 工具 ----------
 
     private void copy(String text) {
@@ -1149,6 +1209,19 @@ public class MarkdownRenderer {
         return (int) (v * ctx.getResources().getDisplayMetrics().density + 0.5f);
     }
 
+    /** 同色不同透明度：底纹、描边都从强调色派生，保证不跳色 */
+    private static int soft(int color, int alpha) {
+        return (color & 0x00FFFFFF) | ((alpha & 0xFF) << 24);
+    }
+
+    /** 向白色提亮：f=0 原色，f=1 纯白。行内代码的文字色用它提亮，深底上才看得清 */
+    private static int mixWhite(int color, float f) {
+        int r = (int) (((color >> 16) & 0xFF) * (1 - f) + 255 * f);
+        int g = (int) (((color >> 8) & 0xFF) * (1 - f) + 255 * f);
+        int b = (int) ((color & 0xFF) * (1 - f) + 255 * f);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
     /**
      * 行内格式：**粗** *斜* `代码` ~~删除~~ [链接](url)
      * 支持一层递归（例如 **粗体里的 `代码`**）。
@@ -1165,8 +1238,10 @@ public class MarkdownRenderer {
                 if (end > i + 1) {
                     int st = out.length();
                     out.append(s, i + 1, end);
-                    out.setSpan(new CodeSpan(0xFF9DC0FF, 0xFF1B2634, 0xFF2E4A6B,
-                            dp(4.5f), dp(5f), sp), st, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    // 胶囊颜色跟着强调色走：换紫/绿主题时行内代码不该还是蓝的
+                    int ac = Palette.accent(ctx);
+                    out.setSpan(new CodeSpan(mixWhite(ac, 0.55f), soft(ac, 0x1C), soft(ac, 0x38),
+                            0f, dp(5.5f), sp), st, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     i = end + 1;
                     continue;
                 }
@@ -1175,9 +1250,18 @@ public class MarkdownRenderer {
             if (c == '*' && i + 1 < n && s.charAt(i + 1) == '*') {
                 int end = s.indexOf("**", i + 2);
                 if (end > i + 1) {
+                    String inner = s.substring(i + 2, end);
                     int st = out.length();
-                    out.append(span(s.substring(i + 2, end), 0xFFF2F7FF, sp, true));
-                    out.setSpan(new StyleSpan(Typeface.BOLD), st, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    out.append(span(inner, 0xFFF2F7FF, sp, true));
+                    int en = out.length();
+                    out.setSpan(new StyleSpan(Typeface.BOLD), st, en, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    // 短重点句才给标记，整段加粗不铺（否则一片色块反而没重点）；
+                    // 段内含 `行内代码` 时也不铺 —— 两层 ReplacementSpan 重叠会把代码胶囊吃掉
+                    if (en > st && en - st <= BOLD_HL_MAX && inner.indexOf('`') < 0) {
+                        int ac = Palette.accent(ctx);
+                        out.setSpan(new MarkSpan(mixWhite(ac, 0.35f), soft(ac, 0x10),
+                                0f, dp(3f), dp(0.5f)), st, en, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
                     i = end + 2;
                     continue;
                 }

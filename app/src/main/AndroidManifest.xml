@@ -76,6 +76,25 @@
             android:parentActivityName=".SettingsActivity"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <activity
+            android:name=".DiagActivity"
+            android:exported="false"
+            android:label="运行诊断"
+            android:parentActivityName=".SettingsActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 内置浏览器：configChanges 带上 keyboard 是为了转屏/弹键盘时不重建 WebView，
+             重建会丢页面状态（滚动位置、已翻译的 DOM），体验上像刷新了一次 -->
+        <activity
+            android:name=".BrowserActivity"
+            android:exported="false"
+            android:label="浏览器"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:hardwareAccelerated="true" />
+
+
+
         <service
             android:name=".KeepAliveService"
             android:exported="false"

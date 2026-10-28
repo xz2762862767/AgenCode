@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 浏览器入口：地球 + 经纬线。
+     用描边而不是实心：20dp 下实心球体会糊成一个圆点，看不出"浏览"的含义。
+     经线用两条椭圆弧表示，纬线一条横线，是 globe 图标最省笔画的画法。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.7"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:pathData="M12,3a9,9 0 1,0 0,18a9,9 0 1,0 0,-18z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.7"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:pathData="M3.2,9.2h17.6M3.2,14.8h17.6" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.7"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:pathData="M12,3c2.6,2.4 4,5.6 4,9c0,3.4 -1.4,6.6 -4,9c-2.6,-2.4 -4,-5.6 -4,-9c0,-3.4 1.4,-6.6 4,-9z" />
+</vector>

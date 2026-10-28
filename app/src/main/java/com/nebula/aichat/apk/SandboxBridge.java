@@ -24,11 +24,11 @@ import java.util.Set;
  *
  * 这里做三件事：
  * 1）给 proot 补两个挂载：/sdcard（手机公共存储）、/sdcard-app（应用专属外部目录，免权限可写）
- * 2）在 /exchange/out 建一个软链，指向「星云产物」，AI 有个固定出口
- * 3）每条命令跑完，把工作区里新生成的成品自动复制进「星云产物」，并回报给对话
+ * 2）在 /exchange/out 建一个软链，指向「AgenCode」，AI 有个固定出口
+ * 3）每条命令跑完，把工作区里新生成的成品自动复制进「AgenCode」，并回报给对话
  *
  * 第 3 条是关键：不管有没有存储权限、有没有挂 /sdcard，成品最终都会出现在同一个
- * 「星云产物」里，APK 可以直接点安装，不会再出现「做出来了但装不上」。
+ * 「AgenCode」里，APK 可以直接点安装，不会再出现「做出来了但装不上」。
  */
 public final class SandboxBridge {
 
@@ -38,7 +38,7 @@ public final class SandboxBridge {
     public static final String IN_PUBLIC = "/sdcard";
     /** 沙箱内看到的应用专属外部目录（任何权限下都能读写，但对文件管理器不可见） */
     public static final String IN_APP_EXT = "/sdcard-app";
-    /** 沙箱内的产物出口，软链到「星云产物」 */
+    /** 沙箱内的产物出口，软链到「AgenCode」 */
     public static final String IN_OUT = "/exchange/out";
 
     /** 值得回报给用户的成品类型；.o/.class/.tmp 之类中间文件不打扰 */
@@ -151,10 +151,10 @@ public final class SandboxBridge {
             sb.append("· 用户还没开「所有文件访问」，").append(IN_PUBLIC)
                     .append(" 下写文件可能失败；这种情况请放到 ").append(IN_OUT).append("。\n");
         }
-        sb.append("· ").append(IN_OUT).append(" 是固定产物出口，等于手机上的「星云产物」文件夹。\n");
+        sb.append("· ").append(IN_OUT).append(" 是固定产物出口，等于手机上的「AgenCode」文件夹。\n");
         sb.append("· 构建出 APK 就放进 ").append(IN_OUT).append(" 或 ")
                 .append(IN_PUBLIC).append("/Download，然后告诉用户文件名 —— 系统会自动同步进")
-                .append("「星云产物」，用户点一下就能安装。\n");
+                .append("「AgenCode」，用户点一下就能安装。\n");
         sb.append("· 不要把成品只留在工作目录里，那样用户在文件管理器里找不到。");
         return sb.toString();
     }
@@ -162,9 +162,9 @@ public final class SandboxBridge {
     // ------------------------------------------------------------------ 产物同步
 
     /**
-     * 把 dir 下自 sinceMs 之后新出现的成品，复制进「星云产物」。
+     * 把 dir 下自 sinceMs 之后新出现的成品，复制进「AgenCode」。
      *
-     * @return 每行形如「app-release.apk → /sdcard/星云产物/APK/app-release.apk」
+     * @return 每行形如「app-release.apk → /sdcard/AgenCode/APK/app-release.apk」
      */
     public static List<String> syncArtifacts(Context c, File dir, long sinceMs) {
         List<String> notes = new ArrayList<String>();
@@ -255,7 +255,7 @@ public final class SandboxBridge {
         return i <= 0 ? "" : name.substring(i + 1).toLowerCase(Locale.ROOT);
     }
 
-    /** 复制进「星云产物」，返回落点描述；已是最新则返回 null */
+    /** 复制进「AgenCode」，返回落点描述；已是最新则返回 null */
     private static String deliver(Context c, File src) throws IOException {
         String name = src.getName();
         String ext = extOf(name);

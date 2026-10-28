@@ -25,7 +25,10 @@ public class ComposerBar {
         void onMcp();
         void onNetToggle(boolean on);
 
-        /** 点击联网按钮：展开折叠的联网设置（开关 / 搜索引擎） */
+        /** 浏览器自动化开关（AI 可主动打开网页读正文） */
+        void onBrowserToggle(boolean on);
+
+        /** 点击联网按钮：展开折叠的联网设置（两个开关 / 搜索引擎） */
         void onNetMenu();
     }
 
@@ -75,11 +78,14 @@ public class ComposerBar {
     private final List<String> images = new ArrayList<>();
     private final List<String> imageLabels = new ArrayList<>();
     private boolean netOn;
+    private boolean browserOn;
 
-    public ComposerBar(Activity act, LinearLayout container, Listener listener, boolean netInitial) {
+    public ComposerBar(Activity act, LinearLayout container, Listener listener,
+                       boolean netInitial, boolean browserInitial) {
         this.act = act;
         this.listener = listener;
         this.netOn = netInitial;
+        this.browserOn = browserInitial;
 
         container.removeAllViews();
         container.setOrientation(LinearLayout.VERTICAL);
@@ -122,7 +128,10 @@ public class ComposerBar {
             if (listener != null) listener.onNetMenu();
         });
         chipNet.setOnLongClickListener(v -> {
-            setNetOn(!netOn, true);
+            // 长按：两个都开 -> 全关；否则 -> 全开（快速省事）
+            boolean turnOn = !(netOn && browserOn);
+            setNetOn(turnOn, true);
+            setBrowserOn(turnOn, true);
             return true;
         });
 
@@ -167,11 +176,11 @@ public class ComposerBar {
         style(chipImage, false);
         style(chipSkill, false);
         style(chipMcp, false);
-        style(chipNet, netOn);
+        style(chipNet, netOn || browserOn);
         chipFile.setText("📎 文件");
         chipImage.setText(images.isEmpty() ? "🖼 图片" : "🖼 图片 " + images.size());
-        // 保留“联网”二字；设置折叠进点击菜单，开启时高亮并标注“开”
-        chipNet.setText(netOn ? "🌐 联网·开" : "🌐 联网");
+        // 保留“联网”二字；设置折叠进点击菜单，两个开关的状态直接写在按钮上
+        chipNet.setText(netLabel());
     }
 
     private void style(TextView tv, boolean on) {
@@ -196,6 +205,24 @@ public class ComposerBar {
 
     public boolean isNetOn() {
         return netOn;
+    }
+
+    public void setBrowserOn(boolean on, boolean notify) {
+        browserOn = on;
+        paint();
+        if (notify && listener != null) listener.onBrowserToggle(on);
+    }
+
+    public boolean isBrowserOn() {
+        return browserOn;
+    }
+
+    /** 联网按钮文案：0 个开 / 只搜索 / 只浏览 / 全开 */
+    private String netLabel() {
+        if (netOn && browserOn) return "🌐 联网·全开";
+        if (netOn) return "🌐 联网·搜索";
+        if (browserOn) return "🌐 联网·浏览";
+        return "🌐 联网";
     }
 
 

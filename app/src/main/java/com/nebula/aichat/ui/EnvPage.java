@@ -255,9 +255,21 @@ public class EnvPage {
         tcOps.addView(devChip, tlp);
         toolCard.addView(tcOps);
 
+        // 反编译工具（jadx / apktool / baksmali / smali）只要一个 Java 运行时就能跑，
+        // 不该逼用户为它拖 245MB 全家桶，所以单列一个按钮。
+        LinearLayout tcOps2 = Ui.row(act);
+        tcOps2.setPadding(0, Ui.dp(act, 8), 0, 0);
+        tcOps2.addView(Ui.ghostChip(act, "只装 Java 运行时（60MB）", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                installToolchain(1);
+            }
+        }));
+        toolCard.addView(tcOps2);
+
         TextView tcHint = Ui.text(act,
-                "基础 ≈15MB（zip/curl/git/sqlite/xxd/xz…）；全部另加 python3、node、gcc 与 Java 运行时（≈245MB，够解包 APK）。"
-                        + "内置 aapt2、apktool 随包附带，零流量。安装时请保持前台、别锁屏。",
+                "基础 ≈15MB（zip/curl/git/sqlite/xxd/xz…）；只装 Java 运行时 ≈60MB，内置 jadx/apktool/baksmali/smali 靠它才能跑；"
+                        + "全部 ≈245MB（再加 python3、node、gcc）。内置 aapt2 与逆向 jar 随包附带，零流量。安装时请保持前台、别锁屏。",
                 11f, 0xFF7A8494);
         tcHint.setPadding(0, Ui.dp(act, 6), 0, 0);
         toolCard.addView(tcHint);
@@ -412,6 +424,13 @@ public class EnvPage {
 
     /** 一键补齐工具链：弹窗看细节，页面横幅看总体进度（关掉弹窗也有） */
     private void installToolchain(final boolean full) {
+        installToolchain(full ? 2 : 0);
+    }
+
+    /**
+     * @param mode 0=补齐基础包  1=只装 Java 运行时（约60MB）  2=全部工具链
+     */
+    private void installToolchain(final int mode) {
         if (!LinuxEnv.get(act).isInstalled()) {
             Toast.makeText(act, "请先安装内置 Linux 环境", Toast.LENGTH_SHORT).show();
             return;
@@ -425,7 +444,8 @@ public class EnvPage {
         ScrollView sv = new ScrollView(act);
         sv.addView(logView);
         final AlertDialog dlg = new AlertDialog.Builder(act)
-                .setTitle(full ? "安装全部工具链" : "补齐基础工具")
+                .setTitle(mode == 1 ? "只装 Java 运行时（≈60MB）"
+                        : mode == 2 ? "安装全部工具链" : "补齐基础工具")
                 .setView(sv)
                 .setNegativeButton("收起到后台", null)
                 .create();
@@ -437,32 +457,36 @@ public class EnvPage {
             dlg.getWindow().setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(act, 380));
         }
 
+        final ApkWorkbench.Progress prog = new ApkWorkbench.Progress() {
+            @Override
+            public void onStep(final String step) {
+                act.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        appendLog(logView, "→ " + step);
+                    }
+                });
+            }
+
+            @Override
+            public void onLog(final String line) {
+                act.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        appendLog(logView, line);
+                    }
+                });
+            }
+        };
+
         new Thread(new Runnable() {
             @Override
             public void run() {
-                String err = Toolchain.install(act, full, new ApkWorkbench.Progress() {
-                    @Override
-                    public void onStep(final String step) {
-                        act.runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                appendLog(logView, "→ " + step);
-                            }
-                        });
-                    }
-
-                    @Override
-                    public void onLog(final String line) {
-                        act.runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                appendLog(logView, line);
-                            }
-                        });
-                    }
-                });
+                String err = mode == 1
+                        ? Toolchain.installJre(act, prog)
+                        : Toolchain.install(act, mode == 2, prog);
                 final String msg = err == null
-                        ? "✅ 工具链安装完成，可以解包 APK 了"
+                        ? "✅ 安装完成" + (mode == 1 ? "，jadx/apktool 可以用了" : "，可以解包 APK 了")
                         : "❌ " + err;
                 act.runOnUiThread(new Runnable() {
                     @Override

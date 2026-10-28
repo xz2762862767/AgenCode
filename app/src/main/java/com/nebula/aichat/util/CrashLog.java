@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit;
  * 崩溃 + 过程诊断落盘。
  *
  * 目的：闪退后不用连电脑、不用 root 也能拿到现场。
- * 日志直接写到「下载/NebulaAI/」：
+ * 日志直接写到「下载/AgenCode/」：
  *   diag.txt          每次对话关键节点追加一行（进程被系统杀掉也能看到最后一步）
  *   crash-时间.txt     未捕获异常的完整堆栈（Java 异常）
  *   anr-时间.txt       主线程卡死 / 疑似被杀前的现场（无 Java 异常时唯一线索）
@@ -44,7 +44,7 @@ import java.util.concurrent.TimeUnit;
  */
 public final class CrashLog {
 
-    private static final String DIR = "NebulaAI";
+    private static final String DIR = "AgenCode";
     private static final String DIAG_NAME = "diag.txt";
     // SimpleDateFormat 不是线程安全的，而这个类被主线程和多个工作线程同时调用，
     // 共享一个实例会偶发 ArrayIndexOutOfBoundsException 或写出错乱的时间
@@ -171,16 +171,33 @@ public final class CrashLog {
         t.start();
     }
 
+    /** 上一次 OOM 预警的时间，用来节流（预警本身不能变成刷屏） */
+    private static volatile long lastOomWarn;
+
     private static void beat() {
         Context c = app;
         if (c == null) return;
-        String snap = lastAction + " | mem=" + usedMemMb() + "/" + maxMemMb()
+        long used = usedMemMb();
+        long max = maxMemMb();
+        String snap = lastAction + " | mem=" + used + "/" + max
                 + "MB oom_adj=" + oomAdj();
         c.getSharedPreferences(SP, Context.MODE_PRIVATE).edit()
                 .putLong(K_BEAT, System.currentTimeMillis())
                 .putLong(K_START, startedAt)
                 .putString(K_ACTION, snap)
                 .apply();
+
+        // 内存高压预警：堆用到 80% 以上就先记一笔。
+        // 堆耗尽型的闪退往往一行 Java 堆栈都留不下（系统直接杀进程），
+        // 这条预警经常是事后唯一能对上的线索，所以宁可多记一行。
+        if (max > 0 && used * 100 / max >= 80) {
+            long now = System.currentTimeMillis();
+            if (now - lastOomWarn > 60_000L) {
+                lastOomWarn = now;
+                d("oom", "堆内存高压 " + used + "/" + max + "MB ("
+                        + (used * 100 / max) + "%) 最后动作=" + lastAction);
+            }
+        }
     }
 
     private static final long startedAt = System.currentTimeMillis();
@@ -190,7 +207,7 @@ public final class CrashLog {
     /** 关键节点记录一行（异步落盘，主线程安全） */
     public static void d(String tag, String msg) {
         String line = TS.get().format(new Date()) + " [" + tag + "] " + msg;
-        Log.d("NebulaAI", line);
+        Log.d("AgenCode", line);
         lastAction = "[" + tag + "] " + msg;
         try {
             // 队列满就丢最旧的，宁可少几行日志也不能卡住调用方
@@ -215,7 +232,7 @@ public final class CrashLog {
      */
     public static void anr(long stuckMs, String stack) {
         StringBuilder sb = new StringBuilder();
-        sb.append("===== 星云 AI 主线程卡死现场 =====\n");
+        sb.append("===== AgenCode 主线程卡死现场 =====\n");
         sb.append("时间: ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date())).append('\n');
         sb.append("卡住时长: ").append(stuckMs).append(" ms\n");
         sb.append("机型: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\n');
@@ -240,7 +257,7 @@ public final class CrashLog {
             } catch (Throwable ignored2) {
             }
         }
-        Log.e("NebulaAI", "主线程卡死 " + stuckMs + "ms");
+        Log.e("AgenCode", "主线程卡死 " + stuckMs + "ms");
     }
 
     // ------------------------------------------------------------ 崩溃堆栈
@@ -250,7 +267,7 @@ public final class CrashLog {
         if (c == null) return;
 
         StringBuilder sb = new StringBuilder();
-        sb.append("===== 星云 AI 崩溃报告 =====\n");
+        sb.append("===== AgenCode 崩溃报告 =====\n");
         sb.append("时间: ").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date())).append('\n');
         sb.append("机型: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\n');
         sb.append("系统: Android ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(")\n");
@@ -258,8 +275,17 @@ public final class CrashLog {
         sb.append("内存: 已用 ").append(usedMemMb()).append(" MB / 上限 ")
                 .append(maxMemMb()).append(" MB / 可用 ").append(availMemMb()).append(" MB\n");
         sb.append("最后动作: ").append(lastAction).append('\n');
-        sb.append("存活: ").append((System.currentTimeMillis() - startedAt) / 1000).append(" s\n\n");
-        sb.append("----- 堆栈 -----\n");
+        sb.append("存活: ").append((System.currentTimeMillis() - startedAt) / 1000).append(" s\n");
+        // OOM 是最难查的一类：堆栈只有 java.lang.OutOfMemoryError 一行，看不出是谁吃掉的。
+        // 把出事那一刻的进程内存构成一起落盘，事后才能判断是 Java 堆、native 还是图片占的。
+        if (e instanceof OutOfMemoryError) {
+            sb.append("类型: OutOfMemoryError —— 内存耗尽，属于资源问题而不是逻辑错误\n");
+        }
+        try {
+            sb.append('\n').append(Diag.memory(c));
+        } catch (Throwable ignored) {
+        }
+        sb.append("\n----- 堆栈 -----\n");
         sb.append(Log.getStackTraceString(e)).append('\n');
 
         Throwable cause = e == null ? null : e.getCause();
@@ -326,17 +352,17 @@ public final class CrashLog {
 
     // ------------------------------------------------------------ 内存信息
 
-    private static long usedMemMb() {
+    public static long usedMemMb() {
         Runtime r = Runtime.getRuntime();
         return (r.totalMemory() - r.freeMemory()) / 1024 / 1024;
     }
 
-    private static long maxMemMb() {
+    public static long maxMemMb() {
         return Runtime.getRuntime().maxMemory() / 1024 / 1024;
     }
 
     /** 系统剩余内存：判断是否被 LMK 盯上的关键 */
-    private static long availMemMb() {
+    public static long availMemMb() {
         try {
             android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
             android.app.ActivityManager am = (android.app.ActivityManager)

@@ -218,13 +218,33 @@
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:text="系统提示词（决定它的性格和回答风格）"
-                    android:textColor="?attr/neb_dim"
-                    android:textSize="11.5sp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="系统提示词（决定它的性格和回答风格）"
+                        android:textColor="?attr/neb_dim"
+                        android:textSize="11.5sp" />
+
+                    <TextView
+                        android:id="@+id/tvResetSystem"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingLeft="10dp"
+                        android:paddingRight="2dp"
+                        android:paddingTop="5dp"
+                        android:paddingBottom="5dp"
+                        android:text="恢复内置"
+                        android:textColor="?attr/neb_accent"
+                        android:textSize="11.5sp" />
+                </LinearLayout>
 
                 <EditText
                     android:id="@+id/etSystem"

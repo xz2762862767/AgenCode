@@ -169,7 +169,7 @@ public class ApkTools {
         File out = new File(outDir, baseName(src.getName()) + "-mod.apk");
         if (out.exists()) out.delete();
 
-        ApkSigner.SignerConfig sc = new ApkSigner.SignerConfig.Builder("Nebula", pk, chain).build();
+        ApkSigner.SignerConfig sc = new ApkSigner.SignerConfig.Builder("AgenCode", pk, chain).build();
         new ApkSigner.Builder(Collections.singletonList(sc))
                 .setInputApk(aligned)
                 .setOutputApk(out)
@@ -177,7 +177,7 @@ public class ApkTools {
                 .setV2SigningEnabled(true)
                 .setV3SigningEnabled(true)
                 .setMinSdkVersion(minSdk)
-                .setCreatedBy("Nebula APK Tools")
+                .setCreatedBy("AgenCode APK Tools")
                 .build()
                 .sign();
 
@@ -282,7 +282,7 @@ public class ApkTools {
             out.delete();
         }
 
-        ApkSigner.SignerConfig sc = new ApkSigner.SignerConfig.Builder("Nebula", pk, chain).build();
+        ApkSigner.SignerConfig sc = new ApkSigner.SignerConfig.Builder("AgenCode", pk, chain).build();
         new ApkSigner.Builder(Collections.singletonList(sc))
                 .setInputApk(in)
                 .setOutputApk(out)
@@ -290,7 +290,7 @@ public class ApkTools {
                 .setV2SigningEnabled(true)
                 .setV3SigningEnabled(true)
                 .setMinSdkVersion(minSdk)
-                .setCreatedBy("Nebula APK Tools")
+                .setCreatedBy("AgenCode APK Tools")
                 .build()
                 .sign();
         return out;

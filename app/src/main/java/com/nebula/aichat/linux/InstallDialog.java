@@ -22,6 +22,49 @@ public final class InstallDialog {
     }
 
     /** 显示安装日志（可复制），失败的完整原因都在这里 */
+    /**
+     * 环境刚装好，就把「开箱即用」需要的东西一次补齐：
+     * 基础命令包（≈5MB）+ Java 运行时（≈60MB）。
+     *
+     * 为什么连 Java 也自动装：内置的 jadx / apktool / baksmali / smali 全是 jar，
+     * 没有 java 就是几个跑不起来的空壳，而用户根本不会知道要去环境页单独点那个按钮。
+     * 两档串行、已装自动跳过，失败静默（环境页仍可手动重试，不阻塞任何主流程）。
+     */
+    private static void autoProvision(final Activity act) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (com.nebula.aichat.linux.Toolchain.running) return;
+                    final boolean needCore = !com.nebula.aichat.linux.Toolchain.coreReady(act);
+                    final boolean needJre = !com.nebula.aichat.linux.Toolchain.jreReady(act);
+                    if (!needCore && !needJre) return;
+                    act.runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            android.widget.Toast.makeText(act,
+                                    needJre ? "正在后台准备反编译环境（约 65MB），可以继续使用"
+                                            : "正在后台补齐基础命令（约 5MB）",
+                                    android.widget.Toast.LENGTH_LONG).show();
+                        }
+                    });
+                    String err = com.nebula.aichat.linux.Toolchain.provision(act, null);
+                    if (err == null) {
+                        act.runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                android.widget.Toast.makeText(act,
+                                        "环境已就绪：常用命令 + jadx/apktool 都能用了",
+                                        android.widget.Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }, "nebula-provision").start();
+    }
+
     public static void showLog(final Activity act, final LinuxEnv env) {
         android.widget.ScrollView sv = new android.widget.ScrollView(act);
         TextView tv = Ui.text(act, env.logText(), 10.5f, 0xFFAEB9C9);
@@ -157,6 +200,7 @@ public final class InstallDialog {
                                     status.setText("安装完成：" + env.versionText());
                                     bar.setProgress(100);
                                     dlg.dismiss();
+                                    autoProvision(act);
                                     if (onDone != null) onDone.run();
                                 } else {
                                     status.setText("安装失败：" + e);

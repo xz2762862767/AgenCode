@@ -38,6 +38,28 @@
         <item name="neb_code">@color/code_black</item>
     </style>
 
+
+    <!-- 默认白：浅色底 + 深色文字，状态栏图标转深色 -->
+    <style name="AppTheme.Light">
+        <item name="colorPrimary">@color/surface_light</item>
+        <item name="colorPrimaryDark">@color/bg_light</item>
+        <item name="android:windowBackground">@color/bg_light</item>
+        <item name="android:statusBarColor">@color/bg_light</item>
+        <item name="android:navigationBarColor">@color/bg_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:textColorPrimary">@color/text_light</item>
+        <item name="android:textColorSecondary">@color/text_dim_light</item>
+        <item name="android:textColorHint">@color/text_dim_light</item>
+
+        <item name="neb_bg">@color/bg_light</item>
+        <item name="neb_surface">@color/surface_light</item>
+        <item name="neb_surface2">@color/surface2_light</item>
+        <item name="neb_stroke">@color/stroke_light</item>
+        <item name="neb_text">@color/text_light</item>
+        <item name="neb_dim">@color/text_dim_light</item>
+        <item name="neb_code">@color/code_light</item>
+    </style>
+
     <!-- 强调色覆盖（运行时 applyStyle 叠加到当前主题上） -->
     <style name="AccentBlue">
         <item name="neb_accent">@color/accent_blue</item>

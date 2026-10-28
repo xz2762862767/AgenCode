@@ -46,6 +46,32 @@ public final class ConclusionParser {
         return i < 0 ? full : full.substring(0, i);
     }
 
+    /**
+     * 渲染兜底：把结论标记连同其中的内容整段删掉。
+     *
+     * 用于「已经落盘、来不及走 parse」的路径（历史消息、异常中止的那一轮），
+     * 保证界面上任何时候都不会露出 %%CONCLUSION%% / %%END%%。
+     * 未闭合的块一律删到结尾——宁可少显示一段，也不要把半截协议当成正文。
+     */
+    public static String stripAll(String src) {
+        if (src == null) return "";
+        String t = src;
+        int guard = 0;
+        while (guard++ < 50) {
+            int i = t.indexOf(OPEN);
+            if (i < 0) break;
+            int e = t.indexOf(CLOSE, i + OPEN.length());
+            if (e < 0) {
+                t = t.substring(0, i);
+                break;
+            }
+            t = t.substring(0, i) + t.substring(e + CLOSE.length());
+        }
+        // 正文里若还有孤立标记（模型重复输出/写错位置），一并清掉
+        t = t.replace(OPEN, "").replace(CLOSE, "");
+        return trimTail(t);
+    }
+
     /** 完整解析：剥离结论块并拆出标题 / 详述 */
     public static Result parse(String full) {
         Result r = new Result();

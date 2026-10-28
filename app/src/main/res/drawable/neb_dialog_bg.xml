@@ -1,23 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  对话框背景：显式覆盖 Theme.AppCompat.Dialog 默认的
-  @android:drawable/dialog_background_material（该 drawable 内部写死
-  @color/background_material_light，是浅灰白，不随主题变化，
+  对话框背景：覆盖 Theme.AppCompat.Dialog 默认的
+  @android:drawable/dialog_background_material（其 solid 写死
+  @color/background_material_light，浅灰白，不随主题变化，
   导致深色/黑色主题下所有 AlertDialog 都是白底）。
 
-  这里用 ?attr/neb_surface 让底色跟随当前对话框主题：
+  background_material_light 的原始定义是 inset 16dp + corners 2dp。
+  这里保持 16dp 四边内缩（弹窗大小与系统默认一致，不发生视觉缩放），
+  但按需求去掉圆角，做纯直角矩形。
+
+  颜色用 ?attr/neb_surface，跟随当前对话框主题解析：
   深色 #161B24 / 黑色 #0A0A0D / 浅色 #FFFFFF。
-  四周 inset 模拟 Material 对话框的外边距，避免背景贴满屏幕边缘。
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:left="14dp"
-        android:right="14dp"
-        android:top="22dp"
-        android:bottom="22dp">
+        android:left="16dp"
+        android:right="16dp"
+        android:top="16dp"
+        android:bottom="16dp">
         <shape android:shape="rectangle">
             <solid android:color="?attr/neb_surface" />
-            <corners android:radius="18dp" />
         </shape>
     </item>
 </layer-list>

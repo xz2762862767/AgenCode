@@ -6051,6 +6051,10 @@ public class MainActivity extends AppCompatActivity {
             // 宽度固定 90%，高度交给内容（列表自己封顶），不再固定 86% 屏高
             w.setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.9f),
                     android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            // 与「添加模型」保持一致，整体下移 36dp
+            WindowManager.LayoutParams attrs = w.getAttributes();
+            attrs.y = dp(36);
+            w.setAttributes(attrs);
         }
     }
 
@@ -6861,7 +6865,11 @@ public class MainActivity extends AppCompatActivity {
             int contentH = root.getMeasuredHeight();
             // 只按内容高度走会太紧：按钮直接贴在弹窗底边，看着憋。留 22dp 呼吸，
             // 同时兜住 86% 屏高的上限（body 不是 ScrollView，超屏没法滚）。
-            w.setLayout(dw, Math.min(contentH + dp(16), (int) (hpx * 0.86f)));
+            w.setLayout(dw, Math.min(contentH + dp(22), (int) (hpx * 0.86f)));
+            // 整体下移一点：CENTER 时弹窗偏上，视觉重心压不住，往下挪 36dp
+            WindowManager.LayoutParams attrs = w.getAttributes();
+            attrs.y = dp(36);
+            w.setAttributes(attrs);
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
     }

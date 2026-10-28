@@ -5909,7 +5909,7 @@ public class MainActivity extends AppCompatActivity {
         TextView name = new TextView(this);
         name.setText(hasCur ? cur.trim() : "未选择模型");
         name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        name.setTextColor(Palette.c(0xFFEDF3FC));
+        name.setTextColor(Palette.c(0xFFB4C2D4));
         name.setTypeface(Typeface.DEFAULT_BOLD);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
@@ -5944,7 +5944,7 @@ public class MainActivity extends AppCompatActivity {
         android.graphics.drawable.GradientDrawable gd =
                 new android.graphics.drawable.GradientDrawable(
                         android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
-                        new int[]{Palette.c(0x805B93FF), Palette.c(0x332F6BE8), 0x00000000});
+                        new int[]{Palette.c(0x4D5B93FF), Palette.c(0x142F6BE8), 0x00000000});
         gd.setCornerRadius(dp(1f));
         gd.setGradientType(android.graphics.drawable.GradientDrawable.LINEAR_GRADIENT);
         line.setBackground(gd);
@@ -5965,7 +5965,7 @@ public class MainActivity extends AppCompatActivity {
         TextView secTitle = new TextView(this);
         secTitle.setText("全部模型");
         secTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        secTitle.setTextColor(Palette.c(0xFF8FA0B5));
+        secTitle.setTextColor(Palette.c(0xFF6F7C8F));
         secTitle.setTypeface(Typeface.DEFAULT_BOLD);
         sec.addView(secTitle, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
@@ -6023,12 +6023,12 @@ public class MainActivity extends AppCompatActivity {
         });
         LinearLayout.LayoutParams seplp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
-        seplp.topMargin = dp(14);
+        seplp.topMargin = dp(22);
         listWrap.addView(sheetSeparator(), seplp);
 
         LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
-        flp.topMargin = dp(13);
+        flp.topMargin = dp(18);
         listWrap.addView(settingsBtn, flp);
 
         rebuildModelList(composeModelList(lastServerModels), Settings.effectiveModel(settings),
@@ -6338,7 +6338,7 @@ public class MainActivity extends AppCompatActivity {
                 new android.graphics.drawable.StateListDrawable();
         bg.addState(new int[]{android.R.attr.state_pressed},
                 Ui.box(this, Palette.c(0x265B93FF), 0, 14f, 0f));
-        bg.addState(new int[]{}, Ui.box(this, Palette.c(0x0F5B93FF), Palette.c(0x2E5B93FF), 14f, 1f));
+        bg.addState(new int[]{}, Ui.box(this, Palette.c(0x085B93FF), Palette.c(0x1F5B93FF), 14f, 1f));
         row.setBackground(bg);
 
         // 和模型行同宽同高的「＋」方块，保证列表左边缘是一条直线
@@ -6374,8 +6374,10 @@ public class MainActivity extends AppCompatActivity {
         col.addView(hint, hlp);
 
         row.setOnClickListener(v -> showAddModelDialog());
-        modelListBox.addView(row, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(MODEL_ROW_H)));
+        LinearLayout.LayoutParams addLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(MODEL_ROW_H));
+        addLp.topMargin = dp(8);
+        modelListBox.addView(row, addLp);
     }
 
     /** 内置服务商：{显示名, OpenAI 兼容地址, 模型…}，地址都支持 /chat/completions */

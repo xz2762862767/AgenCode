@@ -143,6 +143,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
+        android:alpha="0.35"
         android:background="?attr/neb_stroke" />
 
     <!-- 消息区 -->

@@ -55,7 +55,12 @@ jobs:
           sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon -Dorg.gradle.vfs.watch=false
+        run: |
+          # gradle.properties 里的 aapt2FromMavenOverride 指向本机（QEMU 模拟）路径
+          # /opt/android-sdk/...，CI 上不存在会导致 "Specified AAPT2 executable does not exist"。
+          # 删掉这一行，让 AGP 从 Maven 拉取与 runner 平台匹配的 aapt2。
+          sed -i '/^android\.aapt2FromMavenOverride/d' gradle.properties
+          gradle assembleDebug --no-daemon -Dorg.gradle.vfs.watch=false
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

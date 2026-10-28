@@ -5,6 +5,7 @@ import com.nebula.aichat.ui.Palette;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
+import com.nebula.aichat.ui.NebAlert;
 import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -160,7 +161,7 @@ public class ApkWorkbenchPanel {
                 ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(act, 170));
         box.addView(logScroll, llp);
 
-        dialog = new AlertDialog.Builder(act)
+        dialog = new NebAlert.Builder(act)
                 .setTitle("APK 工作台")
                 .setView(sv)
                 .setPositiveButton("关闭", null)
@@ -202,7 +203,7 @@ public class ApkWorkbenchPanel {
             return;
         }
         final long[] size = ArtifactStore.sizeOf(src);
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("导出工程到「AgenCode」")
                 .setMessage(name + "\n" + size[0] + " 个文件，" + ApkWorkbench.fmtSize(size[1])
                         + "\n\n会整个复制到：" + ArtifactStore.writableSub(act, ArtifactStore.SUB_PROJECT).getAbsolutePath()
@@ -263,7 +264,7 @@ public class ApkWorkbenchPanel {
             if (n[0] > 0) sb.append("（").append(n[0]).append(" 个文件，").append(ApkWorkbench.fmtSize(n[1])).append("）");
             sb.append('\n');
         }
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("AgenCode")
                 .setMessage(sb.toString())
                 .setPositiveButton("打开文件夹", new DialogInterface.OnClickListener() {
@@ -317,7 +318,7 @@ public class ApkWorkbenchPanel {
         final List<File> apks = scanApks();
         if (apks.isEmpty()) {
             boolean noPerm = !ApkExporter.canWritePublicDir(act);
-            new AlertDialog.Builder(act)
+            new NebAlert.Builder(act)
                     .setTitle("没扫描到 APK")
                     .setMessage(noPerm
                             ? "当前没有「所有文件访问」权限，应用读不到「下载」目录里的文件，所以列表是空的。\n\n"
@@ -346,7 +347,7 @@ public class ApkWorkbenchPanel {
             File f = apks.get(i);
             names[i] = f.getName() + "  (" + ApkWorkbench.fmtSize(f.length()) + ")";
         }
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("选择要修改的 APK")
                 .setItems(names, new DialogInterface.OnClickListener() {
                     @Override
@@ -580,7 +581,7 @@ public class ApkWorkbenchPanel {
                 sb.append(i++).append(") ").append(p).append('\n');
             }
         }
-        AlertDialog.Builder b = new AlertDialog.Builder(act)
+        AlertDialog.Builder b = new NebAlert.Builder(act)
                 .setTitle(ck.installable ? "✅ 打包完成，可以直接安装" : "✅ 打包完成，但系统会拒装")
                 .setMessage(sb.toString().trim())
                 .setNegativeButton("关闭", null);
@@ -595,7 +596,7 @@ public class ApkWorkbenchPanel {
                                     act.runOnUiThread(new Runnable() {
                                         @Override
                                         public void run() {
-                                            new AlertDialog.Builder(act)
+                                            new NebAlert.Builder(act)
                                                     .setTitle(ok ? "✅ 安装成功" : "❌ 装不上，原因在这里")
                                                     .setMessage(message)
                                                     .setPositiveButton("知道了", null)
@@ -639,7 +640,7 @@ public class ApkWorkbenchPanel {
         for (int i = 0; i < list.size(); i++) {
             names[i] = list.get(i).getName() + "  (" + ApkWorkbench.fmtSize(list.get(i).length()) + ")";
         }
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("选择要安装的产物")
                 .setItems(names, new DialogInterface.OnClickListener() {
                     @Override
@@ -662,7 +663,7 @@ public class ApkWorkbenchPanel {
             }
             return;
         }
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("需要「所有文件访问」权限")
                 .setMessage("Android 11 起，向公共「下载」目录直接写文件必须授予这个权限。\n\n"
                         + "不开也能用：产物会通过 MediaStore 写进下载目录，只是可能延迟几秒才出现在文件管理器里。")
@@ -722,7 +723,7 @@ public class ApkWorkbenchPanel {
     }
 
     private void confirmDelete(final String name) {
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setMessage("删除工程 " + name + "？（不会影响已导出的 APK）")
                 .setPositiveButton("删除", new DialogInterface.OnClickListener() {
                     @Override

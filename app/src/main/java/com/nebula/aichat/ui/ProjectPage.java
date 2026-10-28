@@ -623,7 +623,7 @@ public class ProjectPage {
     }
 
     private void confirmDelete(final File dir) {
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("删除项目")
                 .setMessage("确定删除「" + dir.getName() + "」及其全部文件？")
                 .setPositiveButton("删除", new DialogInterface.OnClickListener() {
@@ -701,7 +701,7 @@ public class ProjectPage {
         tv.setPadding(p, p, p, p);
         sv.addView(tv);
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle(dir.getName())
                 .setView(sv)
                 .setPositiveButton("终端打开", new DialogInterface.OnClickListener() {
@@ -775,7 +775,7 @@ public class ProjectPage {
     private void showTemplateDialog() {
         final String[] items = {"空项目", "Android 工程骨架", "网页（HTML/CSS/JS）",
                 "Python 脚本", "Shell 工具箱"};
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("选择模板")
                 .setItems(items, new DialogInterface.OnClickListener() {
                     @Override
@@ -794,7 +794,7 @@ public class ProjectPage {
         int p = Ui.dp(act, 16);
         et.setPadding(p, Ui.dp(act, 8), p, Ui.dp(act, 8));
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("项目名称")
                 .setView(et)
                 .setPositiveButton("创建", new DialogInterface.OnClickListener() {

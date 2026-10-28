@@ -1,5 +1,6 @@
 package com.nebula.aichat;
 
+import com.nebula.aichat.ui.NebAlert;
 import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -149,7 +150,7 @@ public class DiagActivity extends AppCompatActivity {
         }
 
         TextView clear = miniBtn("清空全部日志", false);
-        clear.setOnClickListener(v -> new AlertDialog.Builder(this)
+        clear.setOnClickListener(v -> new NebAlert.Builder(this)
                 .setTitle("清空诊断日志")
                 .setMessage("会删除所有 crash / anr / diag 记录，删掉后就查不了旧问题了。确定？")
                 .setPositiveButton("清空", (d, w) -> {
@@ -222,7 +223,7 @@ public class DiagActivity extends AppCompatActivity {
         tv.setPadding(dp(14), dp(10), dp(14), dp(10));
         sv.addView(tv);
 
-        new AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle(f.getName())
                 .setView(sv)
                 .setPositiveButton("关闭", null)

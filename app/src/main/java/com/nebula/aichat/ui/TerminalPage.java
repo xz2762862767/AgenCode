@@ -558,7 +558,7 @@ public class TerminalPage {
         String alpineLabel = "内置 Alpine Linux" + (linux.isInstalled() ? "" : "（未安装，点选后安装）");
         final String[] items = {"本地（手机 toybox shell）", alpineLabel, "远程（HTTP 执行服务）"};
         int checked = "alpine".equals(settings.execMode) ? 1 : ("remote".equals(settings.execMode) ? 2 : 0);
-        AlertDialog.Builder b = new AlertDialog.Builder(act);
+        AlertDialog.Builder b = new NebAlert.Builder(act);
         b.setTitle("执行方式");
         b.setSingleChoiceItems(items, checked, new android.content.DialogInterface.OnClickListener() {
             @Override
@@ -610,7 +610,7 @@ public class TerminalPage {
         box.addView(et);
         box.addView(token);
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("远程执行配置")
                 .setView(box)
                 .setPositiveButton("保存", new android.content.DialogInterface.OnClickListener() {
@@ -983,7 +983,7 @@ public class TerminalPage {
     /** 长按输出区：复制全部 / 清屏 */
     private void showOutMenu() {
         try {
-            new AlertDialog.Builder(act)
+            new NebAlert.Builder(act)
                     .setTitle("终端输出")
                     .setItems(new String[]{"复制全部输出", "清屏"},
                             new android.content.DialogInterface.OnClickListener() {

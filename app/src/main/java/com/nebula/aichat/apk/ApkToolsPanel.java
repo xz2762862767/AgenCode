@@ -2,6 +2,7 @@ package com.nebula.aichat.apk;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import com.nebula.aichat.ui.NebAlert;
 import android.app.Dialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -120,7 +121,7 @@ public class ApkToolsPanel {
         }));
         root.addView(actions);
 
-        dialog = new AlertDialog.Builder(act)
+        dialog = new NebAlert.Builder(act)
                 .setTitle("APK 工具")
                 .setView(sv)
                 .setPositiveButton("关闭", null)
@@ -347,7 +348,7 @@ public class ApkToolsPanel {
             }
         } catch (Exception ignored) {
         }
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("处理完成")
                 .setMessage("输出文件：\n" + pub.getAbsolutePath()
                         + "\n\n是否导出到手机下载目录？")

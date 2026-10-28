@@ -5,6 +5,7 @@ import com.nebula.aichat.ui.Palette;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.AlertDialog;
+import com.nebula.aichat.ui.NebAlert;
 import android.widget.CompoundButton;
 import androidx.appcompat.widget.SwitchCompat;
 import android.app.Dialog;
@@ -771,7 +772,7 @@ public class MainActivity extends AppCompatActivity {
             sb.append("总余额：").append(r.total.isEmpty() ? "—" : r.total).append("\n");
             sb.append("充值余额：").append(r.topUp.isEmpty() ? "—" : r.topUp).append("\n");
             sb.append("赠送余额：").append(r.granted.isEmpty() ? "—" : r.granted);
-            new android.app.AlertDialog.Builder(MainActivity.this)
+            new NebAlert.Builder(MainActivity.this)
                     .setTitle("DeepSeek 账户余额")
                     .setMessage(sb.toString())
                     .setPositiveButton("关闭", null)
@@ -1799,7 +1800,9 @@ public class MainActivity extends AppCompatActivity {
                                   final String pkgToUninstall) {
         String text = body == null ? "" : body.trim();
         if (text.isEmpty()) text = "系统没有返回更具体的原因。";
-        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this)
+        // 变量声明用父类型：链式 setXxx 返回的是 AlertDialog.Builder，
+        // 运行时对象仍是 NebAlert.Builder，show() 的虚分派会走到子类覆盖版本
+        AlertDialog.Builder b = new NebAlert.Builder(this)
                 .setTitle(title)
                 .setMessage(text)
                 .setPositiveButton("知道了", null);
@@ -2333,7 +2336,7 @@ public class MainActivity extends AppCompatActivity {
         stopSpeak();
         if (ttsFailNotified) return;
         ttsFailNotified = true;
-        new AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle("朗读不可用")
                 .setMessage(why + "。\n\n本机可能未安装语音引擎（TTS）或中文语音包。"
                         + "可在系统「设置 → 无障碍 → 文字转语音输出」中选择引擎并下载中文语音数据。")
@@ -2437,7 +2440,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 items.add("删除这条");
                 final String[] arr = items.toArray(new String[0]);
-                new android.app.AlertDialog.Builder(MainActivity.this)
+                new NebAlert.Builder(MainActivity.this)
                         .setTitle("这条消息")
                         .setItems(arr, (d, which) -> {
                             try {
@@ -2652,7 +2655,7 @@ public class MainActivity extends AppCompatActivity {
         eng.setOnClickListener(v -> chooseSearchEngine());
         box.addView(eng);
 
-        new AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle("联网与浏览")
                 .setView(box)
                 .setPositiveButton("完成", null)
@@ -2699,7 +2702,7 @@ public class MainActivity extends AppCompatActivity {
     private void chooseSearchEngine() {
         final String[] items = {"Bing（国内可直连，推荐）", "DuckDuckGo（国内通常无法直连）"};
         int cur = WebSearch.ENGINE_DDG.equalsIgnoreCase(settings.searchEngine) ? 1 : 0;
-        new AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle("联网搜索引擎")
                 .setSingleChoiceItems(items, cur, (d, which) -> {
                     settings.searchEngine = which == 1 ? WebSearch.ENGINE_DDG : WebSearch.ENGINE_BING;
@@ -4610,7 +4613,7 @@ public class MainActivity extends AppCompatActivity {
         String body = "工具：" + toolRowNames.get(i)
                 + "\n\n参数：\n" + (args == null || args.isEmpty() ? "（无）" : args)
                 + "\n\n结果：\n" + (detail == null || detail.isEmpty() ? "（还没返回）" : detail);
-        new AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle("工具调用详情")
                 .setMessage(body)
                 .setPositiveButton("复制", (dd, ww) -> copyText(body, "已复制"))
@@ -6409,7 +6412,7 @@ public class MainActivity extends AppCompatActivity {
     private void pickOne(String title, String[] items, int checked,
                          android.content.DialogInterface.OnClickListener l) {
         if (items == null || items.length == 0) return;
-        new android.app.AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle(title)
                 .setSingleChoiceItems(items, Math.max(0, checked), l)
                 .setNegativeButton("取消", null)
@@ -6828,7 +6831,7 @@ public class MainActivity extends AppCompatActivity {
 
     /** 长按自定义模型：删掉它（不影响当前正在用的设置） */
     private void confirmRemoveModel(final String name) {
-        new android.app.AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle("删除自定义模型")
                 .setMessage("把「" + name + "」从列表里移除？\n只是不再显示，随时可以重新添加。")
                 .setNegativeButton("取消", null)
@@ -7366,7 +7369,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void confirmDelete(final Dialog host, final Conversation c) {
-        new AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle("删除会话")
                 .setMessage("「" + (Conversation.cleanTitle(c.title).isEmpty()
                         ? "新对话" : Conversation.cleanTitle(c.title)) + "」删除后无法恢复，确定吗？")

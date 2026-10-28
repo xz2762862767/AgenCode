@@ -4,6 +4,7 @@ import com.nebula.aichat.ui.Palette;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import com.nebula.aichat.ui.NebAlert;
 import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -63,7 +64,7 @@ public class SkillPanel {
         box.setPadding(p, p, p, Ui.dp(act, 12));
         sv.addView(box);
 
-        dialog = new AlertDialog.Builder(act)
+        dialog = new NebAlert.Builder(act)
                 .setTitle("技能")
                 .setView(sv)
                 .setPositiveButton("关闭", null)
@@ -299,7 +300,7 @@ public class SkillPanel {
     }
 
     private void confirmDelete(final SkillStore.Skill s) {
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("删除技能")
                 .setMessage("「" + s.name + "」及其目录下的所有文件都会被删除，无法恢复。")
                 .setPositiveButton("删除", new DialogInterface.OnClickListener() {
@@ -357,7 +358,7 @@ public class SkillPanel {
                     }
                 }));
 
-        holder[0] = new AlertDialog.Builder(act)
+        holder[0] = new NebAlert.Builder(act)
                 .setTitle("导入技能")
                 .setView(col)
                 .setNegativeButton("关闭", new DialogInterface.OnClickListener() {
@@ -474,7 +475,7 @@ public class SkillPanel {
         form.addView(sv, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(act, 220)));
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("粘贴导入")
                 .setView(form)
                 .setPositiveButton("导入", new DialogInterface.OnClickListener() {
@@ -520,7 +521,7 @@ public class SkillPanel {
             SkillStore.Builtin b = list.get(i);
             items[i] = b.name + (b.installed(act) ? "（已添加）" : " — " + b.desc);
         }
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("内置技能库")
                 .setItems(items, new DialogInterface.OnClickListener() {
                     @Override
@@ -576,7 +577,7 @@ public class SkillPanel {
         ScrollView sv = new ScrollView(act);
         sv.addView(et);
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle(s.name + " · SKILL.md")
                 .setView(sv)
                 .setPositiveButton("保存", new DialogInterface.OnClickListener() {
@@ -622,7 +623,7 @@ public class SkillPanel {
         form.addView(Ui.text(act, "何时使用", 11f, Palette.c(0xFF8B97A9)));
         form.addView(etDesc);
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("新建技能")
                 .setView(form)
                 .setPositiveButton("创建", new DialogInterface.OnClickListener() {
@@ -671,7 +672,7 @@ public class SkillPanel {
         int p = Ui.dp(act, 14);
         tv.setPadding(p, p, p, p);
         sv.addView(tv);
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("将注入提示词的内容（" + inject.length() + " 字）")
                 .setView(sv)
                 .setPositiveButton("复制", new DialogInterface.OnClickListener() {

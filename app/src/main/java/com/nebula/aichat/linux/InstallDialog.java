@@ -2,6 +2,7 @@ package com.nebula.aichat.linux;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import com.nebula.aichat.ui.NebAlert;
 import android.graphics.Typeface;
 import android.view.Gravity;
 import android.view.View;
@@ -74,7 +75,7 @@ public final class InstallDialog {
         tv.setPadding(p2, p2, p2, p2);
         tv.setTextIsSelectable(true);
         sv.addView(tv);
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("安装日志")
                 .setView(sv)
                 .setPositiveButton("关闭", null)
@@ -137,7 +138,7 @@ public final class InstallDialog {
 
         bar.setVisibility(env.isInstalled() ? View.GONE : View.VISIBLE);
 
-        final AlertDialog dlg = new AlertDialog.Builder(act)
+        final AlertDialog dlg = new NebAlert.Builder(act)
                 .setTitle("内置 Linux 环境")
                 .setView(box)
                 .setPositiveButton("立即安装", null)

@@ -4,6 +4,7 @@ import com.nebula.aichat.ui.Palette;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import com.nebula.aichat.ui.NebAlert;
 import android.app.Dialog;
 import android.content.DialogInterface;
 import android.text.InputType;
@@ -52,7 +53,7 @@ public class McpPanel {
         box.setPadding(p, p, p, Ui.dp(act, 12));
         sv.addView(box);
 
-        dialog = new AlertDialog.Builder(act)
+        dialog = new NebAlert.Builder(act)
                 .setTitle("MCP 服务器")
                 .setView(sv)
                 .setPositiveButton("添加", new DialogInterface.OnClickListener() {
@@ -180,7 +181,7 @@ public class McpPanel {
         form.addView(Ui.text(act, "令牌", 11f, Palette.c(0xFF8B97A9)));
         form.addView(etToken);
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle(existing == null ? "添加 MCP 服务器" : "编辑服务器")
                 .setView(form)
                 .setPositiveButton("保存", new DialogInterface.OnClickListener() {
@@ -305,7 +306,7 @@ public class McpPanel {
             list.addView(card);
         }
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("工具 · " + s.label())
                 .setView(sv)
                 .setPositiveButton("关闭", null)
@@ -329,7 +330,7 @@ public class McpPanel {
         ScrollView sv = new ScrollView(act);
         sv.addView(et);
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("调用 " + name)
                 .setMessage("参数（JSON 对象）")
                 .setView(sv)
@@ -375,7 +376,7 @@ public class McpPanel {
                         int p = Ui.dp(act, 14);
                         tv.setPadding(p, p, p, p);
                         sv.addView(tv);
-                        new AlertDialog.Builder(act)
+                        new NebAlert.Builder(act)
                                 .setTitle(name + " 结果")
                                 .setView(sv)
                                 .setPositiveButton("关闭", null)

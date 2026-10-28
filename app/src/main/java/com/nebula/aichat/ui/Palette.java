@@ -83,16 +83,22 @@ public final class Palette {
         return light;
     }
 
+    /**
+     * 以「这个 Context 的真实主题」为准，静态 light 只在拿不到主题属性时兜底。
+     * 旧实现是 light || isLightAttr(c)，静态标志一旦错位（切主题后旧页面复用、
+     * 未调 apply 的 Activity），深色页面会被判成浅色，整页白底白字。
+     */
     public static boolean isLight(Context c) {
-        return light || isLightAttr(c);
+        Boolean real = isLightAttrOrNull(c);
+        return real != null ? real : light;
     }
 
-    /** 直接看主题里的背景亮度，避免静态标志与实际主题不一致 */
-    private static boolean isLightAttr(Context c) {
-        if (c == null) return light;
+    /** 直接看主题里的背景亮度；拿不到属性时返回 null，由调用方兜底 */
+    private static Boolean isLightAttrOrNull(Context c) {
+        if (c == null || c.getTheme() == null) return null;
         TypedValue tv = TV.get();
         tv.type = TypedValue.TYPE_NULL;
-        if (!c.getTheme().resolveAttribute(R.attr.neb_bg, tv, true)) return light;
+        if (!c.getTheme().resolveAttribute(R.attr.neb_bg, tv, true)) return null;
         return luminance(tv.data) > 0.5f;
     }
 
@@ -108,7 +114,8 @@ public final class Palette {
     public static int c(int argb) {
         // 以当前 Activity 的真实主题为准；拿不到时退回静态标志
         Activity a = actRef == null ? null : actRef.get();
-        boolean isLight = a != null ? isLightAttr(a) : light;
+        Boolean real = isLightAttrOrNull(a);
+        boolean isLight = real != null ? real : light;
         return isLight ? map(argb) : argb;
     }
 
@@ -119,7 +126,8 @@ public final class Palette {
      */
     public static int syntax(int argb) {
         Activity a = actRef == null ? null : actRef.get();
-        boolean isLight = a != null ? isLightAttr(a) : light;
+        Boolean real = isLightAttrOrNull(a);
+        boolean isLight = real != null ? real : light;
         if (!isLight) return argb;
         int alpha = (argb >>> 24) & 0xFF;
         float[] hsv = new float[3];
@@ -132,7 +140,8 @@ public final class Palette {
 
     /** 需要按 context 判断主题时用这个版本（跨主题缓存的视图） */
     public static int c(Context ctx, int argb) {
-        return isLightAttr(ctx) ? map(argb) : argb;
+        Boolean real = isLightAttrOrNull(ctx);
+        return (real != null ? real : light) ? map(argb) : argb;
     }
 
     /** 纯函数：深色色值 → 浅色对应色 */
@@ -144,9 +153,20 @@ public final class Palette {
         Color.RGBToHSV(r, g, b, hsv);
         float h = hsv[0], s = hsv[1], v = hsv[2];
         if (s > 0.30f && v > 0.35f) {
-            // 彩色：压暗一档，让它在白底上有足够对比，又不会变成纯黑
-            v = Math.max(0.32f, Math.min(0.90f, v * 0.62f));
-            s = Math.min(1f, s * 1.05f);
+            if (v < 0.55f) {
+                /*
+                 * 深彩色 —— 深色主题里几乎都是「背景 / 描边」（顶栏思考强度按钮、
+                 * 联网 chip 开启态的 #1E3A6B 等）。以前一律走压暗分支，v*0.62 后
+                 * 反而更深（#1E3A6B → #172C52），浅色主题下看着像「根本没变」。
+                 * 这里改为保留色相、提亮成淡彩底，深色文字压在上面依然清楚。
+                 */
+                v = 0.95f;
+                s = Math.min(0.24f, s * 0.32f);
+            } else {
+                // 浅彩色 —— 文字 / 图标：压暗，白底和淡彩底上都够对比
+                v = Math.max(0.26f, Math.min(0.88f, v * 0.45f));
+                s = Math.min(1f, s * 1.14f);
+            }
         } else {
             // 灰阶：亮度反转（深色主题里的浅字 → 深字，深底 → 浅底）
             v = 1f - v * 0.90f;

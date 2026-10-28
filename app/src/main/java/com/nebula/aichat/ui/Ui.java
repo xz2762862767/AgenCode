@@ -104,7 +104,7 @@ public class Ui {
         LinearLayout box = new LinearLayout(c);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setBackground(roundRect(c, Palette.isLight(c) ? 0xFFFFFFFF : Palette.c(0xFF161B24),
-                Palette.isLight(c) ? Palette.c(0xFFE3E8F1) : Palette.c(0xFF2A3240), 12f));
+                Palette.isLight(c) ? 0xFFE3E8F1 : Palette.c(0xFF2A3240), 12f));
         int p = dp(c, 12);
         box.setPadding(p, p, p, p);
         return box;
@@ -151,7 +151,7 @@ public class Ui {
 
     public static TextView primaryChip(Context c, String s, View.OnClickListener l) {
         return Palette.isLight(c)
-                ? chip(c, s, Palette.c(0xFFDCE8FF), Palette.c(0xFF2A61DA), l)
+                ? chip(c, s, 0xFFDCE8FF, 0xFF2A61DA, l)
                 : chip(c, s, Palette.c(0xFF1E3A6B), Palette.c(0xFF9DC0FF), l);
     }
 
@@ -169,7 +169,7 @@ public class Ui {
 
     public static TextView ghostChip(Context c, String s, View.OnClickListener l) {
         return Palette.isLight(c)
-                ? chip(c, s, Palette.c(0xFFEDF1F8), Palette.c(0xFF3C4A5E), l)
+                ? chip(c, s, 0xFFEDF1F8, 0xFF3C4A5E, l)
                 : chip(c, s, Palette.c(0xFF1E2530), Palette.c(0xFFB9C5D6), l);
     }
 
@@ -188,7 +188,7 @@ public class Ui {
         TextView tv = text(c, s, 11f, Palette.dim(c));
         tv.setPadding(dp(c, 10), dp(c, 3), dp(c, 10), dp(c, 3));
         tv.setBackground(Palette.isLight(c)
-                ? roundRect(c, Palette.c(0x0F000000), Palette.c(0xFFD8DFEA), 9f)
+                ? roundRect(c, 0x0F000000, 0xFFD8DFEA, 9f)
                 : roundRect(c, Palette.c(0x14FFFFFF), 0x2E3A4C, 9f));
         tv.setClickable(true);
         tv.setFocusable(true);

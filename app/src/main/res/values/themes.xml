@@ -24,6 +24,7 @@
 
         <!-- 弹窗/抽屉继承弹窗主题，才能解析到 neb_* 语义色 -->
         <item name="android:dialogTheme">@style/NebDialog</item>
+        <item name="alertDialogTheme">@style/NebDialog</item>
         <item name="android:alertDialogTheme">@style/NebDialog</item>
     </style>
 
@@ -41,6 +42,7 @@
         <item name="neb_stroke">@color/stroke_black</item>
         <item name="neb_code">@color/code_black</item>
         <item name="android:dialogTheme">@style/NebDialogBlack</item>
+        <item name="alertDialogTheme">@style/NebDialogBlack</item>
         <item name="android:alertDialogTheme">@style/NebDialogBlack</item>
     </style>
 
@@ -69,6 +71,7 @@
         <item name="neb_dim">@color/text_dim_light</item>
         <item name="neb_code">@color/code_light</item>
         <item name="android:dialogTheme">@style/NebDialogLight</item>
+        <item name="alertDialogTheme">@style/NebDialogLight</item>
         <item name="android:alertDialogTheme">@style/NebDialogLight</item>
     </style>
 
@@ -101,12 +104,15 @@
     <!-- ===== 弹窗主题：与主主题一一对应 ===== -->
     <!-- 弹窗独立于 Activity 主题，必须自己带 neb_* 语义色，否则 new Dialog(this)
          会落到 AppCompat 默认弹窗主题，抽屉/面板里的 ?attr/neb_bg 全部解析不到 -->
+
     <style name="NebDialog" parent="Theme.AppCompat.Dialog">
         <item name="colorAccent">@color/accent</item>
         <item name="android:textColorPrimary">@color/text</item>
         <item name="android:textColorSecondary">@color/text_dim</item>
         <item name="android:textColorHint">@color/text_dim</item>
         <item name="android:colorBackground">@color/surface</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:colorBackgroundFloating">@color/surface</item>
         <item name="neb_bg">@color/bg</item>
         <item name="neb_surface">@color/surface</item>
         <item name="neb_surface2">@color/surface2</item>
@@ -121,6 +127,8 @@
         <item name="android:textColorPrimary">@color/text</item>
         <item name="android:textColorSecondary">@color/text_dim</item>
         <item name="android:colorBackground">@color/surface_black</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:colorBackgroundFloating">@color/surface_black</item>
         <item name="neb_bg">@color/bg_black</item>
         <item name="neb_surface">@color/surface_black</item>
         <item name="neb_surface2">@color/surface2_black</item>
@@ -137,6 +145,8 @@
         <item name="android:textColorSecondary">@color/text_dim_light</item>
         <item name="android:textColorHint">@color/text_dim_light</item>
         <item name="android:colorBackground">@color/surface_light</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:colorBackgroundFloating">@color/surface_light</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="neb_bg">@color/bg_light</item>
         <item name="neb_surface">@color/surface_light</item>

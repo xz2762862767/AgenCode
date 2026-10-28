@@ -443,7 +443,7 @@ public class EnvPage {
         logView.setPadding(Ui.dp(act, 12), Ui.dp(act, 10), Ui.dp(act, 12), Ui.dp(act, 10));
         ScrollView sv = new ScrollView(act);
         sv.addView(logView);
-        final AlertDialog dlg = new AlertDialog.Builder(act)
+        final AlertDialog dlg = new NebAlert.Builder(act)
                 .setTitle(mode == 1 ? "只装 Java 运行时（≈60MB）"
                         : mode == 2 ? "安装全部工具链" : "补齐基础工具")
                 .setView(sv)
@@ -598,6 +598,6 @@ public class EnvPage {
         int p = Ui.dp(act, 14);
         tv.setPadding(p, p, p, p);
         sv.addView(tv);
-        new AlertDialog.Builder(act).setTitle(title).setView(sv).setPositiveButton("关闭", null).show();
+        new NebAlert.Builder(act).setTitle(title).setView(sv).setPositiveButton("关闭", null).show();
     }
 }

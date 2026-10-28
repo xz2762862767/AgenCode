@@ -665,7 +665,7 @@ public class SandboxPage {
         sv.addView(et, new ScrollView.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle(f.getName())
                 .setView(sv)
                 .setPositiveButton("保存", new DialogInterface.OnClickListener() {
@@ -701,7 +701,7 @@ public class SandboxPage {
         } else {
             items = new String[]{"编辑", "用系统应用打开", "导出到…", "重命名", "删除"};
         }
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle(f.getName())
                 .setItems(items, new DialogInterface.OnClickListener() {
                     @Override
@@ -801,7 +801,7 @@ public class SandboxPage {
         int p = Ui.dp(act, 16);
         et.setPadding(p, Ui.dp(act, 8), p, Ui.dp(act, 8));
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle(dir ? "新建文件夹" : "新建文件")
                 .setView(et)
                 .setPositiveButton("创建", new DialogInterface.OnClickListener() {
@@ -835,7 +835,7 @@ public class SandboxPage {
         int p = Ui.dp(act, 16);
         et.setPadding(p, Ui.dp(act, 8), p, Ui.dp(act, 8));
 
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("重命名")
                 .setView(et)
                 .setPositiveButton("确定", new DialogInterface.OnClickListener() {
@@ -855,7 +855,7 @@ public class SandboxPage {
     }
 
     private void confirmDelete(final File f) {
-        new AlertDialog.Builder(act)
+        new NebAlert.Builder(act)
                 .setTitle("删除")
                 .setMessage("确定删除「" + f.getName() + "」？" + (f.isDirectory() ? "\n（包含其中所有内容）" : ""))
                 .setPositiveButton("删除", new DialogInterface.OnClickListener() {

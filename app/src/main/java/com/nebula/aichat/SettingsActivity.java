@@ -1,5 +1,6 @@
 package com.nebula.aichat;
 
+import com.nebula.aichat.ui.NebAlert;
 import android.content.Intent;
 import android.app.Dialog;
 import android.content.res.ColorStateList;
@@ -89,7 +90,7 @@ public class SettingsActivity extends AppCompatActivity {
         etSystem.setText(settings.systemPrompt);
         // 一键回填内置提示词（用户改乱了可以立刻回到出厂人设）
         findViewById(R.id.tvResetSystem).setOnClickListener(v ->
-                new android.app.AlertDialog.Builder(this)
+                new NebAlert.Builder(this)
                         .setTitle("恢复内置系统提示词")
                         .setMessage("输入框内容会替换为「AgenCode」的内置提示词，你当前的修改将被覆盖。\n"
                                 + "点保存后生效。")
@@ -412,7 +413,7 @@ public class SettingsActivity extends AppCompatActivity {
             Toast.makeText(this, "缓存已经是空的", Toast.LENGTH_SHORT).show();
             return;
         }
-        new AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle("清理缓存")
                 .setMessage("将清掉 " + human(size) + " 的临时文件（不会删除会话、背景图和已导出的产物）。继续？")
                 .setNegativeButton("取消", null)
@@ -431,7 +432,7 @@ public class SettingsActivity extends AppCompatActivity {
             Toast.makeText(this, "还没有会话记录", Toast.LENGTH_SHORT).show();
             return;
         }
-        new AlertDialog.Builder(this)
+        new NebAlert.Builder(this)
                 .setTitle("清空全部会话")
                 .setMessage("将删除全部 " + n + " 个会话记录，删除后无法恢复。确定继续？")
                 .setNegativeButton("取消", null)
@@ -988,7 +989,7 @@ public class SettingsActivity extends AppCompatActivity {
                 tvPickModel.setEnabled(true);
                 tvPickModel.setText(oldLabel);
                 tvModelHint.setText("拉取失败，可手动输入");
-                new AlertDialog.Builder(SettingsActivity.this)
+                new NebAlert.Builder(SettingsActivity.this)
                         .setTitle("拉取模型失败")
                         .setMessage(message + "\n\n请检查：\n· API Key 是否正确\n· 接口地址是否为 OpenAI 兼容格式（如 https://api.deepseek.com/v1）\n\n也可以直接在输入框手动填写模型名称。")
                         .setPositiveButton("知道了", null)

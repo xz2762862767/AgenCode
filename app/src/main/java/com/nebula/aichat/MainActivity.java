@@ -44,6 +44,7 @@ import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.VelocityTracker;
 import android.view.ViewConfiguration;
 import android.view.ViewParent;
 import android.view.animation.AccelerateDecelerateInterpolator;
@@ -7293,6 +7294,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private final SlideListener listener;
+        private final VelocityTracker vt = VelocityTracker.obtain();
         private float downX;
         private float downY;
         private boolean dragging;
@@ -7306,20 +7308,30 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public boolean dispatchTouchEvent(MotionEvent ev) {
             final int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+            final float density = getResources().getDisplayMetrics().density;
             switch (ev.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     downX = ev.getX();
                     downY = ev.getY();
                     dragging = false;
                     decided = false;
+                    vt.clear();
                     break;
                 case MotionEvent.ACTION_MOVE: {
+                    vt.addMovement(ev);
                     float dx = ev.getX() - downX;
                     float dy = ev.getY() - downY;
                     if (!decided) {
-                        if (dx < -slop && Math.abs(dx) > Math.abs(dy) * 1.4f) {
+                        // 1.4 太苛刻：手指稍微斜着滑就被判成竖向、手势整个失效，放到 1.1
+                        if (dx < -slop && Math.abs(dx) > Math.abs(dy) * 1.1f) {
                             decided = true;
                             dragging = true;
+                            // 已经被子 View 吃掉的 DOWN 得补一个 CANCEL，
+                            // 否则按钮会卡在按下高亮状态
+                            MotionEvent cancel = MotionEvent.obtain(ev);
+                            cancel.setAction(MotionEvent.ACTION_CANCEL);
+                            super.dispatchTouchEvent(cancel);
+                            cancel.recycle();
                         } else if (Math.abs(dy) > slop) {
                             decided = true;      // 竖向：让 ScrollView 正常滚
                         }
@@ -7335,10 +7347,20 @@ public class MainActivity extends AppCompatActivity {
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL: {
                     boolean was = dragging;
+                    boolean canceled = ev.getActionMasked() == MotionEvent.ACTION_CANCEL;
+                    float dx = ev.getX() - downX;
                     dragging = false;
                     decided = false;
                     if (was) {
-                        listener.onRelease(ev.getX() - downX < -getWidth() * 0.3f);
+                        vt.addMovement(ev);
+                        vt.computeCurrentVelocity(1000);
+                        float vx = canceled ? 0f : vt.getXVelocity();
+                        int wd = getWidth();
+                        // 两条路都收：拖过抽屉宽 15%（原来 30%，得拖 90dp 才响应），
+                        // 或者向左快速甩一下（400dp/s）——后者才是「灵敏」的关键
+                        boolean commit = !canceled
+                                && (dx < -wd * 0.15f || vx < -400f * density);
+                        listener.onRelease(commit);
                         return true;
                     }
                     break;

@@ -5885,7 +5885,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(Ui.roundRect(this, Palette.surface(this), Palette.stroke(this), 0f));
-        root.setPadding(dp(18), dp(18), dp(18), dp(13));
+        root.setPadding(dp(18), dp(18), dp(18), dp(16));
         root.setClipChildren(false);
         root.setClipToPadding(false);   // 主按钮已改为内部渐变，留着这行防将来加阴影再被裁
 
@@ -6036,7 +6036,7 @@ public class MainActivity extends AppCompatActivity {
         root.addView(sv, svlp);
 
         // 列表底部留一点呼吸，别贴着弹窗下沿（不要太多，否则底部空一截）
-        listWrap.setPadding(0, 0, 0, dp(10));
+        listWrap.setPadding(0, 0, 0, dp(14));
 
         rebuildModelList(composeModelList(lastServerModels), Settings.effectiveModel(settings),
                 settings.isConfigured() ? "正在拉取服务器模型列表…" : null);
@@ -6540,7 +6540,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(Ui.roundRect(this, Palette.surface(this), Palette.stroke(this), 0f));
-        root.setPadding(dp(18), dp(18), dp(18), dp(13));
+        root.setPadding(dp(18), dp(18), dp(18), dp(16));
         root.setClipChildren(false);
         root.setClipToPadding(false);   // 主按钮已改为内部渐变，留着这行防将来加阴影再被裁
 
@@ -6859,7 +6859,9 @@ public class MainActivity extends AppCompatActivity {
                     android.view.View.MeasureSpec.makeMeasureSpec(0,
                             android.view.View.MeasureSpec.UNSPECIFIED));
             int contentH = root.getMeasuredHeight();
-            w.setLayout(dw, Math.min(contentH, (int) (hpx * 0.86f)));
+            // 只按内容高度走会太紧：按钮直接贴在弹窗底边，看着憋。留 22dp 呼吸，
+            // 同时兜住 86% 屏高的上限（body 不是 ScrollView，超屏没法滚）。
+            w.setLayout(dw, Math.min(contentH + dp(22), (int) (hpx * 0.86f)));
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
     }

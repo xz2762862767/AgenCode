@@ -5885,7 +5885,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(Ui.roundRect(this, Palette.surface(this), Palette.stroke(this), 0f));
-        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setPadding(dp(18), dp(18), dp(18), dp(13));
         root.setClipChildren(false);
         root.setClipToPadding(false);   // 主按钮已改为内部渐变，留着这行防将来加阴影再被裁
 
@@ -6035,8 +6035,8 @@ public class MainActivity extends AppCompatActivity {
         svlp.topMargin = dp(10);
         root.addView(sv, svlp);
 
-        // 列表底部留一点呼吸，别贴着弹窗下沿
-        listWrap.setPadding(0, 0, 0, dp(18));
+        // 列表底部留一点呼吸，别贴着弹窗下沿（不要太多，否则底部空一截）
+        listWrap.setPadding(0, 0, 0, dp(10));
 
         rebuildModelList(composeModelList(lastServerModels), Settings.effectiveModel(settings),
                 settings.isConfigured() ? "正在拉取服务器模型列表…" : null);
@@ -6540,7 +6540,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(Ui.roundRect(this, Palette.surface(this), Palette.stroke(this), 0f));
-        root.setPadding(dp(18), dp(18), dp(18), dp(18));
+        root.setPadding(dp(18), dp(18), dp(18), dp(13));
         root.setClipChildren(false);
         root.setClipToPadding(false);   // 主按钮已改为内部渐变，留着这行防将来加阴影再被裁
 
@@ -6849,9 +6849,17 @@ public class MainActivity extends AppCompatActivity {
         Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
-            // 铺满：高度按屏幕比例固定，字段多就在弹窗内部滚动
-            w.setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.92f),
-                    (int) (getResources().getDisplayMetrics().heightPixels * 0.86f));
+            // 高度跟内容走：字段就那么几项，固定 86% 屏高会在底部空出一大截。
+            // 内容真超一屏时才封顶到 86%（body 不是 ScrollView，超了只能靠这个上限兜住）。
+            int wpx = getResources().getDisplayMetrics().widthPixels;
+            int hpx = getResources().getDisplayMetrics().heightPixels;
+            int dw = (int) (wpx * 0.92f);
+            root.measure(android.view.View.MeasureSpec.makeMeasureSpec(dw,
+                            android.view.View.MeasureSpec.EXACTLY),
+                    android.view.View.MeasureSpec.makeMeasureSpec(0,
+                            android.view.View.MeasureSpec.UNSPECIFIED));
+            int contentH = root.getMeasuredHeight();
+            w.setLayout(dw, Math.min(contentH, (int) (hpx * 0.86f)));
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
     }

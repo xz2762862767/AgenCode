@@ -6701,7 +6701,7 @@ public class MainActivity extends AppCompatActivity {
                     chip.setPadding(dp(12), dp(8), dp(12), dp(8));
                     chip.setBackground(on
                             ? Ui.box(MainActivity.this, Palette.c(0x2E5B93FF), Palette.c(0x665B93FF), 11f, 1f)
-                            : Ui.box(MainActivity.this, 0x00000000, 0x2E3A4C, 11f, 1f));
+                            : Ui.box(MainActivity.this, 0x00000000, Palette.c(0xFF2E3A4C), 11f, 1f));
                     chip.setOnClickListener(v -> {
                         mdl[0] = m;
                         refresh[0].run();

@@ -19,16 +19,18 @@ import java.util.Set;
  */
 public final class CodeHighlighter {
 
-    // Tokyo Night 配色，与 App 深色底（#0B0E14）协调
-    private static final int C_KEYWORD = Color.parseColor("#BB9AF7"); // 紫
-    private static final int C_STRING  = Color.parseColor("#9ECE6A"); // 绿
-    private static final int C_COMMENT = Color.parseColor("#565F89"); // 暗蓝灰
-    private static final int C_NUMBER  = Color.parseColor("#FF9E64"); // 橙
-    private static final int C_TYPE    = Color.parseColor("#2AC3DE"); // 青
-    private static final int C_FUNC    = Color.parseColor("#7AA2F7"); // 蓝
-    private static final int C_ANNOT   = Color.parseColor("#E0AF68"); // 黄
-    private static final int C_TAG     = Color.parseColor("#7DCFFF"); // 标签
-    private static final int C_PROP    = Color.parseColor("#E0AF68"); // 属性名
+    // Tokyo Night 配色（深色底）。浅色主题下由 Palette.syntax() 压暗，
+    // 否则浅绿/浅黄/浅青画在白底上几乎不可见。
+    // 注意不能写成 static final int —— 那样类加载时求值，之后切主题也不会跟着变。
+    private static int C_KEYWORD() { return Palette.syntax(0xFFBB9AF7); } // 紫
+    private static int C_STRING()  { return Palette.syntax(0xFF9ECE6A); } // 绿
+    private static int C_COMMENT() { return Palette.syntax(0xFF565F89); } // 暗蓝灰
+    private static int C_NUMBER()  { return Palette.syntax(0xFFFF9E64); } // 橙
+    private static int C_TYPE()    { return Palette.syntax(0xFF2AC3DE); } // 青
+    private static int C_FUNC()    { return Palette.syntax(0xFF7AA2F7); } // 蓝
+    private static int C_ANNOT()   { return Palette.syntax(0xFFE0AF68); } // 黄
+    private static int C_TAG()     { return Palette.syntax(0xFF7DCFFF); } // 标签
+    private static int C_PROP()    { return Palette.syntax(0xFFE0AF68); } // 属性名
 
     /** 超过这个长度就不上色，避免超长代码卡顿 */
     private static final int MAX_LEN = 60000;
@@ -203,7 +205,7 @@ public final class CodeHighlighter {
             if (c == '/' && i + 1 < n && code.charAt(i + 1) == '*') {
                 int end = code.indexOf("*/", i + 2);
                 end = end < 0 ? n : end + 2;
-                mark(sb, i, end, C_COMMENT, true);
+                mark(sb, i, end, C_COMMENT(), true);
                 i = end;
                 continue;
             }
@@ -211,7 +213,7 @@ public final class CodeHighlighter {
             if (c == '/' && i + 1 < n && code.charAt(i + 1) == '/') {
                 int end = code.indexOf('\n', i);
                 end = end < 0 ? n : end;
-                mark(sb, i, end, C_COMMENT, true);
+                mark(sb, i, end, C_COMMENT(), true);
                 i = end;
                 continue;
             }
@@ -219,7 +221,7 @@ public final class CodeHighlighter {
             if (c == '#' && hashComment) {
                 int end = code.indexOf('\n', i);
                 end = end < 0 ? n : end;
-                mark(sb, i, end, C_COMMENT, true);
+                mark(sb, i, end, C_COMMENT(), true);
                 i = end;
                 continue;
             }
@@ -227,14 +229,14 @@ public final class CodeHighlighter {
             if (c == '-' && dashComment && i + 1 < n && code.charAt(i + 1) == '-') {
                 int end = code.indexOf('\n', i);
                 end = end < 0 ? n : end;
-                mark(sb, i, end, C_COMMENT, true);
+                mark(sb, i, end, C_COMMENT(), true);
                 i = end;
                 continue;
             }
             // 字符串
             if (c == '"' || c == '\'' || c == '`') {
                 int end = scanString(code, i, c);
-                mark(sb, i, end, C_STRING, false);
+                mark(sb, i, end, C_STRING(), false);
                 i = end;
                 continue;
             }
@@ -242,7 +244,7 @@ public final class CodeHighlighter {
             if (c == '@' && i + 1 < n && isIdentStart(code.charAt(i + 1))) {
                 int j = i + 1;
                 while (j < n && isIdentPart(code.charAt(j))) j++;
-                mark(sb, i, j, C_ANNOT, false);
+                mark(sb, i, j, C_ANNOT(), false);
                 i = j;
                 continue;
             }
@@ -253,7 +255,7 @@ public final class CodeHighlighter {
                         || code.charAt(j) == '.' || code.charAt(j) == '_')) {
                     j++;
                 }
-                mark(sb, i, j, C_NUMBER, false);
+                mark(sb, i, j, C_NUMBER(), false);
                 i = j;
                 continue;
             }
@@ -264,25 +266,25 @@ public final class CodeHighlighter {
                 String w = code.substring(i, j);
                 String probe = caseInsensitive ? w.toLowerCase(java.util.Locale.ROOT) : w;
                 if (kw.contains(probe)) {
-                    mark(sb, i, j, C_KEYWORD, false);
+                    mark(sb, i, j, C_KEYWORD(), false);
                 } else if ("true".equals(probe) || "false".equals(probe) || "null".equals(probe)
                         || "none".equals(probe) || "nil".equals(probe)
                         || "undefined".equals(probe)) {
-                    mark(sb, i, j, C_NUMBER, false);
+                    mark(sb, i, j, C_NUMBER(), false);
                 } else {
                     // 看后面第一个非空格字符，判断是函数调用还是属性名
                     int k = j;
                     while (k < n && (code.charAt(k) == ' ' || code.charAt(k) == '\t')) k++;
                     char next = k < n ? code.charAt(k) : 0;
                     if (next == '(') {
-                        mark(sb, i, j, C_FUNC, false);
+                        mark(sb, i, j, C_FUNC(), false);
                     } else if (next == ':' && colonIsProp) {
-                        mark(sb, i, j, C_PROP, false);
+                        mark(sb, i, j, C_PROP(), false);
                     } else if (isConstLike(w)) {
                         // MAX_LEN / NULL / PI 这类全大写常量用橙色，和类型区分开
-                        mark(sb, i, j, C_NUMBER, false);
+                        mark(sb, i, j, C_NUMBER(), false);
                     } else if (Character.isUpperCase(w.charAt(0)) && w.length() > 1) {
-                        mark(sb, i, j, C_TYPE, false);
+                        mark(sb, i, j, C_TYPE(), false);
                     }
                 }
                 i = j;
@@ -307,7 +309,7 @@ public final class CodeHighlighter {
                 int k = end;
                 while (k < n && Character.isWhitespace(code.charAt(k))) k++;
                 boolean isKey = k < n && code.charAt(k) == ':';
-                mark(sb, i, end, isKey ? C_TAG : C_STRING, false);
+                mark(sb, i, end, isKey ? C_TAG() : C_STRING(), false);
                 i = end;
                 continue;
             }
@@ -318,7 +320,7 @@ public final class CodeHighlighter {
                         || code.charAt(j) == '+' || code.charAt(j) == '-')) {
                     j++;
                 }
-                mark(sb, i, j, C_NUMBER, false);
+                mark(sb, i, j, C_NUMBER(), false);
                 i = j;
                 continue;
             }
@@ -327,9 +329,9 @@ public final class CodeHighlighter {
                 while (j < n && Character.isLetter(code.charAt(j))) j++;
                 String w = code.substring(i, j);
                 if ("true".equals(w) || "false".equals(w)) {
-                    mark(sb, i, j, C_KEYWORD, false);
+                    mark(sb, i, j, C_KEYWORD(), false);
                 } else if ("null".equals(w)) {
-                    mark(sb, i, j, C_NUMBER, false);
+                    mark(sb, i, j, C_NUMBER(), false);
                 }
                 i = j;
                 continue;
@@ -351,7 +353,7 @@ public final class CodeHighlighter {
                 if (code.startsWith("<!--", i)) {
                     int end = code.indexOf("-->", i);
                     end = end < 0 ? n : end + 3;
-                    mark(sb, i, end, C_COMMENT, true);
+                    mark(sb, i, end, C_COMMENT(), true);
                     i = end;
                     continue;
                 }
@@ -368,14 +370,14 @@ public final class CodeHighlighter {
                         || code.charAt(j) == '-')) {
                     j++;
                 }
-                if (j > ns) mark(sb, i, j, C_TAG, false);
+                if (j > ns) mark(sb, i, j, C_TAG(), false);
                 // 标签内的属性名/属性值
                 int k = j;
                 while (k < end) {
                     char d = code.charAt(k);
                     if (d == '"' || d == '\'') {
                         int q = Math.min(scanString(code, k, d), end);
-                        mark(sb, k, q, C_STRING, false);
+                        mark(sb, k, q, C_STRING(), false);
                         k = q;
                         continue;
                     }
@@ -386,7 +388,7 @@ public final class CodeHighlighter {
                                 || code.charAt(k) == '_' || code.charAt(k) == '.')) {
                             k++;
                         }
-                        mark(sb, as, k, C_PROP, false);
+                        mark(sb, as, k, C_PROP(), false);
                         continue;
                     }
                     k++;

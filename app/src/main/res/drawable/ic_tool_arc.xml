@@ -7,7 +7,7 @@
     <path
         android:fillColor="#00000000"
         android:pathData="M12,3.0 A9.0,9.0 0 0,1 21.0,12 A9.0,9.0 0 0,1 12,21.0 A9.0,9.0 0 0,1 3.0,12"
-        android:strokeColor="#FFFFFFFF"
+        android:strokeColor="?attr/neb_text"
         android:strokeLineCap="round"
         android:strokeWidth="1.9" />
 </vector>

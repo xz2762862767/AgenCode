@@ -7,13 +7,13 @@
     <path
         android:fillColor="#00000000"
         android:pathData="M12,3.0 A9.0,9.0 0 0,1 21.0,12 A9.0,9.0 0 0,1 12,21.0 A9.0,9.0 0 0,1 3.0,12 A9.0,9.0 0 0,1 12,3.0"
-        android:strokeColor="#FFFFFFFF"
+        android:strokeColor="?attr/neb_text"
         android:strokeLineCap="round"
         android:strokeWidth="1.7" />
     <!-- 启停符：实心方块。15dp 下空心方块只剩一圈细线，远看像个方框，
          实心才能一眼读出「已停止」。8.0 见方 + 1.7 圆角，
          圆角是必须的——纯直角在小尺寸下会显脏。 -->
     <path
-        android:fillColor="#FFFFFFFF"
+        android:fillColor="?attr/neb_text"
         android:pathData="M10.0,8.0 L14.0,8.0 A1.7,1.7 0 0,1 15.7,9.7 L15.7,13.7 A1.7,1.7 0 0,1 14.0,15.4 L10.0,15.4 A1.7,1.7 0 0,1 8.3,13.7 L8.3,9.7 A1.7,1.7 0 0,1 10.0,8.0 Z" />
 </vector>

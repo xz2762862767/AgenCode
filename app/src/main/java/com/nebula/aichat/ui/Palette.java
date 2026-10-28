@@ -62,6 +62,20 @@ public final class Palette {
         a.setTheme(themeRes);
         int idx = Math.max(0, Math.min(ACCENT_NAMES.length - 1, s.accent));
         if (idx != 0) a.getTheme().applyStyle(accentStyle(idx), true);
+        // setTheme() 是在 super.onCreate() 之后才调的，窗口背景此时仍是 Manifest 里声明的
+        // 默认（深色），页面加载 / 页面切换的瞬间会闪一下黑底，看着就像"主题没生效"。
+        // 这里把窗口背景同步成当前主题底色。
+        try {
+            TypedValue translucent = TV.get();
+            translucent.type = TypedValue.TYPE_NULL;
+            boolean isTranslucent = a.getTheme().resolveAttribute(
+                    android.R.attr.windowIsTranslucent, translucent, true) && translucent.data != 0;
+            android.view.Window w = a.getWindow();
+            if (w != null && !isTranslucent) {
+                w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(bg(a)));
+            }
+        } catch (Throwable ignore) {
+        }
     }
 
     /** 当前是否浅色主题（供非 Activity 的静态上下文判断） */
@@ -96,6 +110,24 @@ public final class Palette {
         Activity a = actRef == null ? null : actRef.get();
         boolean isLight = a != null ? isLightAttr(a) : light;
         return isLight ? map(argb) : argb;
+    }
+
+    /**
+     * 代码语法高亮色：浅色主题下比普通彩色压得更暗。
+     * 深色主题的配色（浅绿/浅黄/浅青）画在白底上对比度只有 1.5~2.5:1，等于看不见，
+     * 所以这里单独提高饱和度、压低亮度，保证白底上仍能分辨不同 token。
+     */
+    public static int syntax(int argb) {
+        Activity a = actRef == null ? null : actRef.get();
+        boolean isLight = a != null ? isLightAttr(a) : light;
+        if (!isLight) return argb;
+        int alpha = (argb >>> 24) & 0xFF;
+        float[] hsv = new float[3];
+        Color.RGBToHSV((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF, hsv);
+        hsv[2] = Math.max(0.20f, hsv[2] * 0.42f);   // 明显压暗
+        hsv[1] = Math.min(1f, hsv[1] * 1.30f);      // 提饱和，保住色相区分度
+        int rgb = Color.HSVToColor(hsv);
+        return (alpha << 24) | (rgb & 0x00FFFFFF);
     }
 
     /** 需要按 context 判断主题时用这个版本（跨主题缓存的视图） */

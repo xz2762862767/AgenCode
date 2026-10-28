@@ -7,19 +7,19 @@
     android:viewportWidth="24" android:viewportHeight="24">
 
     <path
-        android:strokeColor="#FFFFFFFF"
+        android:strokeColor="?attr/neb_text"
         android:strokeWidth="1.7"
         android:fillColor="#00000000"
         android:strokeLineCap="round"
         android:pathData="M12,3a9,9 0 1,0 0,18a9,9 0 1,0 0,-18z" />
     <path
-        android:strokeColor="#FFFFFFFF"
+        android:strokeColor="?attr/neb_text"
         android:strokeWidth="1.7"
         android:fillColor="#00000000"
         android:strokeLineCap="round"
         android:pathData="M3.2,9.2h17.6M3.2,14.8h17.6" />
     <path
-        android:strokeColor="#FFFFFFFF"
+        android:strokeColor="?attr/neb_text"
         android:strokeWidth="1.7"
         android:fillColor="#00000000"
         android:strokeLineCap="round"

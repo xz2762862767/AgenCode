@@ -946,7 +946,7 @@ public class MarkdownRenderer {
             box.addView(header);
 
             divider = new View(ctx);
-            divider.setBackgroundColor(Color.parseColor("#171E29"));
+            divider.setBackgroundColor(Palette.c(0xFF171E29));
             LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1) / 2));
             dlp.leftMargin = dp(12);
@@ -956,7 +956,7 @@ public class MarkdownRenderer {
             tvCode = new TextView(ctx);
             tvCode.setTypeface(Typeface.MONOSPACE);
             tvCode.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(11.5f, baseSp - 1.5f));
-            tvCode.setTextColor(Color.parseColor("#C8D3F5"));
+            tvCode.setTextColor(Palette.c(0xFFC8D3F5));
             tvCode.setLineSpacing(dp(4), 1.35f);
             tvCode.setTextIsSelectable(true);
             tvCode.setPadding(dp(10), dp(2), dp(10), dp(10));

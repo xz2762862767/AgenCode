@@ -73,24 +73,33 @@ public final class NebAlert {
     }
 
     /**
-     * 统一放宽对话框窗口。
+     * 统一收窄对话框窗口，两侧留出固定边距。
      *
-     * <p>AlertDialog 的宽度由主题里的 {@code windowMinWidthMajor} 决定，手机竖屏下通常只有
-     * 280dp 左右，比屏幕窄一大圈；内容一多就会频繁折行，看着局促。
+     * <p>AlertDialog 的宽度由主题里的 {@code windowMinWidthMajor} 决定，各 ROM 表现不一，
+     * 部分机型会直接铺满屏幕宽度。这里不用百分比，而是「屏幕宽度 - 两侧固定边距」，
+     * 无论屏幕多宽，左右都能稳定留出同样一道缝。
      *
-     * <p>这里直接按屏幕宽度的 92% 设窗口宽度（左右各留 4% 边距），并限制最大 560dp
-     * （Material 对对话框的推荐上限，防止平板/横屏下拉成一条横幅）。
-     * 高度保持 WRAP_CONTENT，由内容自己决定——内容少的对话框不会因此被拉出大片空白。
+     * <p>高度保持 WRAP_CONTENT，由内容自己决定——内容少的确认框不会出现大片空白。
      */
     public static void applyWidth(AlertDialog d) {
         if (d == null) return;
-        Window w = d.getWindow();
+        final Window w = d.getWindow();
         if (w == null) return;
         Context ctx = d.getContext();
         if (ctx == null) return;
         DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
-        int width = Math.min((int) (dm.widthPixels * 0.88f), dp(ctx, 560));
-        w.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
+        int width = dm.widthPixels - dp(ctx, 56);
+        width = Math.min(width, dp(ctx, 560));
+        final int finalW = width;
+        w.setLayout(finalW, WindowManager.LayoutParams.WRAP_CONTENT);
+        // create() 阶段窗口还没 attach 到 WindowManager，这次 setLayout 可能被随后的
+        // show() 覆盖（技能面板就是 create 后手动 show）。往 decorView 的消息队列再投一次，
+        // 等窗口真正上屏后再压一遍宽度；不用 setOnShowListener，避免顶掉业务侧的回调。
+        w.getDecorView().post(() -> {
+            if (d.isShowing()) {
+                w.setLayout(finalW, WindowManager.LayoutParams.WRAP_CONTENT);
+            }
+        });
     }
 
     private static int dp(Context c, float v) {

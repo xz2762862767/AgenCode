@@ -26,6 +26,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        # 该 action 偶发在 license 检查阶段返回非零退出码，但 SDK 实际可用；
+        # 不让它拖垮整个 job，后续 sdkmanager / 构建步骤会验证 SDK 是否正常
+        continue-on-error: true
 
       - name: Install SDK packages
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"

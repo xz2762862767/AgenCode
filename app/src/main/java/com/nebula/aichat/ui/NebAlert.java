@@ -2,7 +2,9 @@ package com.nebula.aichat.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.util.DisplayMetrics;
 import android.view.Window;
+import android.view.WindowManager;
 
 import com.nebula.aichat.R;
 
@@ -49,6 +51,7 @@ public final class NebAlert {
         public AlertDialog create() {
             AlertDialog d = super.create();
             applyBackground(d);
+            applyWidth(d);
             return d;
         }
 
@@ -56,6 +59,7 @@ public final class NebAlert {
         public AlertDialog show() {
             AlertDialog d = super.show();
             applyBackground(d);
+            applyWidth(d);
             return d;
         }
     }
@@ -66,5 +70,30 @@ public final class NebAlert {
         Window w = d.getWindow();
         if (w == null) return;
         w.setBackgroundDrawableResource(R.drawable.neb_dialog_bg);
+    }
+
+    /**
+     * 统一放宽对话框窗口。
+     *
+     * <p>AlertDialog 的宽度由主题里的 {@code windowMinWidthMajor} 决定，手机竖屏下通常只有
+     * 280dp 左右，比屏幕窄一大圈；内容一多就会频繁折行，看着局促。
+     *
+     * <p>这里直接按屏幕宽度的 92% 设窗口宽度（左右各留 4% 边距），并限制最大 560dp
+     * （Material 对对话框的推荐上限，防止平板/横屏下拉成一条横幅）。
+     * 高度保持 WRAP_CONTENT，由内容自己决定——内容少的对话框不会因此被拉出大片空白。
+     */
+    public static void applyWidth(AlertDialog d) {
+        if (d == null) return;
+        Window w = d.getWindow();
+        if (w == null) return;
+        Context ctx = d.getContext();
+        if (ctx == null) return;
+        DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
+        int width = Math.min((int) (dm.widthPixels * 0.92f), dp(ctx, 560));
+        w.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
+    }
+
+    private static int dp(Context c, float v) {
+        return Math.round(v * c.getResources().getDisplayMetrics().density);
     }
 }

@@ -2625,11 +2625,15 @@ public class MainActivity extends AppCompatActivity {
     private void showNetMenu() {
         if (composer == null) return;
 
-        int px = Ui.dp(this, 20);
+        // 外层已给 20dp 边距，行内不再重复
+        int px = 0;
         int py = Ui.dp(this, 11);
+        int pad = Ui.dp(this, 20);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 2));
+        box.setPadding(pad, pad, pad, Ui.dp(this, 6));
+        Ui.dialogHeader(box, this, "联网与浏览",
+                "联网搜索让 AI 在回答前检索最新资料；浏览器自动化可以让它自己打开网页读正文。");
 
         box.addView(switchRow("联网搜索",
                 "发送前自动检索最新资料，把摘要一起交给 AI",
@@ -2639,7 +2643,7 @@ public class MainActivity extends AppCompatActivity {
                 composer.isBrowserOn(), (btn, on) -> composer.setBrowserOn(on, true), px, py));
 
         View div = new View(this);
-        div.setBackgroundColor(Palette.c(0x1AFFFFFF));
+        div.setBackgroundColor(Palette.stroke(this));
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, Ui.dp(this, 1)));
         dlp.leftMargin = px;
@@ -2649,14 +2653,13 @@ public class MainActivity extends AppCompatActivity {
         final TextView eng = new TextView(this);
         eng.setText("搜索引擎：" + (WebSearch.ENGINE_DDG
                 .equalsIgnoreCase(settings.searchEngine) ? "DuckDuckGo" : "Bing（国内可直连）") + "  ›");
-        eng.setTextSize(13.5f);
+        eng.setTextSize(14f);
         eng.setTextColor(Palette.c(C_TEXT2));
-        eng.setPadding(px, py, px, py);
+        eng.setPadding(px, Ui.dp(this, 14), px, Ui.dp(this, 14));
         eng.setOnClickListener(v -> chooseSearchEngine());
         box.addView(eng);
 
         new NebAlert.Builder(this)
-                .setTitle("联网与浏览")
                 .setView(box)
                 .setPositiveButton("完成", null)
                 .show();
@@ -2675,14 +2678,15 @@ public class MainActivity extends AppCompatActivity {
 
         TextView t = new TextView(this);
         t.setText(title);
-        t.setTextSize(15f);
+        t.setTextSize(15.5f);
         t.setTextColor(Palette.c(C_TEXT));
 
         TextView st = new TextView(this);
         st.setText(sub);
-        st.setTextSize(12f);
+        st.setTextSize(12.5f);
         st.setTextColor(Palette.c(C_DIM));
-        st.setPadding(0, Ui.dp(this, 2), Ui.dp(this, 8), 0);
+        st.setLineSpacing(Ui.dp(this, 4f), 1.0f);
+        st.setPadding(0, Ui.dp(this, 4), Ui.dp(this, 8), 0);
 
         texts.addView(t);
         texts.addView(st);

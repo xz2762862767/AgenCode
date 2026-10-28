@@ -110,6 +110,58 @@ public class Ui {
         return box;
     }
 
+    /**
+     * 直角卡片：弹窗内部专用。
+     * 弹窗外壳是方角（neb_dialog_bg 无圆角），内部卡片再套 12dp 圆角会形成
+     * 「外方内圆」两套风格；统一成直角后层次靠底色差（surface vs surface2）区分。
+     */
+    public static LinearLayout cardRect(Context c) {
+        LinearLayout box = new LinearLayout(c);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(rect(c, Palette.surface2(c), Palette.stroke(c), 1f));
+        int p = dp(c, 14);
+        box.setPadding(p, p, p, p);
+        return box;
+    }
+
+    /**
+     * 弹窗标题区：主标题 + 说明 + 分隔线。
+     * 替换 AlertDialog 的 setTitle —— 系统标题的上下留白由 AlertController 内部布局写死，
+     * 无法调整，标题会紧贴内容（尤其是 setView 自定义内容时几乎零间距）。
+     */
+    public static void dialogHeader(LinearLayout box, Context c, String title, String sub) {
+        TextView t = text(c, title, 19f, Palette.text(c));
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        box.addView(t);
+
+        if (sub != null && sub.length() > 0) {
+            TextView s = text(c, sub, 12.5f, Palette.dim(c));
+            s.setLineSpacing(dp(c, 5f), 1.0f);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = dp(c, 9);
+            box.addView(s, lp);
+        }
+
+        View line = new View(c);
+        line.setBackgroundColor(Palette.stroke(c));
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(c, 0.7f)));
+        llp.topMargin = dp(c, 16);
+        llp.bottomMargin = dp(c, 14);
+        box.addView(line, llp);
+    }
+
+    /**
+     * 多行正文：额外 5dp 行距。
+     * 默认行距下 11~12sp 的中文说明文字会挤成一片，长句几乎读不下去。
+     */
+    public static TextView para(Context c, String s, float sp, int color) {
+        TextView t = text(c, s, sp, color);
+        t.setLineSpacing(dp(c, 5f), 1.0f);
+        return t;
+    }
+
     public static LinearLayout row(Context c) {
         LinearLayout r = new LinearLayout(c);
         r.setOrientation(LinearLayout.HORIZONTAL);

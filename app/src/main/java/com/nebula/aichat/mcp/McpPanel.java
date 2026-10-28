@@ -49,12 +49,11 @@ public class McpPanel {
         ScrollView sv = new ScrollView(act);
         sv.setFillViewport(true);
         box = Ui.col(act);
-        int p = Ui.dp(act, 16);
-        box.setPadding(p, p, p, Ui.dp(act, 12));
+        int p = Ui.dp(act, 20);
+        box.setPadding(p, p, p, Ui.dp(act, 6));
         sv.addView(box);
 
         dialog = new NebAlert.Builder(act)
-                .setTitle("MCP 服务器")
                 .setView(sv)
                 .setPositiveButton("添加", new DialogInterface.OnClickListener() {
                     @Override
@@ -71,35 +70,37 @@ public class McpPanel {
     private void fill() {
         box.removeAllViews();
 
-        box.addView(Ui.text(act, "接入实现 MCP 协议的服务器（JSON-RPC over HTTP / SSE），"
-                + "可浏览其工具并手动调用。", 11.5f, Palette.c(0xFF8B97A9)));
-        box.addView(Ui.spacer(act, 8));
+        Ui.dialogHeader(box, act, "MCP 服务器",
+                "接入实现 MCP 协议的服务器（JSON-RPC over HTTP / SSE），"
+                        + "可浏览其工具并手动调用。");
 
         if (servers.isEmpty()) {
-            LinearLayout empty = Ui.card(act);
-            empty.addView(Ui.text(act, "尚未添加服务器", 13f, Palette.c(0xFFE8EDF6)));
-            empty.addView(Ui.text(act, "常见地址形如 https://example.com/mcp", 11f, Palette.c(0xFF8B97A9)));
+            LinearLayout empty = Ui.cardRect(act);
+            empty.addView(Ui.text(act, "尚未添加服务器", 13.5f, Palette.text(act)));
+            TextView hint = Ui.para(act, "常见地址形如 https://example.com/mcp", 12f, Palette.dim(act));
+            hint.setPadding(0, Ui.dp(act, 7), 0, 0);
+            empty.addView(hint);
             box.addView(empty);
         }
 
         for (final McpConfig.Server s : servers) {
-            LinearLayout card = Ui.card(act);
+            LinearLayout card = Ui.cardRect(act);
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            clp.bottomMargin = Ui.dp(act, 8);
+            clp.bottomMargin = Ui.dp(act, 10);
             card.setLayoutParams(clp);
 
             LinearLayout titleRow = Ui.row(act);
-            TextView name = Ui.text(act, s.label(), 14f, Palette.c(0xFFE8EDF6));
+            TextView name = Ui.text(act, s.label(), 14.5f, Palette.text(act));
             name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             name.setSingleLine(true);
             name.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
             titleRow.addView(name, new LinearLayout.LayoutParams(0,
                     LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-            final TextView toggle = Ui.text(act, s.enabled ? "已启用" : "已停用", 11f,
+            final TextView toggle = Ui.text(act, s.enabled ? "已启用" : "已停用", 11.5f,
                     s.enabled ? Palette.c(0xFF7CD98F) : Palette.c(0xFF8B97A9));
-            toggle.setBackground(Ui.roundRect(act, s.enabled ? Palette.c(0xFF16281C) : Palette.c(0xFF1A1D22), 0, 10f));
+            toggle.setBackground(Ui.rect(act, s.enabled ? Palette.c(0xFF16281C) : Palette.c(0xFF1A1D22), 0, 0f));
             toggle.setPadding(Ui.dp(act, 8), Ui.dp(act, 4), Ui.dp(act, 8), Ui.dp(act, 4));
             toggle.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -112,18 +113,21 @@ public class McpPanel {
             titleRow.addView(toggle);
             card.addView(titleRow);
 
-            TextView url = Ui.text(act, s.url, 11f, Palette.c(0xFF8B97A9));
+            TextView url = Ui.text(act, s.url, 11.5f, Palette.dim(act));
             url.setSingleLine(true);
             url.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-            url.setPadding(0, Ui.dp(act, 4), 0, Ui.dp(act, 8));
+            url.setPadding(0, Ui.dp(act, 6), 0, Ui.dp(act, 10));
             card.addView(url);
 
             String cached = infoCache.get(s.id);
             if (cached != null) {
-                card.addView(Ui.text(act, cached, 11f, Palette.c(0xFF5B93FF)));
+                TextView res = Ui.para(act, cached, 11.5f, Palette.accent(act));
+                res.setPadding(0, Ui.dp(act, 6), 0, 0);
+                card.addView(res);
             }
 
             LinearLayout actions = Ui.row(act);
+            actions.setPadding(0, Ui.dp(act, 12), 0, 0);
             actions.addView(Ui.chip(act, "连接测试", Palette.c(0xFF1E3A6B), Palette.c(0xFF9DC0FF), new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -159,30 +163,40 @@ public class McpPanel {
             box.addView(card);
         }
 
-        box.addView(Ui.spacer(act, 6));
-        box.addView(Ui.text(act, "说明：连接测试会依次调用 initialize 与 tools/list。", 10.5f, Palette.c(0xFF5A6577)));
+        box.addView(Ui.spacer(act, 14));
+        TextView note = Ui.para(act, "说明：连接测试会依次调用 initialize 与 tools/list。", 11.5f, Palette.dim(act));
+        note.setAlpha(0.7f);
+        box.addView(note);
+    }
+
+    /** 表单字段标签：和上方控件拉开距离、和下方输入框贴近，形成「标签属于输入框」的视觉分组 */
+    private TextView fieldLabel(String s) {
+        TextView t = Ui.text(act, s, 12f, Palette.dim(act));
+        t.setPadding(0, Ui.dp(act, 14), 0, Ui.dp(act, 6));
+        return t;
     }
 
     // ------------------------------------------------------------ 编辑
 
     private void editServer(final McpConfig.Server existing) {
         LinearLayout form = Ui.col(act);
-        int p = Ui.dp(act, 16);
-        form.setPadding(p, Ui.dp(act, 8), p, 0);
+        int p = Ui.dp(act, 20);
+        form.setPadding(p, p, p, Ui.dp(act, 6));
+        Ui.dialogHeader(form, act, existing == null ? "添加 MCP 服务器" : "编辑服务器",
+                "地址需指向实现了 MCP 协议的 HTTP / SSE 端点，保存后会自动启用。");
 
         final EditText etName = field("名称（可留空）", existing == null ? "" : existing.name, false);
         final EditText etUrl = field("服务器地址，如 https://host/mcp", existing == null ? "" : existing.url, true);
         final EditText etToken = field("访问令牌（可留空）", existing == null ? "" : existing.token, false);
 
-        form.addView(Ui.text(act, "名称", 11f, Palette.c(0xFF8B97A9)));
+        form.addView(fieldLabel("名称"));
         form.addView(etName);
-        form.addView(Ui.text(act, "地址", 11f, Palette.c(0xFF8B97A9)));
+        form.addView(fieldLabel("地址"));
         form.addView(etUrl);
-        form.addView(Ui.text(act, "令牌", 11f, Palette.c(0xFF8B97A9)));
+        form.addView(fieldLabel("令牌"));
         form.addView(etToken);
 
         new NebAlert.Builder(act)
-                .setTitle(existing == null ? "添加 MCP 服务器" : "编辑服务器")
                 .setView(form)
                 .setPositiveButton("保存", new DialogInterface.OnClickListener() {
                     @Override
@@ -284,7 +298,7 @@ public class McpPanel {
             final String name = tool.optString("name", "tool" + i);
             String desc = tool.optString("description", "");
 
-            LinearLayout card = Ui.card(act);
+            LinearLayout card = Ui.cardRect(act);
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             clp.bottomMargin = Ui.dp(act, 7);

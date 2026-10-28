@@ -60,12 +60,13 @@ public class SkillPanel {
         ScrollView sv = new ScrollView(act);
         sv.setFillViewport(true);
         box = Ui.col(act);
-        int p = Ui.dp(act, 16);
-        box.setPadding(p, p, p, Ui.dp(act, 12));
+        int p = Ui.dp(act, 20);
+        box.setPadding(p, p, p, Ui.dp(act, 6));
         sv.addView(box);
 
+        // 不用 setTitle：系统标题与自定义内容之间的留白由 AlertController 写死，
+        // 标题会贴着正文。改由 dialogHeader 在内容区自绘，间距完全可控。
         dialog = new NebAlert.Builder(act)
-                .setTitle("技能")
                 .setView(sv)
                 .setPositiveButton("关闭", null)
                 .create();
@@ -97,10 +98,10 @@ public class SkillPanel {
     private void fill() {
         final int gen = ++fillGen;
         box.removeAllViews();
-        box.addView(Ui.text(act, "技能是工作区 skills/ 下的 SKILL.md。启用的技能会追加到系统提示词，"
-                + "让模型按固定流程回答。可以从文件、压缩包或内置库导入。", 11.5f, Palette.c(0xFF8B97A9)));
-        box.addView(Ui.spacer(act, 10));
-        box.addView(Ui.text(act, "正在读取技能…", 12f, Palette.c(0xFF8B97A9)));
+        Ui.dialogHeader(box, act, "技能",
+                "技能是工作区 skills/ 下的 SKILL.md。启用的技能会追加到系统提示词，"
+                        + "让模型按固定流程回答。可以从文件、压缩包或内置库导入。");
+        box.addView(Ui.text(act, "正在读取技能…", 12.5f, Palette.dim(act)));
 
         // 读盘、解析、统计附件数全部挪到后台：以前这些都压在点击那一下的主线程上，
         // 技能一多点点按钮就要卡住几百毫秒
@@ -142,7 +143,7 @@ public class SkillPanel {
     private void applyToggle(TextView toggle, boolean on) {
         toggle.setText(on ? "已启用" : "启用");
         toggle.setTextColor(on ? Palette.c(0xFF7CD98F) : Palette.c(0xFF8B97A9));
-        toggle.setBackground(Ui.roundRect(act, on ? Palette.c(0xFF16281C) : Palette.c(0xFF1A1D22), 0, 10f));
+        toggle.setBackground(Ui.rect(act, on ? Palette.c(0xFF16281C) : Palette.c(0xFF1A1D22), 0, 0f));
     }
 
     /** 只刷新统计文本，不重建整个列表 */
@@ -157,9 +158,9 @@ public class SkillPanel {
         box.removeAllViews();
         currentList = list;
         currentExtras = extras;
-        box.addView(Ui.text(act, "技能是工作区 skills/ 下的 SKILL.md。启用的技能会追加到系统提示词，"
-                + "让模型按固定流程回答。可以从文件、压缩包或内置库导入。", 11.5f, Palette.c(0xFF8B97A9)));
-        box.addView(Ui.spacer(act, 10));
+        Ui.dialogHeader(box, act, "技能",
+                "技能是工作区 skills/ 下的 SKILL.md。启用的技能会追加到系统提示词，"
+                        + "让模型按固定流程回答。可以从文件、压缩包或内置库导入。");
 
         int enabled = 0;
         for (SkillStore.Skill s : list) if (s.enabled) enabled++;
@@ -205,7 +206,7 @@ public class SkillPanel {
         box.addView(Ui.spacer(act, 10));
 
         if (list.isEmpty()) {
-            LinearLayout empty = Ui.card(act);
+            LinearLayout empty = Ui.cardRect(act);
             empty.addView(Ui.text(act, "还没有技能", 13f, Palette.c(0xFFE8EDF6)));
             empty.addView(Ui.text(act, "点上面「＋ 新建」自己写，或「⬇ 导入」从文件/内置库加进来",
                     11f, Palette.c(0xFF8B97A9)));
@@ -216,14 +217,14 @@ public class SkillPanel {
         int shown = Math.min(list.size(), Math.max(visibleCount, PAGE));
         for (int i = 0; i < shown; i++) {
             final SkillStore.Skill s = list.get(i);
-            LinearLayout card = Ui.card(act);
+            LinearLayout card = Ui.cardRect(act);
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            clp.bottomMargin = Ui.dp(act, 8);
+            clp.bottomMargin = Ui.dp(act, 10);
             card.setLayoutParams(clp);
 
             LinearLayout titleRow = Ui.row(act);
-            TextView name = Ui.text(act, s.name, 14f, Palette.c(0xFFE8EDF6));
+            TextView name = Ui.text(act, s.name, 14.5f, Palette.text(act));
             name.setTypeface(Typeface.DEFAULT_BOLD);
             name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
@@ -247,17 +248,20 @@ public class SkillPanel {
             card.addView(titleRow);
 
             if (s.description != null && !s.description.isEmpty()) {
-                TextView d = Ui.text(act, s.description, 11f, Palette.c(0xFF8B97A9));
-                d.setPadding(0, Ui.dp(act, 4), 0, Ui.dp(act, 8));
+                TextView d = Ui.para(act, s.description, 12f, Palette.dim(act));
+                d.setPadding(0, Ui.dp(act, 7), 0, Ui.dp(act, 10));
                 card.addView(d);
             }
             int extra = extras != null && i < extras.length ? extras[i] : 0;
-            card.addView(Ui.text(act, "目录：" + s.id + " · 正文 " + s.body.length() + " 字"
-                    + (extra > 0 ? " · 附带 " + extra + " 个文件" : ""), 10.5f, Palette.c(0xFF5A6577)));
+            // 元信息用 alpha 压一档，比硬编码一个更暗的色号更安全（浅色主题下也不会发灰）
+            TextView meta = Ui.text(act, "目录：" + s.id + " · 正文 " + s.body.length() + " 字"
+                    + (extra > 0 ? " · 附带 " + extra + " 个文件" : ""), 11f, Palette.dim(act));
+            meta.setAlpha(0.72f);
+            card.addView(meta);
 
             // 操作按钮（等宽两行，避免挤压）
             LinearLayout actions = Ui.row(act);
-            actions.setPadding(0, Ui.dp(act, 8), 0, 0);
+            actions.setPadding(0, Ui.dp(act, 12), 0, 0);
             actions.addView(Ui.chip(act, "编辑", Palette.c(0xFF1E3A6B), Palette.c(0xFF9DC0FF), new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -373,7 +377,7 @@ public class SkillPanel {
     }
 
     private LinearLayout importOption(String title, String sub, View.OnClickListener l) {
-        LinearLayout card = Ui.card(act);
+        LinearLayout card = Ui.cardRect(act);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = Ui.dp(act, 8);

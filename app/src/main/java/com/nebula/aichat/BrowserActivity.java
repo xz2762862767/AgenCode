@@ -22,6 +22,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
@@ -60,8 +61,21 @@ public class BrowserActivity extends Activity {
     private TextView tvTrans;
     private TextView tvStatus;
     private ProgressBar progress;
-    private WebView web;
+    private WebView web;                 // 始终指向「当前标签页」的 WebView，其余代码照旧
     private LinearLayout emptyBox;
+    private FrameLayout stage;           // 多个 WebView 同时挂在这里，只显示当前那个
+    private LinearLayout tabsBox;        // 底部标签栏
+    private int curTab = -1;
+    private static final int MAX_TABS = 8;
+
+    /** 一个标签页：一个独立 WebView，各自保留滚动位置和会话 */
+    private static final class Tab {
+        WebView wv;
+        String title = "新标签页";
+        String url = "";
+    }
+
+    private final java.util.List<Tab> tabs = new java.util.ArrayList<>();
 
     private Settings settings;
     /** 翻译串行执行：并发打模型接口只会互相拖慢，还容易撞限流 */
@@ -80,14 +94,9 @@ public class BrowserActivity extends Activity {
         Palette.apply(this);
         settings = Settings.load(this);
         setContentView(buildUi());
-        setupWeb();
 
         String start = getIntent() == null ? null : getIntent().getStringExtra("url");
-        if (start != null && !start.trim().isEmpty()) {
-            load(normalize(start.trim()));
-        } else {
-            showEmpty(true);
-        }
+        newTab(start != null && !start.trim().isEmpty() ? normalize(start.trim()) : null);
     }
 
     // ---------------------------------------------------------------- UI
@@ -194,18 +203,29 @@ public class BrowserActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 2)));
 
         // ---- 网页区（空白态盖在上面）
-        FrameLayout stage = new FrameLayout(this);
+        // 多个标签页的 WebView 都以 index 0 插进来，emptyBox 永远在最后一层，
+        // 不会被后建的 WebView 盖住。
+        stage = new FrameLayout(this);
         root.addView(stage, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        web = new WebView(this);
-        web.setBackgroundColor(Palette.bg(this));
-        stage.addView(web, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         emptyBox = buildEmpty();
         stage.addView(emptyBox, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // ---- 底部标签栏（网页区与状态条之间）
+        root.addView(Ui.divider(this));
+        HorizontalScrollView tabsScroll = new HorizontalScrollView(this);
+        tabsScroll.setHorizontalScrollBarEnabled(false);
+        tabsScroll.setFillViewport(true);
+        tabsBox = new LinearLayout(this);
+        tabsBox.setOrientation(LinearLayout.HORIZONTAL);
+        tabsBox.setGravity(Gravity.CENTER_VERTICAL);
+        tabsBox.setPadding(Ui.dp(this, 6), Ui.dp(this, 5), Ui.dp(this, 6), Ui.dp(this, 5));
+        tabsScroll.addView(tabsBox, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(tabsScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44)));
 
         // ---- 底部状态条（翻译进度/结果），默认隐藏
         tvStatus = new TextView(this);
@@ -288,8 +308,8 @@ public class BrowserActivity extends Activity {
 
     // ---------------------------------------------------------------- WebView
 
-    private void setupWeb() {
-        WebSettings s = web.getSettings();
+    private void setupWebFor(final WebView wv) {
+        WebSettings s = wv.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setLoadWithOverviewMode(true);
@@ -307,7 +327,7 @@ public class BrowserActivity extends Activity {
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(web, true);
 
-        web.setWebViewClient(new WebViewClient() {
+        wv.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, String url) {
                 // 非 http(s) 协议（intent://、tel:、mailto:）交回系统，WebView 打不开
@@ -325,6 +345,7 @@ public class BrowserActivity extends Activity {
 
             @Override
             public void onPageStarted(WebView v, String url, android.graphics.Bitmap fav) {
+                if (v != web) return;       // 后台标签页：不动前台 UI
                 pageReady = false;
                 // 页面要跳走了：__agcNodes 里的节点马上失效，正在跑的翻译必须停
                 translating = false;
@@ -336,6 +357,16 @@ public class BrowserActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView v, String url) {
+                Tab owner = tabOf(v);
+                if (owner != null) {
+                    owner.url = url == null ? owner.url : url;
+                    String tt = v.getTitle();
+                    owner.title = (tt == null || tt.trim().isEmpty()) ? "新标签页" : tt.trim();
+                }
+                if (v != web) {          // 后台标签页：只刷新标签栏，不碰前台 UI
+                    refreshTabBar();
+                    return;
+                }
                 pageReady = true;
                 progress.setVisibility(View.GONE);
                 translated = false;
@@ -354,20 +385,22 @@ public class BrowserActivity extends Activity {
 
             @Override
             public void onReceivedError(WebView v, int code, String desc, String url) {
+                if (v != web) return;
                 progress.setVisibility(View.GONE);
                 status("打不开这个页面（" + desc + "）");
             }
         });
 
-        web.setWebChromeClient(new WebChromeClient() {
+        wv.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onProgressChanged(WebView v, int p) {
+                if (v != web) return;
                 progress.setVisibility(p >= 100 ? View.GONE : View.VISIBLE);
                 progress.setProgress(p);
             }
         });
 
-        web.setDownloadListener((url, ua, cd, mime, len) -> {
+        wv.setDownloadListener((url, ua, cd, mime, len) -> {
             // 下载交给系统：WebView 自己没有下载能力，硬扛只会得到一个空白页
             try {
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
@@ -400,8 +433,142 @@ public class BrowserActivity extends Activity {
         return "https://www.bing.com/search?q=" + Uri.encode(s);
     }
 
+    // ---------------------------------------------------------------- 标签页
+
+    private Tab tabOf(WebView v) {
+        for (Tab t : tabs) if (t.wv == v) return t;
+        return null;
+    }
+
+    /** 新建标签页并切过去。url 为 null 时开一个空白页。 */
+    private void newTab(String url) {
+        if (tabs.size() >= MAX_TABS) {
+            status("最多同时开 " + MAX_TABS + " 个标签页");
+            return;
+        }
+        Tab t = new Tab();
+        t.wv = new WebView(this);
+        t.wv.setBackgroundColor(Palette.bg(this));
+        setupWebFor(t.wv);
+        // index 0 插入：emptyBox 永远留在最后一层，不会被后建的 WebView 盖住
+        stage.addView(t.wv, 0, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        t.wv.setVisibility(View.GONE);
+        if (url != null) t.url = url;
+        tabs.add(t);
+        switchTab(tabs.size() - 1);
+        if (url != null && !url.isEmpty()) t.wv.loadUrl(url);
+    }
+
+    private void switchTab(int i) {
+        if (i < 0 || i >= tabs.size()) return;
+        curTab = i;
+        for (int k = 0; k < tabs.size(); k++) {
+            tabs.get(k).wv.setVisibility(k == i ? View.VISIBLE : View.GONE);
+        }
+        web = tabs.get(i).wv;
+        // 翻译状态是「页面级」的，切页必须复位，否则新页会顶着上一页的译文按钮状态
+        translated = false;
+        translating = false;
+        pageReady = false;
+        status(null);
+
+        String u = tabs.get(i).url;
+        boolean blank = (u == null || u.isEmpty() || u.startsWith("about:"));
+        showEmpty(blank);
+        if (blank) {
+            etUrl.setText("");
+            tvTitle.setText("浏览器");
+        } else {
+            etUrl.setText(u);
+            String tt = web.getTitle();
+            tvTitle.setText(tt == null || tt.trim().isEmpty() ? "浏览器" : tt.trim());
+        }
+        renderTransButton();
+        refreshTabBar();
+    }
+
+    private void closeTab(int i) {
+        if (i < 0 || i >= tabs.size()) return;
+        Tab t = tabs.remove(i);
+        try {
+            t.wv.stopLoading();
+            t.wv.loadUrl("about:blank");
+            stage.removeView(t.wv);
+            t.wv.destroy();
+        } catch (Throwable ignored) {
+        }
+        if (tabs.isEmpty()) {
+            newTab(null);
+            return;
+        }
+        if (i < curTab) curTab--;
+        switchTab(Math.min(Math.max(curTab, 0), tabs.size() - 1));
+    }
+
+    /** 重建底部标签栏：每个标签一个胶囊，末尾一个「＋」 */
+    private void refreshTabBar() {
+        if (tabsBox == null) return;
+        tabsBox.removeAllViews();
+        int gap = Ui.dp(this, 6);
+        for (int i = 0; i < tabs.size(); i++) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 32));
+            lp.rightMargin = gap;
+            tabsBox.addView(buildTabItem(i), lp);
+        }
+        TextView plus = new TextView(this);
+        plus.setText("＋");
+        plus.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15f);
+        plus.setGravity(Gravity.CENTER);
+        plus.setTextColor(Palette.dim(this));
+        plus.setBackground(Ui.roundRect(this, Palette.surface2(this), Palette.stroke(this), 16f));
+        plus.setContentDescription("新建标签页");
+        plus.setOnClickListener(v -> newTab(null));
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 32));
+        tabsBox.addView(plus, plp);
+    }
+
+    private View buildTabItem(int i) {
+        Tab t = tabs.get(i);
+        boolean cur = (i == curTab);
+
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.HORIZONTAL);
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setPadding(Ui.dp(this, 10), 0, Ui.dp(this, 4), 0);
+        item.setBackground(cur
+                ? Ui.roundRect(this, Palette.surface(this), Palette.accent(this), 16f)
+                : Ui.roundRect(this, Palette.surface2(this), Palette.stroke(this), 16f));
+
+        TextView name = new TextView(this);
+        name.setText(t.title);
+        name.setSingleLine(true);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        name.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        name.setTextColor(cur ? Palette.accent(this) : Palette.dim(this));
+        name.setMaxWidth(Ui.dp(this, 92));
+        name.setIncludeFontPadding(false);
+        item.addView(name);
+
+        TextView x = new TextView(this);
+        x.setText("×");
+        x.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f);
+        x.setGravity(Gravity.CENTER);
+        x.setPadding(Ui.dp(this, 7), 0, Ui.dp(this, 5), 0);
+        x.setTextColor(cur ? Palette.accent(this) : Palette.dim(this));
+        x.setContentDescription("关闭标签页");
+        x.setOnClickListener(v -> closeTab(i));
+        item.addView(x);
+
+        item.setOnClickListener(v -> switchTab(i));
+        return item;
+    }
+
     private void load(String url) {
         showEmpty(false);
+        Tab t = tabOf(web);
+        if (t != null) t.url = url;
         web.loadUrl(url);
     }
 
@@ -745,6 +912,11 @@ public class BrowserActivity extends Activity {
             web.goBack();
             return;
         }
+        // 还有别的标签页：先关掉当前这个，别直接退出整个浏览器
+        if (tabs.size() > 1) {
+            closeTab(curTab);
+            return;
+        }
         super.onBackPressed();
     }
 
@@ -755,17 +927,18 @@ public class BrowserActivity extends Activity {
             pool.shutdownNow();
         } catch (Throwable ignored) {
         }
-        try {
-            if (web != null) {
-                web.stopLoading();
-                web.loadUrl("about:blank");
-                ViewGroup parent = (ViewGroup) web.getParent();
-                if (parent != null) parent.removeView(web);
-                web.destroy();
-                web = null;
+        for (Tab t : new java.util.ArrayList<>(tabs)) {
+            try {
+                t.wv.stopLoading();
+                t.wv.loadUrl("about:blank");
+                ViewGroup parent = (ViewGroup) t.wv.getParent();
+                if (parent != null) parent.removeView(t.wv);
+                t.wv.destroy();
+            } catch (Throwable ignored) {
             }
-        } catch (Throwable ignored) {
         }
+        tabs.clear();
+        web = null;
         super.onDestroy();
     }
 }

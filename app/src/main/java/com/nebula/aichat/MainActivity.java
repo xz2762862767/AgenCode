@@ -6861,7 +6861,7 @@ public class MainActivity extends AppCompatActivity {
             int contentH = root.getMeasuredHeight();
             // 只按内容高度走会太紧：按钮直接贴在弹窗底边，看着憋。留 22dp 呼吸，
             // 同时兜住 86% 屏高的上限（body 不是 ScrollView，超屏没法滚）。
-            w.setLayout(dw, Math.min(contentH + dp(22), (int) (hpx * 0.86f)));
+            w.setLayout(dw, Math.min(contentH + dp(16), (int) (hpx * 0.86f)));
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
     }

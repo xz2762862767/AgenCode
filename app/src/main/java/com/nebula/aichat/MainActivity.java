@@ -6053,7 +6053,7 @@ public class MainActivity extends AppCompatActivity {
                     android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
             // 与「添加模型」保持一致，整体下移 36dp
             WindowManager.LayoutParams attrs = w.getAttributes();
-            attrs.y = dp(42);
+            attrs.y = dp(39);
             w.setAttributes(attrs);
         }
     }
@@ -6868,7 +6868,7 @@ public class MainActivity extends AppCompatActivity {
             w.setLayout(dw, Math.min(contentH + dp(22), (int) (hpx * 0.86f)));
             // 整体下移一点：CENTER 时弹窗偏上，视觉重心压不住，往下挪 36dp
             WindowManager.LayoutParams attrs = w.getAttributes();
-            attrs.y = dp(42);
+            attrs.y = dp(39);
             w.setAttributes(attrs);
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }

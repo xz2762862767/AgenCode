@@ -6435,10 +6435,20 @@ public class MainActivity extends AppCompatActivity {
 
     /** 某个服务商下的模型名 */
     private String[] modelsOf(int idx) {
+        if (idx < 0 || idx >= MODEL_PROVIDERS.length) return new String[0];
         String[] p = MODEL_PROVIDERS[idx];
         String[] out = new String[Math.max(0, p.length - 2)];
         System.arraycopy(p, 2, out, 0, out.length);
         return out;
+    }
+
+    /**
+     * 取某个服务商的首个模型名。
+     * modelsOf 在服务商没配模型时返回空数组，直接 [0] 会 AIOOBE，统一走这里兜住。
+     */
+    private String firstModelOf(int idx) {
+        String[] ms = modelsOf(idx);
+        return ms.length > 0 ? ms[0] : "";
     }
 
     private String shortHost(String u) {
@@ -6626,7 +6636,7 @@ public class MainActivity extends AppCompatActivity {
         root.addView(sv, svLp);
 
         final int[] sel = new int[]{providerIndexOfCurrent()};
-        final String[] mdl = new String[]{modelsOf(sel[0])[0]};
+        final String[] mdl = new String[]{firstModelOf(sel[0])};
         final LinearLayout[] cardViews = new LinearLayout[MODEL_PROVIDERS.length];
         final LinearLayout chipBox = new LinearLayout(this);
 
@@ -6793,7 +6803,7 @@ public class MainActivity extends AppCompatActivity {
             cardViews[i].setOnClickListener(v -> {
                 if (sel[0] == fi) return;
                 sel[0] = fi;
-                mdl[0] = modelsOf(fi)[0];
+                mdl[0] = firstModelOf(fi);
                 etKey.setText("");
                 refresh[0].run();
             });

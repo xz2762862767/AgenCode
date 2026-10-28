@@ -1,8 +1,9 @@
 # AgenCode（Android AI 智能体）
 
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Platform](https://img.shields.io/badge/Android-7.0%2B-green)
-![minSdk](https://img.shields.io/badge/minSdk-24-lightgrey)
+![Platform](https://img.shields.io/badge/Android-8.0%2B-green)
+![minSdk](https://img.shields.io/badge/minSdk-26-lightgrey)
 
 一个跑在 Android 手机上的 AI 助手，把「能聊天」和「能干活」放在同一个 App 里：
 接任意 OpenAI 兼容接口，同时内置一套可被模型调用的本地执行环境
@@ -15,7 +16,7 @@
 ## 安装
 
 **① 装现成的包**：到 [Releases](../../releases) 下载最新的 `NebulaAI-v*.apk`，
-手机上允许「安装未知来源应用」后点开即可。最低支持 Android 7.0（API 24）。
+手机上允许「安装未知来源应用」后点开即可。最低支持 Android 8.0（API 26）。
 
 **② 自己编译**：见下方[构建](#构建)，产物在 `app/build/outputs/apk/debug/`。
 

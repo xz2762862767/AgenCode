@@ -894,7 +894,7 @@ public class BrowserActivity extends Activity {
             try {
                 Object v = new org.json.JSONTokener(raw).nextValue();
                 org.json.JSONObject o = new org.json.JSONObject(String.valueOf(v));
-                String lang = o.optString("lang", "").toLowerCase();
+                String lang = o.optString("lang", "").toLowerCase(java.util.Locale.ROOT);
                 int lat = o.optInt("lat", 0);
                 int cjk = o.optInt("cjk", 0);
                 int len = o.optInt("len", 0);

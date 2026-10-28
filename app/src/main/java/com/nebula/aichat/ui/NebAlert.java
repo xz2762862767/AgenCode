@@ -88,7 +88,7 @@ public final class NebAlert {
         Context ctx = d.getContext();
         if (ctx == null) return;
         DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
-        int width = dm.widthPixels - dp(ctx, 56);
+        int width = dm.widthPixels - dp(ctx, 36);
         width = Math.min(width, dp(ctx, 560));
         final int finalW = width;
         w.setLayout(finalW, WindowManager.LayoutParams.WRAP_CONTENT);

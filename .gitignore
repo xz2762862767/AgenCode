@@ -1,7 +1,7 @@
 # ---- Gradle / 构建产物 ----
 .gradle/
 .gradle-tmp/
-build/
+/build/
 app/build/
 *.iml
 .idea/
@@ -21,6 +21,9 @@ keystore.properties
 *.jks
 *.keystore
 *.p12
+# 例外：App 内置的回编译签名密钥，口令已明文写在 ApkTools.java 中，无保密价值；
+# 缺失会导致「APK 回编译」功能在别人机器上编译后直接崩溃，因此必须随仓库分发
+!app/src/main/assets/apk-tools.p12
 
 # ---- 运行期产物 ----
 *.log

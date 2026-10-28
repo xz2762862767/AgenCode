@@ -64,7 +64,7 @@
                 android:layout_marginTop="2.5dp"
                 android:layout_marginBottom="2.5dp"
                 android:layout_marginEnd="12dp"
-                android:alpha="0.35"
+                android:alpha="0.18"
                 android:background="#FFB877" />
 
             <LinearLayout
@@ -143,7 +143,6 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:alpha="0.35"
         android:background="?attr/neb_stroke" />
 
     <!-- 消息区 -->

@@ -167,7 +167,7 @@ public class SkillPanel {
 
         // 统计 + 操作条
         LinearLayout bar = Ui.row(act);
-        statView = Ui.text(act, "共 " + list.size() + " 个 · 已启用 " + enabled, 11.5f, Palette.c(0xFF8B97A9));
+        statView = Ui.text(act, "共 " + list.size() + " 个 · 已启用 " + enabled, 12f, Palette.dim(act));
         bar.addView(statView);
         View spring = new View(act);
         bar.addView(spring, new LinearLayout.LayoutParams(0, 1, 1f));
@@ -187,15 +187,17 @@ public class SkillPanel {
         }));
         box.addView(bar);
 
+        // 次要操作用文字链接：不描边、不抢主按钮的视觉重量，
+        // 四个按钮挤在同一行也有主次之分
         LinearLayout bar2 = Ui.row(act);
-        bar2.addView(Ui.ghostChip(act, "👁 预览注入内容", new View.OnClickListener() {
+        bar2.setPadding(0, Ui.dp(act, 5), 0, 0);
+        bar2.addView(link("预览注入内容", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 preview();
             }
         }));
-        bar2.addView(gap(act, 6));
-        bar2.addView(Ui.ghostChip(act, "📂 打开目录", new View.OnClickListener() {
+        bar2.addView(link("打开目录", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 Toast.makeText(act, "路径：" + SkillStore.skillsDir(act).getAbsolutePath(),
@@ -203,7 +205,7 @@ public class SkillPanel {
             }
         }));
         box.addView(bar2);
-        box.addView(Ui.spacer(act, 10));
+        box.addView(Ui.spacer(act, 14));
 
         if (list.isEmpty()) {
             LinearLayout empty = Ui.cardRect(act);
@@ -249,13 +251,13 @@ public class SkillPanel {
 
             if (s.description != null && !s.description.isEmpty()) {
                 TextView d = Ui.para(act, s.description, 12f, Palette.dim(act));
-                d.setPadding(0, Ui.dp(act, 7), 0, Ui.dp(act, 10));
+                d.setPadding(0, Ui.dp(act, 8), 0, Ui.dp(act, 12));
                 card.addView(d);
             }
             int extra = extras != null && i < extras.length ? extras[i] : 0;
             // 元信息用 alpha 压一档，比硬编码一个更暗的色号更安全（浅色主题下也不会发灰）
             TextView meta = Ui.text(act, "目录：" + s.id + " · 正文 " + s.body.length() + " 字"
-                    + (extra > 0 ? " · 附带 " + extra + " 个文件" : ""), 11f, Palette.dim(act));
+                    + (extra > 0 ? " · 附带 " + extra + " 个文件" : ""), 11.5f, Palette.dim(act));
             meta.setAlpha(0.72f);
             card.addView(meta);
 
@@ -301,6 +303,14 @@ public class SkillPanel {
                     }));
             box.addView(more);
         }
+    }
+
+    /** 次要操作：纯文字链接，accent 色 + 足够大的点击热区 */
+    private TextView link(String label, View.OnClickListener l) {
+        TextView t = Ui.text(act, label, 12.5f, Palette.accent(act));
+        t.setPadding(0, Ui.dp(act, 8), Ui.dp(act, 20), Ui.dp(act, 8));
+        t.setOnClickListener(l);
+        return t;
     }
 
     private void confirmDelete(final SkillStore.Skill s) {

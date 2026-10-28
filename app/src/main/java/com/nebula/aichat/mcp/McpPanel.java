@@ -122,9 +122,12 @@ public class McpPanel {
             String cached = infoCache.get(s.id);
             if (cached != null) {
                 TextView res = Ui.para(act, cached, 11.5f, Palette.accent(act));
-                res.setPadding(0, Ui.dp(act, 6), 0, 0);
+                res.setPadding(0, Ui.dp(act, 8), 0, Ui.dp(act, 4));
                 card.addView(res);
             }
+
+            // 信息区（名称/地址/测试结果）与操作区断开，卡片内部形成「上读下管」两层
+            card.addView(Ui.rowDivider(act, 0));
 
             LinearLayout actions = Ui.row(act);
             actions.setPadding(0, Ui.dp(act, 12), 0, 0);

@@ -2625,39 +2625,50 @@ public class MainActivity extends AppCompatActivity {
     private void showNetMenu() {
         if (composer == null) return;
 
-        // 外层已给 20dp 边距，行内不再重复
-        int px = 0;
-        int py = Ui.dp(this, 11);
         int pad = Ui.dp(this, 20);
+        int inset = Ui.dp(this, 15);   // 卡片内每一行的左右缩进
+        int rowPy = Ui.dp(this, 13);
+
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(pad, pad, pad, Ui.dp(this, 6));
+        box.setPadding(pad, pad, pad, Ui.dp(this, 4));
         Ui.dialogHeader(box, this, "联网与浏览",
                 "联网搜索让 AI 在回答前检索最新资料；浏览器自动化可以让它自己打开网页读正文。");
 
-        box.addView(switchRow("联网搜索",
+        // ---- 第一组：两个能力开关，装进同一张卡片，中间用内缩分隔线断开 ----
+        box.addView(Ui.sectionLabel(this, "检索能力"));
+
+        LinearLayout caps = Ui.groupCard(this);
+        caps.addView(switchRow("联网搜索",
                 "发送前自动检索最新资料，把摘要一起交给 AI",
-                composer.isNetOn(), (btn, on) -> composer.setNetOn(on, true), px, py));
-        box.addView(switchRow("浏览器自动化",
+                composer.isNetOn(), (btn, on) -> composer.setNetOn(on, true), inset, rowPy));
+        caps.addView(Ui.rowDivider(this, inset));
+        caps.addView(switchRow("浏览器自动化",
                 "AI 可自己打开网页读正文，摘要不够时用",
-                composer.isBrowserOn(), (btn, on) -> composer.setBrowserOn(on, true), px, py));
+                composer.isBrowserOn(), (btn, on) -> composer.setBrowserOn(on, true), inset, rowPy));
+        box.addView(caps);
 
-        View div = new View(this);
-        div.setBackgroundColor(Palette.stroke(this));
-        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, Ui.dp(this, 1)));
-        dlp.leftMargin = px;
-        dlp.rightMargin = px;
-        box.addView(div, dlp);
+        // ---- 第二组：引擎选择，单独一张卡片 ----
+        box.addView(Ui.spacer(this, 20));
+        box.addView(Ui.sectionLabel(this, "搜索引擎"));
 
-        final TextView eng = new TextView(this);
-        eng.setText("搜索引擎：" + (WebSearch.ENGINE_DDG
-                .equalsIgnoreCase(settings.searchEngine) ? "DuckDuckGo" : "Bing（国内可直连）") + "  ›");
-        eng.setTextSize(14f);
-        eng.setTextColor(Palette.c(C_TEXT2));
-        eng.setPadding(px, Ui.dp(this, 14), px, Ui.dp(this, 14));
-        eng.setOnClickListener(v -> chooseSearchEngine());
-        box.addView(eng);
+        LinearLayout engGroup = Ui.groupCard(this);
+        final String engName = WebSearch.ENGINE_DDG.equalsIgnoreCase(settings.searchEngine)
+                ? "DuckDuckGo" : "Bing（国内可直连）";
+
+        LinearLayout engRow = Ui.row(this);
+        engRow.setPadding(inset, Ui.dp(this, 15), Ui.dp(this, 15), Ui.dp(this, 15));
+        engRow.setClickable(true);
+        engRow.setBackground(Ui.pressable(this, Ui.rect(this, 0x00000000, 0x00000000, 0f)));
+        engRow.setOnClickListener(v -> chooseSearchEngine());
+
+        TextView engNameView = Ui.text(this, engName, 14.5f, Palette.text(this));
+        engRow.addView(engNameView, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView arrow = Ui.text(this, "›", 18f, Palette.dim(this));
+        engRow.addView(arrow);
+        engGroup.addView(engRow);
+        box.addView(engGroup);
 
         new NebAlert.Builder(this)
                 .setView(box)

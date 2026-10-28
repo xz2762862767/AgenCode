@@ -254,9 +254,45 @@ public class Ui {
 
     public static View divider(Context c) {
         View v = new View(c);
-        v.setBackgroundColor(Palette.c(0xFF2A3240));
+        v.setBackgroundColor(Palette.stroke(c));
         v.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 Math.max(1, dp(c, 0.6f))));
+        return v;
+    }
+
+    /**
+     * 分组小标签：卡片上方的说明性标题（"检索能力""搜索引擎"）。
+     * 字号小、加粗、拉开字距，作用是把下面的卡片圈成一个语义组，
+     * 而不是让每行控件都平铺在弹窗里。
+     */
+    public static TextView sectionLabel(Context c, String s) {
+        TextView tv = text(c, s, 11f, Palette.dim(c));
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setLetterSpacing(0.09f);
+        tv.setPadding(dp(c, 2), dp(c, 4), 0, dp(c, 8));
+        return tv;
+    }
+
+    /**
+     * 分组卡片：直角、无内边距。
+     * 与 cardRect 的区别是 padding 为 0，由内部每一行自己控制左右缩进，
+     * 这样行与行之间的分隔线可以通栏，而文字仍保持 14dp 缩进。
+     */
+    public static LinearLayout groupCard(Context c) {
+        LinearLayout box = new LinearLayout(c);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(rect(c, Palette.surface2(c), Palette.stroke(c), 1f));
+        return box;
+    }
+
+    /** 分组卡片内部的分隔线：左侧留出 inset，不切到卡片边缘，视觉上仍在同一组内 */
+    public static View rowDivider(Context c, int insetPx) {
+        View v = new View(c);
+        v.setBackgroundColor(Palette.stroke(c));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(c, 0.7f)));
+        lp.leftMargin = insetPx;
+        v.setLayoutParams(lp);
         return v;
     }
 

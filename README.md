@@ -15,7 +15,7 @@
 
 ## 安装
 
-**① 装现成的包**：到 [Releases](../../releases) 下载最新的 `NebulaAI-v*.apk`，
+**① 装现成的包**：到 [Releases](../../releases) 下载最新的 `AgenCode-v*.apk`，
 手机上允许「安装未知来源应用」后点开即可。最低支持 Android 8.0（API 26）。
 
 **② 自己编译**：见下方[构建](#构建)，产物在 `app/build/outputs/apk/debug/`。
@@ -66,7 +66,7 @@
 - **MCP**：填服务器地址即可把外部工具挂进来，和内置工具一起被调度
 
 ### 稳定性
-- `CrashLog`：崩溃堆栈、ANR 记录、心跳全部落盘到 `下载/NebulaAI/`
+- `CrashLog`：崩溃堆栈、ANR 记录、心跳全部落盘到 `下载/AgenCode/`
 - `AnrWatchdog`：主线程卡顿超阈值自动记录调用栈
 - 历史消息虚拟化 + 流式渲染让路，长会话滑动不掉帧
 
@@ -177,7 +177,7 @@ app/src/main/java/com/nebula/aichat/
 
 ## 参与贡献
 
-- **报 bug**：附上机型和 `下载/NebulaAI/` 目录下的崩溃日志，比截图有用得多
+- **报 bug**：附上机型和 `下载/AgenCode/` 目录下的崩溃日志，比截图有用得多
 - **提 PR**：一个 PR 只做一件事；改动较大时先开 Issue 对齐方向
 - **提交前**：跑一次 `gradle assembleDebug` 确认能编过
 

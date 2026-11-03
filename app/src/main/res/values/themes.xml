@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="colorPrimary">@color/bg</item>
+        <item name="colorPrimaryDark">@color/bg</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="android:textColorHint">@color/text_dim</item>
+
+        <!-- 语义色（默认：深色 + 蓝） -->
+        <item name="neb_bg">@color/bg</item>
+        <item name="neb_surface">@color/surface</item>
+        <item name="neb_surface2">@color/surface2</item>
+        <item name="neb_stroke">@color/stroke</item>
+        <item name="neb_text">@color/text</item>
+        <item name="neb_dim">@color/text_dim</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_bg</item>
+        <!-- 按下高亮：深色底上用半透明白，默认的半透明黑在深色上几乎看不见 -->
+        <item name="android:colorControlHighlight">#33FFFFFF</item>
+        <item name="colorControlHighlight">#33FFFFFF</item>
+
+        <!-- 弹窗/抽屉继承弹窗主题，才能解析到 neb_* 语义色 -->
+        <item name="android:dialogTheme">@style/NebDialog</item>
+        <item name="alertDialogTheme">@style/NebDialog</item>
+        <item name="android:alertDialogTheme">@style/NebDialog</item>
+    </style>
+
+    <!-- 纯黑 OLED：只压暗背景层，卡片/描边改用近黑，省电且不刺眼 -->
+    <style name="AppTheme.Black">
+        <item name="colorPrimary">@color/bg_black</item>
+        <item name="colorPrimaryDark">@color/bg_black</item>
+        <item name="android:windowBackground">@color/bg_black</item>
+        <item name="android:statusBarColor">@color/bg_black</item>
+        <item name="android:navigationBarColor">@color/bg_black</item>
+
+        <item name="neb_bg">@color/bg_black</item>
+        <item name="neb_surface">@color/surface_black</item>
+        <item name="neb_surface2">@color/surface2_black</item>
+        <item name="neb_stroke">@color/stroke_black</item>
+        <item name="neb_code">@color/code_black</item>
+        <item name="android:colorControlHighlight">#33FFFFFF</item>
+        <item name="colorControlHighlight">#33FFFFFF</item>
+        <item name="android:dialogTheme">@style/NebDialogBlack</item>
+        <item name="alertDialogTheme">@style/NebDialogBlack</item>
+        <item name="android:alertDialogTheme">@style/NebDialogBlack</item>
+    </style>
+
+
+    <!-- 默认白：浅色底 + 深色文字，状态栏图标转深色 -->
+    <!-- 必须显式继承 Light 版 AppCompat：否则按点号隐式继承深色 AppTheme，
+         colorBackground / EditText / CheckBox / PopupMenu / Toast 等系统控件仍是暗色 -->
+    <style name="AppTheme.Light.Base" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:colorBackground">@color/bg_light</item>
+        <item name="colorPrimary">@color/surface_light</item>
+        <item name="colorPrimaryDark">@color/bg_light</item>
+        <item name="android:windowBackground">@color/bg_light</item>
+        <item name="android:statusBarColor">@color/bg_light</item>
+        <item name="android:navigationBarColor">@color/bg_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:textColorPrimary">@color/text_light</item>
+        <item name="android:textColorSecondary">@color/text_dim_light</item>
+        <item name="android:textColorHint">@color/text_dim_light</item>
+
+        <item name="neb_bg">@color/bg_light</item>
+        <item name="neb_surface">@color/surface_light</item>
+        <item name="neb_surface2">@color/surface2_light</item>
+        <item name="neb_stroke">@color/stroke_light</item>
+        <item name="neb_text">@color/text_light</item>
+        <item name="neb_dim">@color/text_dim_light</item>
+        <item name="neb_code">@color/code_light</item>
+        <item name="android:colorControlHighlight">#22000000</item>
+        <item name="colorControlHighlight">#22000000</item>
+        <item name="android:dialogTheme">@style/NebDialogLight</item>
+        <item name="alertDialogTheme">@style/NebDialogLight</item>
+        <item name="android:alertDialogTheme">@style/NebDialogLight</item>
+    </style>
+
+    <!-- 强调色覆盖（运行时 applyStyle 叠加到当前主题上） -->
+    <!-- 薄壳：真实属性在 .Base 里，values-v27 只覆盖导航栏亮色这一个 item -->
+    <style name="AppTheme.Light" parent="AppTheme.Light.Base" />
+
+    <style name="AccentBlue">
+        <item name="neb_accent">@color/accent_blue</item>
+        <item name="colorAccent">@color/accent_blue</item>
+    </style>
+
+    <style name="AccentPurple">
+        <item name="neb_accent">@color/accent_purple</item>
+        <item name="colorAccent">@color/accent_purple</item>
+    </style>
+
+    <style name="AccentGreen">
+        <item name="neb_accent">@color/accent_green</item>
+        <item name="colorAccent">@color/accent_green</item>
+    </style>
+
+    <style name="AccentOrange">
+        <item name="neb_accent">@color/accent_orange</item>
+        <item name="colorAccent">@color/accent_orange</item>
+    </style>
+
+    <style name="AccentCyan">
+        <item name="neb_accent">@color/accent_cyan</item>
+        <item name="colorAccent">@color/accent_cyan</item>
+    </style>
+
+    <!-- ===== 弹窗主题：与主主题一一对应 ===== -->
+    <!-- 弹窗独立于 Activity 主题，必须自己带 neb_* 语义色，否则 new Dialog(this)
+         会落到 AppCompat 默认弹窗主题，抽屉/面板里的 ?attr/neb_bg 全部解析不到 -->
+
+    <style name="NebDialog" parent="Theme.AppCompat.Dialog">
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="android:textColorHint">@color/text_dim</item>
+        <item name="android:colorBackground">@color/surface</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:colorBackgroundFloating">@color/surface</item>
+        <item name="neb_bg">@color/bg</item>
+        <item name="neb_surface">@color/surface</item>
+        <item name="neb_surface2">@color/surface2</item>
+        <item name="neb_stroke">@color/stroke</item>
+        <item name="neb_text">@color/text</item>
+        <item name="neb_dim">@color/text_dim</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_bg</item>
+    </style>
+
+    <style name="NebDialogBlack" parent="Theme.AppCompat.Dialog">
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="android:colorBackground">@color/surface_black</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:colorBackgroundFloating">@color/surface_black</item>
+        <item name="neb_bg">@color/bg_black</item>
+        <item name="neb_surface">@color/surface_black</item>
+        <item name="neb_surface2">@color/surface2_black</item>
+        <item name="neb_stroke">@color/stroke_black</item>
+        <item name="neb_text">@color/text</item>
+        <item name="neb_dim">@color/text_dim</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_black</item>
+    </style>
+
+    <style name="NebDialogLight" parent="Theme.AppCompat.Light.Dialog">
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/text_light</item>
+        <item name="android:textColorSecondary">@color/text_dim_light</item>
+        <item name="android:textColorHint">@color/text_dim_light</item>
+        <item name="android:colorBackground">@color/surface_light</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:colorBackgroundFloating">@color/surface_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="neb_bg">@color/bg_light</item>
+        <item name="neb_surface">@color/surface_light</item>
+        <item name="neb_surface2">@color/surface2_light</item>
+        <item name="neb_stroke">@color/stroke_light</item>
+        <item name="neb_text">@color/text_light</item>
+        <item name="neb_dim">@color/text_dim_light</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_light</item>
+    </style>
+
+    <style name="DialogTheme" parent="Theme.AppCompat.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="neb_bg">@color/bg</item>
+        <item name="neb_surface">@color/surface</item>
+        <item name="neb_surface2">@color/surface2</item>
+        <item name="neb_stroke">@color/stroke</item>
+        <item name="neb_text">@color/text</item>
+        <item name="neb_dim">@color/text_dim</item>
+        <item name="neb_accent">@color/accent</item>
+        <item name="neb_code">@color/code_bg</item>
+    </style>
+
+    <!-- 侧滑抽屉：从左滑入 / 滑出 -->
+    <style name="DrawerAnim">
+        <item name="android:windowEnterAnimation">@anim/drawer_in</item>
+        <item name="android:windowExitAnimation">@anim/drawer_out</item>
+    </style>
+
+    <!-- ===== 直角弹窗主题：仅模型选择/添加模型两个面板使用 ===== -->
+    <!-- Android 12+ 对 floating window 在 Surface 层强制加圆角，
+         windowBackground 设直角 shape 也盖不住。关掉 windowIsFloating 可以拿回直角，
+         但窗口不再自动居中，需要 NebAlert 里显式 gravity=CENTER + setLayout 收窄。
+         只给这两个面板用，避免影响其它 58 处弹窗。 -->
+    <style name="NebDialogRect" parent="NebDialog">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:backgroundDimAmount">0.6</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+    </style>
+
+    <style name="NebDialogRectBlack" parent="NebDialogBlack">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:backgroundDimAmount">0.6</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+    </style>
+
+    <style name="NebDialogRectLight" parent="NebDialogLight">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@drawable/neb_dialog_bg</item>
+        <item name="android:backgroundDimAmount">0.35</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+    </style>
+</resources>

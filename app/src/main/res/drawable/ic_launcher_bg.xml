@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标背景：与「六角棱镜」前景同源的深空底色。
+     前景六边形内部为实体、外部光晕在此层上淡出，72dp 裁切边界前已归零。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="295"
+        android:startColor="#0E1C1F"
+        android:centerColor="#0A1416"
+        android:endColor="#04080A"
+        android:type="linear" />
+</shape>

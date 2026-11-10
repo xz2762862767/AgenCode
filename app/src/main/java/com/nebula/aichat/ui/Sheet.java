@@ -373,6 +373,9 @@ public class Sheet {
     // ======================================================== 显示
 
     public Dialog show() {
+        // Activity 已经销毁还弹窗会直接 BadTokenException 崩掉；网络/安装这类异步回调
+        // 回来时用户很可能已经退出，所以在这里统一兜一层。
+        if (act == null || act.isFinishing() || act.isDestroyed()) return dlg;
         dlg.setContentView(root);
         Window w = dlg.getWindow();
         if (w != null) {

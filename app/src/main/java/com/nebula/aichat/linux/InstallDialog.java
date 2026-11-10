@@ -40,13 +40,17 @@ public final class InstallDialog {
                     if (com.nebula.aichat.linux.Toolchain.running) return;
                     final boolean needCore = !com.nebula.aichat.linux.Toolchain.coreReady(act);
                     final boolean needJre = !com.nebula.aichat.linux.Toolchain.jreReady(act);
-                    if (!needCore && !needJre) return;
+                    final boolean needPy = !com.nebula.aichat.linux.Toolchain.pythonReady(act);
+                    final boolean needMedia = !com.nebula.aichat.linux.Toolchain.mediaReady(act);
+                    if (!needCore && !needJre && !needPy && !needMedia) return;
                     act.runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
                             android.widget.Toast.makeText(act,
                                     needJre ? "正在后台准备反编译环境（约 65MB），可以继续使用"
-                                            : "正在后台补齐基础命令（约 5MB）",
+                                            : (needPy || needMedia)
+                                            ? "正在后台补齐 numpy / ffmpeg（约 75MB·零流量），可以继续使用"
+                                            : "正在后台补齐基础命令（约 29MB）",
                                     android.widget.Toast.LENGTH_LONG).show();
                         }
                     });

@@ -23,6 +23,26 @@ public final class Toolchain {
 
     // ---- 安装状态（页面横幅轮询显示，弹窗关掉也能看到进度）
     public static volatile boolean running;
+
+    /**
+     * 真正的互斥用 CAS，不能靠读 running 判断：两个线程同时读到 false 会一起往下走，
+     * 于是两个 apk 进程互相踩（首启自动补齐与用户手动点按钮就可能同时发生）。
+     * running 保留给界面显示状态用。
+     */
+    private static final java.util.concurrent.atomic.AtomicBoolean LOCK =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** 抢占安装锁，抢不到返回 false。持有者必须 try/finally 里 release()。 */
+    private static boolean acquire() {
+        if (!LOCK.compareAndSet(false, true)) return false;
+        running = true;
+        return true;
+    }
+
+    private static void release() {
+        running = false;
+        LOCK.set(false);
+    }
     public static volatile String step = "";
     public static volatile long startedAt;
     public static volatile String lastLine = "";
@@ -30,10 +50,10 @@ public final class Toolchain {
 
     /** 多个镜像按顺序回退：阿里云 HTTPS → 清华 → 官方 → 阿里云 HTTP（防 CA 证书缺失） */
     public static final String[] MIRRORS = {
-            "https://mirrors.aliyun.com/alpine/v3.20",
-            "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.20",
-            "https://dl-cdn.alpinelinux.org/alpine/v3.20",
-            "http://mirrors.aliyun.com/alpine/v3.20"
+            "https://mirrors.aliyun.com/alpine/v3.22",
+            "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.22",
+            "https://dl-cdn.alpinelinux.org/alpine/v3.22",
+            "http://mirrors.aliyun.com/alpine/v3.22"
     };
 
     /** 镜像域名（App 侧解析后写入 rootfs hosts，绕开 proot 内 DNS 被拦的问题） */
@@ -41,7 +61,7 @@ public final class Toolchain {
             "mirrors.aliyun.com", "mirrors.tuna.tsinghua.edu.cn", "dl-cdn.alpinelinux.org"
     };
 
-    private static final String HTTP_MIRROR = "http://mirrors.aliyun.com/alpine/v3.20";
+    private static final String HTTP_MIRROR = "http://mirrors.aliyun.com/alpine/v3.22";
 
     /**
      * 网络准备：App 侧解析镜像域名 → 写进 rootfs 的 /etc/hosts。
@@ -109,10 +129,16 @@ public final class Toolchain {
     }
 
     /** 基础工具包（约 15MB） */
-    public static final String CORE_PKGS = "zip unzip xz curl sqlite git xxd";
+    public static final String CORE_PKGS = "zip unzip xz curl sqlite git xxd jq rsync gdb tree";
 
-    /** 开发工具包（约 245MB：python3 + nodejs + gcc 工具链 + Java 运行时） */
+    /** 开发工具包（约 158MB：python3 + nodejs + gcc 工具链 + Java 运行时） */
     public static final String DEV_PKGS = "python3 nodejs make gcc musl-dev openjdk17-jre-headless";
+
+    /** Python 数据档：pip + numpy（约 29MB，随 APK 内置，零流量） */
+    public static final String PY_PKGS = "py3-pip py3-numpy";
+
+    /** 媒体档：ffmpeg 6.1 与全套编解码（约 45MB，随 APK 内置，零流量） */
+    public static final String MEDIA_PKGS = "ffmpeg";
 
     /** 只要 Java 运行时（约 60MB）：内置的 jadx / apktool / baksmali / smali 全部依赖它 */
     public static final String JRE_PKGS = "openjdk17-jre-headless";
@@ -156,6 +182,135 @@ public final class Toolchain {
         return install(c, MANIFEST_JRE, JRE_PKGS, p);
     }
 
+    // ------------------------- JDK 17 编译器档 -------------------------
+    // 为什么不走 apk add：官方 openjdk17-jdk 声明依赖 openjdk17-jre（会拖 libX11/libXext/libXi
+    // 一串图形库，proot 里没有 X，纯废体积）和 openjdk17-jmods（70MB，只有 jlink 用得上）。
+    // 而我们的离线安装是「--no-network + 空仓库」，依赖纯本地解析，缺一个就整档装不上。
+    // javac 真正需要的只有已经装好的 jre-headless（Java 本体 lib/modules 全在里面），
+    // 所以这里不重打包、不改 datahash，直接把官方包里的 usr/ 树解出来，绕开依赖，零额外体积。
+
+    /** 原样内置的官方 JDK 包名（5.6MB，含 javac/javadoc/jar/javap/jshell 等 25 个工具 + JNI 头文件） */
+    public static final String JDK_ASSET = "openjdk17-jdk-17.0.19_p10-r0.apk";
+    public static final String JDK_HOME = "/usr/lib/jvm/java-17-openjdk";
+    /** JDK 自带的开发工具，装完统一软链进 /usr/bin（官方包内 usr/bin 是空的，不建链敲 javac 会 not found） */
+    private static final String JDK_BINS = "javac javadoc jar jarsigner javap jshell jdb jdeps jdeprscan"
+            + " jlink jmod jpackage jimage serialver jcmd jconsole jhsdb jinfo";
+
+    /** JDK 档是否就位：javac 可执行即算装好 */
+    public static boolean jdkInstalled(Context c) {
+        LinuxEnv env = LinuxEnv.get(c);
+        if (!env.isInstalled()) return false;
+        String out = env.execSync("test -x " + JDK_HOME + "/bin/javac && echo YJAVAC", 30000);
+        return out != null && out.contains("YJAVAC");
+    }
+
+    public static String installJdk(Context c, ApkWorkbench.Progress p) {
+        if (!acquire()) return "已有安装任务在跑，稍后再试";
+        try {
+            return installJdkInner(c, p);
+        } finally {
+            release();
+        }
+    }
+
+    /** 真正干活的版本：调用方必须已经持有安装锁（provision 就是持锁后直接调它） */
+    private static String installJdkInner(Context c, ApkWorkbench.Progress p) {
+        final LinuxEnv env = LinuxEnv.get(c);
+        if (!env.isInstalled()) return "还没有安装内置 Linux 环境，请先点上面「安装内置 Linux」";
+        if (jdkInstalled(c)) {
+            linkJdkBins(c);
+            return null;
+        }
+        // javac 只是 jre-headless 上的一层 launcher，必须先有 Java 本体；
+        // 也避免先解 JDK 再装 jre 时 apk 撞到同名文件报冲突。
+        if (!allInstalled(c, JRE_PKGS)) {
+            // 不能调 installJre()：它会再抢一次锁，必然失败
+            String e0 = installInner(c, MANIFEST_JRE, JRE_PKGS, p);
+            if (e0 != null) return "JDK 需要先有 Java 运行时：" + e0;
+        }
+        startedAt = System.currentTimeMillis();
+        lastLine = "";
+        doneMsg = "";
+        try {
+            step = "释放 JDK 17 编译器（5.6MB 随 APK 内置，不联网）…";
+            if (p != null) p.onStep(step);
+            java.io.InputStream in = null;
+            try {
+                in = c.getAssets().open("alpack/" + JDK_ASSET);
+                TarGz.extract(in, env.rootfs(), 10059653L, new TarGz.Progress() {
+                    @Override
+                    public void onProgress(int percent, String currentEntry) {
+                        lastLine = "解包 " + percent + "%　" + currentEntry;
+                    }
+                });
+            } catch (Exception e) {
+                return "释放 JDK 失败：" + e;
+            } finally {
+                if (in != null) {
+                    try {
+                        in.close();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            // apk 包自带的元数据/签名会一并落到根目录，清掉免得碍眼
+            //noinspection ResultOfMethodCallIgnored
+            new java.io.File(env.rootfs(), ".PKGINFO").delete();
+            java.io.File[] junk = env.rootfs().listFiles();
+            if (junk != null) {
+                for (java.io.File f : junk) {
+                    if (f.getName().startsWith(".SIGN.")) //noinspection ResultOfMethodCallIgnored
+                        f.delete();
+                }
+            }
+            step = "补 /usr/bin 软链…";
+            if (p != null) p.onStep(step);
+            linkJdkBins(c);
+            if (!jdkInstalled(c)) return "JDK 已解出但 javac 不可执行，请重试";
+            String ver = env.execSync(JDK_HOME + "/bin/javac -version 2>&1", 60000);
+            lastLine = ver == null ? "" : ver.trim();
+            return null;
+        } finally {
+            doneMsg = (System.currentTimeMillis() - startedAt) / 1000 + "s";
+        }
+    }
+
+    private static void linkJdkBins(Context c) {
+        LinuxEnv env = LinuxEnv.get(c);
+        env.execSync("J=" + JDK_HOME + "/bin; mkdir -p /usr/bin; for b in " + JDK_BINS
+                + "; do [ -x \"$J/$b\" ] && ln -sf \"$J/$b\" /usr/bin/$b; done; echo OK", 60000);
+    }
+
+    /**
+     * 装 Python 数据档（pip / numpy）。包全部随 APK 内置，一点就来，不耗流量。
+     *
+     * @return null 表示成功，否则返回错误说明
+     */
+    public static String installPython(Context c, ApkWorkbench.Progress p) {
+        return install(c, MANIFEST_PY, PY_PKGS, p);
+    }
+
+    /**
+     * 装 FFmpeg 媒体档（转码 / 抽帧 / 压片）。包全部随 APK 内置，不耗流量。
+     *
+     * @return null 表示成功，否则返回错误说明
+     */
+    public static String installMedia(Context c, ApkWorkbench.Progress p) {
+        return install(c, MANIFEST_MEDIA, MEDIA_PKGS, p);
+    }
+
+    /** Python 数据档是否已装（会起一次 proot，务必在后台线程调用） */
+    public static boolean pythonReady(Context c) {
+        if (!LinuxEnv.get(c).isInstalled()) return false;
+        return allInstalled(c, PY_PKGS);
+    }
+
+    /** FFmpeg 是否已装（会起一次 proot，务必在后台线程调用） */
+    public static boolean mediaReady(Context c) {
+        if (!LinuxEnv.get(c).isInstalled()) return false;
+        return allInstalled(c, MEDIA_PKGS);
+    }
+
     /** 基础工具是否已装齐（会起一次 proot，务必在后台线程调用） */
     public static boolean coreReady(Context c) {
         if (!LinuxEnv.get(c).isInstalled()) return false;
@@ -168,28 +323,117 @@ public final class Toolchain {
         return allInstalled(c, JRE_PKGS);
     }
 
+    // ---- 自动开箱的对外进度：主界面输入框上方的进度条直接读这几个值 ----
+    /** 是否正在自动开箱（四档） */
+    public static volatile boolean provisioning;
+    /** 当前正在装的档序号（0 基，已装完的档数） */
+    public static volatile int planStep;
+    /** 这一轮实际需要装的档总数（老用户可能只缺一两档） */
+    public static volatile int planStepTotal = 4;
+    /** 加权总进度 0-100（按各档压缩包体积分档推进） */
+    public static volatile int planPct;
+    /** 当前档的说明，如「Java 运行时 61MB」 */
+    public static volatile String planLabel = "";
+
     /**
-     * 一键开箱：基础命令包 + Java 运行时。
+     * 一键开箱：基础命令包 + Java 运行时 + JDK 编译器 + Python 数据档 + FFmpeg，五档全上。
      *
-     * 两档必须串行装（同一个 apk 进程不能并发跑），已装好的档自动跳过，
+     * 各档必须串行装（同一个 apk 进程不能并发跑），已装好的档自动跳过，
      * 所以重复调用很便宜。阻塞调用，务必放后台线程。
      *
      * @return 都齐了返回 null，否则返回第一处错误说明
      */
     public static String provision(Context c, ApkWorkbench.Progress p) {
         if (!LinuxEnv.get(c).isInstalled()) return "还没有安装内置 Linux 环境";
-        if (running) return "已有安装任务在跑，稍后再试";
 
-        if (!allInstalled(c, CORE_PKGS)) {
-            String err = install(c, MANIFEST_CORE, CORE_PKGS, p);
-            if (err != null) return "基础工具：" + err;
+        // 老用户的环境是早期版本解的（仓库源指向 v3.20），而随包内置的软件包是 v3.22 编译的，
+        // 用 apk add 装进去就成了两代混装。这里只把源那两行改成 v3.22，不动已装的包，幂等。
+        migrateRepos(c);
+
+        // 先探一遍缺哪几档：全齐就直接返回，别让进度条闪一下又消失
+        final boolean[] need = {
+                !allInstalled(c, CORE_PKGS), !allInstalled(c, JRE_PKGS), !jdkInstalled(c),
+                !allInstalled(c, PY_PKGS), !allInstalled(c, MEDIA_PKGS)
+        };
+        int total = 0;
+        for (boolean b : need) if (b) total++;
+        if (total == 0) return null;
+
+        // 到这里才真动手，此时才抢锁：上面的探测是只读的，不该拦住别的手动安装
+        if (!acquire()) return "已有安装任务在跑，稍后再试";
+
+        final String[] labels = {"基础工具 29MB", "Java 运行时 61MB", "JDK 编译器 5.6MB",
+                "Python 数据档 29MB", "FFmpeg 45MB"};
+        // 各档装完时的加权百分比（按压缩包体积摊，共 169MB）
+        final int[] afterPct = {17, 51, 54, 71, 100};
+
+        provisioning = true;
+        planStepTotal = total;
+        planStep = 0;
+        planPct = 0;
+        planLabel = "准备中…";
+        try {
+            int idx = 0;
+            int basePct = 0;
+            for (int i = 0; i < need.length; i++) {
+                if (!need[i]) {
+                    basePct = afterPct[i];
+                    planPct = basePct;
+                    continue;
+                }
+                idx++;
+                planStep = idx - 1;
+                planLabel = labels[i];
+                planPct = basePct;
+                String err = installTier(c, i, p);
+                if (err != null) return labels[i] + "：" + err;
+                planStep = idx;
+                planPct = afterPct[i];
+                basePct = afterPct[i];
+            }
+            planLabel = "完成";
+            return null;
+        } finally {
+            release();
+            provisioning = false;
         }
-        // 内置 jadx / apktool / baksmali / smali 都靠它，缺了整个逆向工具链等于摆设
-        if (!allInstalled(c, JRE_PKGS)) {
-            String err = install(c, MANIFEST_JRE, JRE_PKGS, p);
-            if (err != null) return "Java 运行时：" + err;
+    }
+
+    /**
+     * 把老用户环境里的 apk 源从 v3.20 改成 v3.22。
+     *
+     * <p>只重写 /etc/apk/repositories 里的版本号，不碰 /lib/apk/db 里已装的包，
+     * 也不联网；重复调用无副作用。改完用户自己 apk add 拉到的就是与内置包同代的包。
+     */
+    public static void migrateRepos(Context c) {
+        LinuxEnv env = LinuxEnv.get(c);
+        if (!env.isInstalled()) return;
+        env.execSync("G=/etc/apk/repositories; if grep -q 'v3\\.20' \"$G\" 2>/dev/null; then"
+                + " sed -i 's#v3\\.20#v3.22#g' \"$G\" && echo MIGRATED; fi", 30000);
+    }
+
+    /** 分档执行器：JDK 走自解 tar 树，其余走内置 apk 离线安装 */
+    private static String installTier(Context c, int tier, ApkWorkbench.Progress p) {
+        // 调用方（provision）已经持锁，这里只能走 inner 版本，再 acquire 一次必然失败
+        startedAt = System.currentTimeMillis();
+        lastLine = "";
+        doneMsg = "";
+        try {
+            switch (tier) {
+                case 0:
+                    return installInner(c, MANIFEST_CORE, CORE_PKGS, p);
+                case 1:
+                    return installInner(c, MANIFEST_JRE, JRE_PKGS, p);
+                case 2:
+                    return installJdkInner(c, p);
+                case 3:
+                    return installInner(c, MANIFEST_PY, PY_PKGS, p);
+                default:
+                    return installInner(c, MANIFEST_MEDIA, MEDIA_PKGS, p);
+            }
+        } finally {
+            doneMsg = (System.currentTimeMillis() - startedAt) / 1000 + "s";
         }
-        return null;
     }
 
     /**
@@ -200,20 +444,18 @@ public final class Toolchain {
      */
     public static String install(Context c, String manifest, String pkgs, ApkWorkbench.Progress p) {
         // 首启自动补齐 与 装完环境自动补齐 可能撞车，第二个直接让路，避免两个 apk 进程互踩
-        if (running) return "已有安装任务在跑，稍后再试";
-        LinuxEnv env = LinuxEnv.get(c);
-        if (!env.isInstalled()) {
-            return "还没有安装内置 Linux 环境，请先点上面「安装内置 Linux」";
-        }
-
-        running = true;
-        startedAt = System.currentTimeMillis();
-        lastLine = "";
-        doneMsg = "";
+        if (!acquire()) return "已有安装任务在跑，稍后再试";
         try {
+            LinuxEnv env = LinuxEnv.get(c);
+            if (!env.isInstalled()) {
+                return "还没有安装内置 Linux 环境，请先点上面「安装内置 Linux」";
+            }
+            startedAt = System.currentTimeMillis();
+            lastLine = "";
+            doneMsg = "";
             return installInner(c, manifest, pkgs, p);
         } finally {
-            running = false;
+            release();
             doneMsg = (System.currentTimeMillis() - startedAt) / 1000 + "s";
         }
     }
@@ -222,6 +464,8 @@ public final class Toolchain {
     private static final String MANIFEST_FULL = "alpacks.tsv";
     private static final String MANIFEST_CORE = "alpacks-core.tsv";
     private static final String MANIFEST_JRE = "alpacks-jre.tsv";
+    private static final String MANIFEST_PY = "alpacks-py.tsv";
+    private static final String MANIFEST_MEDIA = "alpacks-media.tsv";
 
     /**
      * 离线安装：由 App 自己（走 Android 网络栈）下载 apk 包，再让 proot 里的 apk 本地安装。

@@ -35,7 +35,7 @@ import java.util.Locale;
  *    全都能用公开 API + /proc 读到，不需要 root。
  *
  * 所以这里不假装自己是 logcat，而是把等价信息直接采出来，
- * 既给界面用，也给 run_shell 里的 `logcat` / `dumpsys` 内置命令兜底。
+ * 既给界面用，也给 bash_exec 里的 `logcat` / `dumpsys` 内置命令兜底。
  */
 public final class Diag {
 
@@ -121,7 +121,7 @@ public final class Diag {
         }
     }
 
-    /** 全部日志合并成一段文本（给 run_shell 的 logcat 命令用） */
+    /** 全部日志合并成一段文本（给 bash_exec 的 logcat 命令用） */
     public static String allLogs(Context c, int perFileBytes) {
         List<File> fs = logFiles(c);
         if (fs.isEmpty()) return "(暂无日志文件)";

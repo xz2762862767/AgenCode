@@ -94,6 +94,14 @@ public class ChatClient {
         /** 单个工具还在跑（解包/打包可能几分钟），用来刷新「已用 N 秒」心跳 */
         default void onToolBeat(String name, long seconds) {
         }
+
+        /**
+         * 已经流到屏幕上的正文需要被改写：DSML 文本工具调用被识别出来之后，
+         * 那些 &lt;|DSML|invoke ...&gt; 标签不能留在气泡里。
+         * clean 是剔除标签后的正文（可能为空）。
+         */
+        default void onContentReset(String clean) {
+        }
     }
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -101,6 +109,14 @@ public class ChatClient {
     private volatile HttpURLConnection conn;
     /** 部分网关不认识 reasoning_effort 会返回 400；按网关 host 记住，换网关会重新尝试 */
     private static final java.util.Set<String> thinkBlockedHosts =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+
+    /**
+     * 少数网关完全不认 reasoning_content 字段（不是「要求回传」，而是直接判非法参数）。
+     * 这种网关一旦确认就记住，之后不再带，免得每轮都 400 一次再重试。
+     * 注意与「必须回传」区分：后者是 DeepSeek thinking 模式的硬要求，必须带上。
+     */
+    private static final java.util.Set<String> reasoningEchoBlockedHosts =
             java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
 
     /**
@@ -131,12 +147,33 @@ public class ChatClient {
     /** 额外的系统提示（如启用中的技能），会拼接在用户设置之后 */
     public volatile String extraSystem = null;
 
+    /**
+     * 只挂在本轮「最后一条用户消息」上的动态信息（当前时间等）。
+     *
+     * <p>为什么不能放进 system：system 是整段请求的最前缀，服务端的前缀缓存
+     * 是逐字节比对的，system 里改一个字符，它后面的工具定义、历史消息、工具结果
+     * 全部跟着失效。时间精确到分钟，等于每轮都从头付费。
+     * 挂到最后一条用户消息上，是这条消息本来就每轮都变，不影响前面任何一段。
+     */
+    public volatile String tailHint = null;
+
     /** 工具注册表：为 null 表示本次对话不使用工具 */
     public volatile ToolRegistry tools = null;
 
     /** 一轮用户提问内最多允许多少轮工具调用，防止死循环 */
     /** 工具调用轮次上限：改 APK 这类任务十几步很常见，8 轮必然被掐断 */
-    private static final int MAX_TOOL_ROUNDS = 28;
+    /** 改包/编译这类任务的轮次预算：活儿多，给足 */
+    private static final int MAX_TOOL_ROUNDS = 50;
+    /**
+     * 闲聊、普通问答、单次脚本的轮次预算。
+     *
+     * <p>原来所有任务共用一份额度，问一句「今天几号」也配 28 轮，
+     * 而模型一旦开始调工具就会一路用到顶——每轮都是一次完整请求、一次完整计费。
+     * 这类任务 10 轮绰绰有余，超出就该直接出结论。
+     */
+    private static final int MAX_TOOL_ROUNDS_LIGHT = 10;
+    /** 本次任务实际可用的轮次，请求构建时按任务类型定 */
+    private int roundBudget = MAX_TOOL_ROUNDS_LIGHT;
     /**
      * 停滞判定阈值：不是「总时长到点就砍」，而是「连续这么久没有任何实质进展才砍」。
      *
@@ -145,7 +182,7 @@ public class ChatClient {
      * 用户看到的就是「跑到一半就停了」，而且下次续跑又从零摸索一遍。
      * 现在改看「有没有进展」：只要有新产物、新输出，就一直让它跑下去。
      */
-    private static final long STALL_MS = 120_000L;
+    private static final long STALL_MS = 180_000L;
     /** 兜底总时长：真碰上死循环的活，20 分钟后强制进入收尾（在此之前全靠续命继续跑） */
     private static final long HARD_MS = 1_500_000L;
     /**
@@ -154,9 +191,9 @@ public class ChatClient {
      * <p>轮次或时间预算撞顶时先别收尾——把计数清零、重新计时，让它接着干，
      * 最多续这么多次。收尾对用户来说等于「任务失败」，续命才有机会一口气做完。
      */
-    private static final int MAX_REVIVE = 2;
+    private static final int MAX_REVIVE = 4;
     /** 阶段小结后自动接着干的最大次数（不把「继续」两个字甩回给用户） */
-    private static final int MAX_AUTO_RESUME = 1;
+    private static final int MAX_AUTO_RESUME = 3;
     /** 「只说不做」催办次数：模型光写字不动手时，催它动手 */
     private static final int MAX_NUDGE = 2;
 
@@ -184,6 +221,58 @@ public class ChatClient {
     /** 思考把输出额度烧光后的补救次数（只救一次，避免反复烧 token） */
     private int thinkRetry = 0;
     /**
+     * 救援请求专用：把输出额度抬到「够用」的水平。
+     *
+     * <p>只关思考强度是不够的——模型即使不收到 reasoning_effort 也会自己推理，
+     * 2048 的额度照样能被思考吃光，于是第二次重试还是空回答。
+     * 置为 true 后本次请求 max_tokens 至少 6144，保证正文一定写得出来。
+     * 一旦拿到正文就复位，避免后续每轮都多花额度。
+     */
+    private boolean thinkBoostOut = false;
+
+    /** 上次「只思考没正文」时模型实际想了多少字。
+     *  救援请求的 max_tokens 必须装得下「思考 + 正文」，否则会在思考阶段就把额度烧光、
+     *  正文依旧为空（实测模型想 16191 字却只给 6144 额度，必然二次失败）。 */
+    private int rescueThinkChars = 0;
+
+    /**
+     * 上一轮模型实际思考了多少字符。
+     *
+     * <p>这是「模型自带思考」的唯一可靠度量。deepseek-flash / 各类 reasoner 即使不发
+     * reasoning_effort 也会自己想几千字，而思考与正文共享同一份 max_tokens。
+     * 用户把「思考强度」设成关闭/轻度时 thinkReserve=0/4096，额度全被思考吃掉，
+     * 正文 0 字——实测现象就是「输出 2048 token（正好等于上限）+ 思考 5111 字 + 空回答」。
+     *
+     * <p>所以下一轮的额度要按这个实际值动态预留，而不是只看用户档位。
+     * 拿到正文后衰减到 70%，避免长期虚高预扣。
+     */
+    private int lastThinkChars = 0;
+
+    /** 本轮真正发给服务端的 max_tokens。思考与正文共享这一份额度，
+     *  流内掐断阈值必须按它换算，否则会出现「额度 2048 却允许想 8000 字」的错配。 */
+    private volatile int curOutTokens = 2048;
+
+    /**
+     * 本会话已打开的工具组（只增不减）。
+     *
+     * <p>原来每轮都按「最近几条用户消息里有没有 apk/编译/做东西」重算一次，结果同一段对话里
+     * 工具表一会儿 3 个、一会儿 18 个。工具定义排在请求最前面，它一变，服务端的前缀缓存
+     * 整段作废——实测同一会话两轮之间缓存命中率从 68% 掉到 42%，未命中 token 多付一倍。
+     * 组一旦打开就保持到会话结束，前缀才能稳定复用。
+     */
+    private int sessionGroups = 0;
+
+    /** 上一轮请求前缀（system + 工具定义）的哈希，用来判断这轮缓存还能不能命中 */
+    private int lastPrefixHash = 0;
+    /**
+     * 只在「下一次请求」里禁用工具（一次性，用完自动复位）。
+     *
+     * <p>用途：模型在工具里打转——同一件事反复调、几十轮过去正文一个字都没有。
+     * 这时继续给它工具只会继续烧钱，必须把工具摘掉，逼它用手里的信息写出结论。
+     * 不能用 toolsDisabled：那是静态的，一旦置位后续请求全部没有工具。
+     */
+    private boolean forceNoTools = false;
+    /**
      * 上一次请求把额度全烧在思考上、正文为空 → 本次请求强制关掉思考强度。
      *
      * <p>关三样：reasoning_effort 参数、思考提示词、max_tokens 放大。
@@ -191,9 +280,23 @@ public class ChatClient {
      * 那段提示词，所以必须一起停掉，否则重试等于再烧一次。
      */
     private boolean thinkOff = false;
+    /**
+     * 服务端已经明确抱怨过「没回传推理内容」时的强制模式。
+     * 与其让用户盯着 400 发呆，不如把范围内所有 assistant 一律带上（空串也带）再试一次。
+     * 一次性、不可逆，只在真出问题时付出一次重试成本。
+     */
+    private volatile boolean forceReasoningEcho = false;
     /** 续写前已经输出的内容，续写成功后要拼回去，否则界面上只剩后半段 */
     private String contPrefix = "";
     /** 工具结果上下文预算，撞到「上下文超限」时会自动下调 */
+    /** 工具 JSON Schema 每轮固定占用的 token：APK/构建/MCP 全挂时能到两三万，
+     *  不算进上下文会让界面严重低估真实窗口占用（曾出现界面显示 15%、实际 38%）。 */
+    private volatile int lastSchemaTokens = 0;
+
+    /** 上一轮真正拼好的 system 全文 token（含技能索引、环境信息、工具说明等）：
+     *  估算时只拿用户自定义提示词会漏掉大块固定开销，界面占用会低报好几倍。 */
+    private volatile int lastSysTokens = 0;
+
     private int ctxBudget = MAX_TOOL_CONTEXT_CHARS;
     /** 上下文超限收缩档位（0=正常，1=压工具结果，2=再丢旧历史） */
     private int ctxShrink = 0;
@@ -205,7 +308,7 @@ public class ChatClient {
      * 聊到第 30 轮，第 30 次请求光历史就是几万 token，累计是 O(n²)，
      * 这才是「同样问法在这儿比别家掉得快」的真正根因，不是模型贵。
      */
-    private static final int MAX_HISTORY_CHARS = 18000;
+    private static final int MAX_HISTORY_CHARS = 8000;
     private int historyBudget = MAX_HISTORY_CHARS;
 
     /**
@@ -234,6 +337,10 @@ public class ChatClient {
     private volatile int lastPromptTokens = 0;
     /** 上一次请求服务端回报的真实输出 token */
     private volatile int lastCompletionTokens = 0;
+    /** 上一次请求命中缓存的输入 token（DeepSeek 前缀缓存，命中价约为未命中的 1/10） */
+    private volatile int lastCacheHitTokens = 0;
+    /** 上一次请求未命中缓存的输入 token */
+    private volatile int lastCacheMissTokens = 0;
     private volatile boolean lastUsageReal = false;
     /** 拿到真值那次的历史条数：历史一变真值就过期，得改回估算 */
     private volatile int lastUsageHistorySize = -1;
@@ -332,9 +439,39 @@ public class ChatClient {
     private final Set<String> blockedTools = new HashSet<>();
     /** 本轮（一次工具调用批次）里没有拿到有效结果的调用数 */
     private int noResultCalls = 0;
+    /**
+     * 重复调用拦截窗口（毫秒）。
+     *
+     * <p>模型在摸目录结构时会连着问同一件事（日志里 6 秒内 apk_list_files 连查 5 次，
+     * 结果全一样）。每次调用都要把整段上下文重发一遍，按 token 计费等于白烧。
+     * 窗口内同工具同参数直接复用上次结果，模型看到的仍是正确数据，但零成本。
+     */
+    private static final long DUP_WINDOW_MS = 60_000L;
+    /** key = 工具名 + 分隔符 + 参数，value = 上次结果 */
+    private final Map<String, String> recentToolResults = new HashMap<String, String>();
+    private final Map<String, Long> recentToolAt = new HashMap<String, Long>();
     /** 连续多少轮工具调用全部没有结果 */
     private int emptyRoundStreak = 0;
     private int noProgressStreak = 0;
+
+    // ---- 验证闭环状态 ----
+    /** 改过东西但还没验证：为 true 时不允许收尾 */
+    private boolean needVerify = false;
+    private String lastWriteTool = "";
+    private int verifyRetry = 0;
+    /** 写类工具：改完必须有后续验证动作才算做完 */
+    private static final String[] WRITE_TOOLS = {
+            "apk_write_file", "apk_repack", "apk_sign", "build_apk"
+    };
+    /** 验证类工具：真跑起来看到输出，才算「验证过」 */
+    private static final String[] VERIFY_TOOLS = {
+            "bash_exec", "bash_bg", "apk_inspect", "apk_install", "apk_read_file"
+    };
+    /** 打回几次。1 次足够：再多就变成死循环，模型真没条件验证只能让它明说 */
+    private static final int MAX_VERIFY_RETRY = 1;
+    /** 计划自检打回次数，同样只给一次机会 */
+    private int planRetry = 0;
+    private static final int MAX_PLAN_RETRY = 1;
     private String lastRoundFp = "";
     /** 失败记录，用于最后兜底写一段能看的结论 */
     private final List<String> failedNotes = new ArrayList<>();
@@ -396,9 +533,14 @@ public class ChatClient {
         toolRound = 0;
         contCount = 0;
         thinkRetry = 0;
+        lastThinkChars = 0;
+        curOutTokens = 2048;
         thinkOff = false;
         contPrefix = "";
         ctxBudget = MAX_TOOL_CONTEXT_CHARS;
+        lastSchemaTokens = 0;
+        thinkBoostOut = false;
+        rescueThinkChars = 0;
         ctxShrink = 0;
         ctxHistoryKeep = -1;
         historyBudget = MAX_HISTORY_CHARS;
@@ -444,6 +586,10 @@ public class ChatClient {
         boolean recentInterrupt = interruptTs > 0L
                 && System.currentTimeMillis() - interruptTs < RESUME_WINDOW_MS;
         boolean saysContinue = wantsContinue(history);
+        // 计划表是「这一轮任务」的工作台：用户发来的是新任务就清空，
+        // 否则上一次的旧计划会拿「还有步骤没做完」把新任务拦下来。
+        // 用户说的是「继续」时保留，接着上次的步骤往下走。
+        if (!saysContinue) com.nebula.aichat.data.PlanStore.reset();
         // 只要手里有任何一条线索就接上：路径清单可能一条都没抓到（AI 用的是相对路径、
         // 或在脚本里 cd 过去做），但「断在哪个工具 + 最后几次动手」照样能救命。
         boolean hasTrace = !lastWorkbench.isEmpty() || !lastCalls.isEmpty();
@@ -483,9 +629,18 @@ public class ChatClient {
         blockedTools.clear();
         failedNotes.clear();
         noResultCalls = 0;
+        // 新任务开始，上一轮的调用缓存作废（改包任务会改动文件，旧结果不能复用）
+        synchronized (recentToolResults) {
+            recentToolResults.clear();
+            recentToolAt.clear();
+        }
         emptyRoundStreak = 0;
         noProgressStreak = 0;
         lastRoundFp = "";
+        needVerify = false;
+        lastWriteTool = "";
+        verifyRetry = 0;
+        planRetry = 0;
         // 任务现场落盘：这一轮从开始到结束都会被 RunGuard 记录。
         // 进程若在这个过程中被系统 SIGKILL（LMK 回收），finally 不会执行，
         // 记录残留下来，下次启动就能明确告知用户"上次任务是被系统终止的"，
@@ -511,6 +666,8 @@ public class ChatClient {
         final StringBuilder raw = new StringBuilder();
         boolean sawSse = false;
         boolean finished = false;
+        /** 思考失控保护：正文还没出、思考已超阈值，本流主动断线止损 */
+        boolean guardStop = false;
         /** 服务端给的结束原因：stop=正常说完 / length=撞到 max_tokens 被截断 / tool_calls=要调工具 */
         String finishReason = "";
         /** 流式 tool_calls 按 index 累积（TreeMap 保证顺序） */
@@ -579,7 +736,8 @@ public class ChatClient {
                 // 网关不认 stream_options → 去掉重试一次。拿不到 usage 只是统计退回估算，
                 // 绝不能因为这个可选字段把整次请求搞失败。
                 if (!usageOff && bodyStreaming(s) && !summarizeMode
-                        && err != null && err.toLowerCase().contains("stream_option")) {
+                        && err != null
+                        && err.toLowerCase(Locale.ROOT).contains("stream_option")) {
                     usageOff = true;
                     Log.w(TAG, "网关不认 stream_options，去掉后重试，用量统计改为估算");
                     try {
@@ -605,6 +763,37 @@ public class ChatClient {
                     }
                     conn = null;
                     if (!cancelled) doSend(s, history, l);
+                    return;
+                }
+                // 网关把 reasoning_content 当非法参数（少数兼容层会这样）：
+                // 记住本网关不再带，重试一次；「必须回传」的报错不走这条。
+                if (err != null && !reasoningEchoBlockedHosts.contains(gwKey)
+                        && isReasoningEchoRejected(err)) {
+                    Log.w(TAG, "网关不接受 reasoning_content 字段，本网关后续不再回传");
+                    reasoningEchoBlockedHosts.add(gwKey);
+                    try {
+                        c.disconnect();
+                    } catch (Exception ignored) {
+                    }
+                    conn = null;
+                    if (!cancelled) doSend(s, history, l);
+                    return;
+                }
+                // 服务端抱怨「思考模式必须回传推理内容」：说明还有 assistant 消息漏了字段。
+                // 正常路径已经保证带上，这里只是兜底——万一将来又冒出一条新分支，
+                // 用户至少不会看到一句 400 就卡死在半路。
+                if (err != null && !forceReasoningEcho && isReasoningEchoMissing(err)) {
+                    Log.w(TAG, "服务端要求回传 reasoning_content，改为强制回传后重试一次");
+                    forceReasoningEcho = true;
+                    try {
+                        c.disconnect();
+                    } catch (Exception ignored) {
+                    }
+                    conn = null;
+                    if (!cancelled) {
+                        post(() -> l.onToolRetryHint("补齐推理上下文后重试…"));
+                        doSend(s, history, l);
+                    }
                     return;
                 }
                 // 上下文超限：长任务的必然终点（历史 + 几十轮工具结果 + 长正文）。
@@ -687,8 +876,82 @@ public class ChatClient {
                 Log.w(TAG, "思考长度 " + st.reasoning.length() + "，本轮后续请求自动关闭思考强度");
                 post(() -> l.onToolRetryHint("思考过长，后续步骤自动降低思考强度以保证任务跑完…"));
             }
+            // ---- DSML 兜底：有的模型（DeepSeek 系）不走 tool_calls 字段，
+            // 而是把调用写成 <｜DSML｜invoke name="x"><｜DSML｜parameter name="y">… 塞进正文。
+            // 不认出来就一条工具都不执行，用户看到的就是「吐一堆标签然后结束」。
+            if (st.toolCalls.isEmpty() && !cancelled && tools != null
+                    && st.content.indexOf("DSML") >= 0) {
+                String rawAll = st.content.toString();
+                int n = parseDsmlIntoCalls(rawAll, st);
+                if (n > 0) {
+                    String clean = stripDsml(rawAll).trim();
+                    st.content.setLength(0);
+                    st.content.append(clean);
+                    Log.w(TAG, "命中 DSML 文本工具调用 " + n + " 个，已转为标准调用");
+                    post(() -> l.onContentReset(clean));
+                    runToolRound(s, history, l, st);
+                    return;
+                }
+            }
             if (!st.toolCalls.isEmpty() && !cancelled) {
                 runToolRound(s, history, l, st);
+                return;
+            }
+            // ---- 验证闭环：改过东西却一次都没验证，不许收尾 ----
+            // 这一步拦的是最常见的那种「假完成」：文件写完了、模型自己认为成了，
+            // 于是开始写总结，而编译错误/装不上/跑不起来一个都还没暴露。
+            if (!cancelled && needVerify && verifyRetry < MAX_VERIFY_RETRY) {
+                verifyRetry++;
+                final String wt = lastWriteTool.isEmpty() ? "写文件" : lastWriteTool;
+                Log.w(TAG, wt + " 之后没有验证就想收尾，已打回要求验证");
+                try {
+                    JSONObject m = new JSONObject();
+                    m.put("role", "user");
+                    m.put("content", "【验证闭环·系统拦截】你刚才用 " + wt + " 修改了东西，"
+                            + "但从那之后没有任何一次验证动作就想收尾，现在不允许结束。\n"
+                            + "要求：\n"
+                            + "1) 改了源码/脚本/配置 → 立刻跑一次编译或执行，把真实输出读出来；报错就修，修到通过为止。\n"
+                            + "2) 改了安装包/资源 → 重新打包、签名，确认产物真实存在、大小合理。\n"
+                            + "3) 改了运行逻辑 → 实际跑一遍目标场景，把真实输出作为依据。\n"
+                            + "4) 验证必须看真实输出：命令行退出码、编译结果、运行日志都算，"
+                            + "凭推理说「应该没问题」不算。\n"
+                            + "5) 确实无法验证（缺权限、缺设备、环境不支持）→ 在收尾时明确写「未能验证 + 具体原因」，"
+                            + "这样也可以收尾，但不许含糊过去。\n"
+                            + "不要用「你试试看」「应该可以」当交付。");
+                    toolMsgs.add(m);
+                } catch (Exception ignored) {
+                }
+                post(() -> l.onToolRetryHint("发现改动还没验证，已打回继续验证…"));
+                restartConnection();
+                chainDepth++;
+                continueRun(s, history, l);
+                return;
+            }
+            // ---- 计划自检：自己列的计划还没走完，不许收尾 ----
+            if (!cancelled && planRetry < MAX_PLAN_RETRY
+                    && !com.nebula.aichat.data.PlanStore.isEmpty()
+                    && com.nebula.aichat.data.PlanStore.pendingCount() > 0) {
+                planRetry++;
+                final String pend = com.nebula.aichat.data.PlanStore.pendingTitles();
+                Log.w(TAG, "计划还有未完成步骤就想收尾：" + pend);
+                try {
+                    JSONObject m = new JSONObject();
+                    m.put("role", "user");
+                    m.put("content", "【计划自检·系统拦截】你自己建立的任务计划里还有没做完的步骤："
+                            + pend + "\n"
+                            + "现在不能收尾。逐条核对：\n"
+                            + "1) 能现在就做的，立刻调用工具做掉，做完用 plan action=done 标记并写一句验证依据；\n"
+                            + "2) 已经做完但忘了标记的，现在补标记；\n"
+                            + "3) 确实做不了的（缺权限/缺信息/依赖用户决定），用 plan action=done 标记并把 note 写成"
+                            + "「未做：原因」，然后在收尾里单独列出来告诉用户。\n"
+                            + "不要把这些步骤默默丢下，也不要把它们改写成「建议用户自己执行」。");
+                    toolMsgs.add(m);
+                } catch (Exception ignored) {
+                }
+                post(() -> l.onToolRetryHint("计划还有未完成步骤，已打回继续…"));
+                restartConnection();
+                chainDepth++;
+                continueRun(s, history, l);
                 return;
             }
             String text = st.content.toString();
@@ -714,33 +977,81 @@ public class ChatClient {
             if (text.isEmpty() && st.reasoning.length() > 0) {
                 final int thinkLen = st.reasoning.length();
                 // 第一层：明确要求它别再长篇推理，直接产出正文（多数情况这一招就够）
-                if (!cancelled && thinkRetry < 1) {
+                // 救两次。只救一次时，第一次的 1.3 倍额度常被模型自己涨上来的
+                // 思考量二次吃空（想得越多给得越多），用户看到的就是「重试过一次仍没出来」。
+                // 第二次把额度拉到 2.6 倍并改用更强硬的提示，绝大多数情况能出正文。
+                if (!cancelled && thinkRetry < 2) {
                     thinkRetry++;
                     // 关键：不只是催它快写，而是把「思考强度」整体关掉再发一次。
                     // 上一轮烧掉两万多字思考，几乎都是被高强度提示词推着去罗列思路，
                     // 不关掉就会原样再烧一遍。
                     thinkOff = true;
+                    thinkBoostOut = true;
+                    rescueThinkChars = thinkLen;
+                    // 记住真实思考量：下一轮（含非救援轮）的额度预留按它算，
+                    // 这样即便用户把思考强度设成关闭，也不会再被模型自带思考吃空。
+                    lastThinkChars = thinkLen;
+                    // 同一档位反复被烧空，说明这对当前模型就是无底洞：直接钉到中度并落盘。
+                    try {
+                        // 此处位于 doSend 前半段、pickModel() 还没执行，拿不到局部 model，
+                        // 所以只按用户设定档位判断——空正文本身就说明这一档对当前模型太高。
+                        if (s.thinkLevel >= 3) {
+                            s.thinkLevel = 2;
+                            if (appCtx != null) s.save(appCtx);
+                            post(() -> l.onToolRetryHint(
+                                    "该模型在高档位会无限制思考，已把「思考强度」自动调到中度（设置里可改回）"));
+                        }
+                    } catch (Exception ignored) {
+                    }
+                    // 已经在工具里打转就别再给工具了，否则重试又是几十轮空转。
+                    // 第一次救援：工具里打转就摘掉工具逼它写正文。
+                    // 第二次不要再摘——说明没工具它写不出，反而应该把工具还回去让它动手。
+                    if (toolRound > 8 && thinkRetry < 2) forceNoTools = true;
                     try {
                         toolMsgs.add(new JSONObject().put("role", "user").put("content",
                                 "【系统】你上一轮把全部输出额度都用在了内部思考上（思考 "
                                         + thinkLen + " 字），没有产出任何正文，用户什么都没看到。\n"
                                         + "已为你关闭深度思考要求。这一次：**不要写任何内部推理过程**，"
-                                        + "直接产出可交付的内容——要动手就立刻调用工具，"
-                                        + "正文第一个字就是结论或结果，写短一点也比空着好。"));
+                                        + "**也不要做整体设计或规划**——把任务拆成最小一步，"
+                                        + "立刻调用工具（例如 bash_exec 看一眼目录、建一个文件）推进一步，"
+                                        + "千万不要在脑子里把整个软件设计完；每一步只做一件事。"
+                                        + (thinkRetry >= 2
+                                            ? "**这是最后一次机会，一个字都不要再想**："
+                                              + "直接从「做了什么 / 结果是什么」开始写正文，或者直接发起一次工具调用；"
+                                              + "禁止任何形式的铺陈、计划、推理。"
+                                            : "正文第一个字就是结论或结果，写短一点也比空着好。")));
                     } catch (Exception ignored) {
                     }
                     post(() -> l.onToolRetryHint("模型只思考没写正文，正在要求它直接作答…"));
                     doSend(s, history, l);
                     return;
                 }
+                // 手里已经有真实产出（改过的文件、编译结果、报错）时，绝不因为
+                // 模型不肯写正文就让这些内容消失——用已有工具输出拼一份收尾说明，
+                // 用户至少拿得到结果和下一步。这是「不再干停」的最后一道兜底。
+                if (toolRound > 0 || !toolMsgs.isEmpty()) {
+                    localWrapUp(l, "模型只思考没写正文（思考 " + thinkLen + " 字），"
+                            + "已直接根据工具输出收尾");
+                    return;
+                }
                 post(() -> l.onError("模型思考了 " + thinkLen
                         + " 字，但没有生成正文回答（思考完直接结束了）。\n"
-                        + "已自动关掉思考强度重试过一次仍没出来，这次不再重试——"
+                        + "已自动关掉思考强度、放大输出额度重试过两次仍没出来，这次不再重试——"
                         + "再试一次大概率又是几万字思考，白烧 token。\n"
-                        + "建议：把「思考强度」调到中度或轻度；如果用「极度」，"
-                        + "碰到本身带深度思考的模型（如各类 reasoner）会叠加放大，必然把额度吃光。\n"
+                        + "可以做的两件事：① 设置里把「最大输出 token」从 2048 提到 4096 或更高"
+                        + "（思考与正文共享这一份额度，2048 很容易只够想不够写）；"
+                        + "② 把「思考强度」调到中度或轻度（用「极度」碰到自带深度思考的模型会叠加放大）。\n"
                         + "思考原文在「思考过程」折叠区里，可以点开看。"));
                 return;
+            }
+
+            // 这次拿到正文了，救援用的放大额度立刻撤掉，否则后面每轮都多花预扣
+            if (!text.isEmpty()) {
+                thinkBoostOut = false;
+                rescueThinkChars = 0;
+                // 成功拿到正文后把预留量衰减到 70%：长期全额保留会让每轮虚高预扣，
+                // 全清零又会让下一轮重新被思考烧空。取中间值。
+                if (st.reasoning.length() > 0) lastThinkChars = st.reasoning.length() * 7 / 10;
             }
 
             if (text.isEmpty()) {
@@ -821,6 +1132,124 @@ public class ChatClient {
         }
     }
 
+    // ---------------- DSML 文本工具调用解析 ----------------
+    // 有的模型不走 tool_calls 字段，而是把调用写进正文：
+    //   <｜DSML｜tool_calls>
+    //   <｜DSML｜invoke name="bash_exec">
+    //   <｜DSML｜parameter name="command" string="true">cd ~/</｜DSML｜parameter>
+    //   </｜DSML｜invoke>
+    //   </｜DSML｜tool_calls>
+    // 分隔符可能是 <|DSML| / <｜DSML｜ / 带空格，属性带不带引号都要能认。
+    private static final String DSML_SEP = "<[|｜]{1,3}\\s*DSML\\s*[|｜]{1,3}\\s*";
+    private static final java.util.regex.Pattern DSML_INVOKE =
+            java.util.regex.Pattern.compile(DSML_SEP + "invoke\\b([^>]*)>");
+    private static final java.util.regex.Pattern DSML_PARAM =
+            java.util.regex.Pattern.compile(DSML_SEP + "parameter\\b([^>]*)>");
+    private static final java.util.regex.Pattern DSML_CLOSE_PARAM =
+            java.util.regex.Pattern.compile("</[|｜]{1,3}\\s*DSML\\s*[|｜]{1,3}\\s*parameter\\s*>");
+    private static final java.util.regex.Pattern ATTR_NAME =
+            java.util.regex.Pattern.compile("name\\s*=\\s*(\"([^\"]*)\"|'([^']*)'|([^\\s>]+))");
+
+    private static String dsmlAttr(String attrs, String key) {
+        if (attrs == null || attrs.isEmpty()) return null;
+        if (!"name".equals(key)) return null;
+        java.util.regex.Matcher m = ATTR_NAME.matcher(attrs);
+        if (!m.find()) return null;
+        String v = m.group(2) != null ? m.group(2) : (m.group(3) != null ? m.group(3) : m.group(4));
+        return v == null ? null : v.trim();
+    }
+
+    private static String unescapeXml(String v) {
+        if (v == null) return "";
+        return v.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+                .replace("&apos;", "'").replace("&#39;", "'").replace("&amp;", "&");
+    }
+
+    /** 把正文里的 DSML 调用解析进 st.toolCalls，返回解析到的调用个数 */
+    private int parseDsmlIntoCalls(String raw, StreamState st) {
+        if (raw == null || raw.isEmpty() || st == null) return 0;
+        java.util.regex.Matcher mi = DSML_INVOKE.matcher(raw);
+        java.util.ArrayList<int[]> blocks = new java.util.ArrayList<>();
+        java.util.ArrayList<String> toolNames = new java.util.ArrayList<>();
+        java.util.ArrayList<Integer> starts = new java.util.ArrayList<>();
+        while (mi.find()) {
+            String tname = dsmlAttr(mi.group(1), "name");
+            if (tname == null || tname.isEmpty()) continue;
+            blocks.add(new int[]{mi.end()});
+            toolNames.add(tname);
+            starts.add(mi.start());
+        }
+        if (blocks.isEmpty()) return 0;
+        int idx = 900000; // 不和真实调用序号撞
+        int added = 0;
+        for (int i = 0; i < blocks.size(); i++) {
+            int blockStart = blocks.get(i)[0];
+            int blockEnd = (i + 1 < starts.size()) ? starts.get(i + 1) : raw.length();
+            // 抹掉块尾的 </ invoke> 闭合标签
+            int close = raw.lastIndexOf("invoke", blockEnd);
+            if (close > blockStart) {
+                int gt = raw.indexOf('>', close);
+                if (gt > 0 && gt < blockEnd) blockEnd = close;
+            }
+            if (blockEnd <= blockStart) continue;
+            String block = raw.substring(blockStart, blockEnd);
+            try {
+                JSONObject args = new JSONObject();
+                java.util.regex.Matcher mp = DSML_PARAM.matcher(block);
+                java.util.ArrayList<int[]> pSpans = new java.util.ArrayList<>();
+                java.util.ArrayList<String> pNames = new java.util.ArrayList<>();
+                while (mp.find()) {
+                    String pname = dsmlAttr(mp.group(1), "name");
+                    if (pname == null || pname.isEmpty()) continue;
+                    pSpans.add(new int[]{mp.end()});
+                    pNames.add(pname);
+                }
+                java.util.ArrayList<Integer> pStarts = new java.util.ArrayList<>();
+                java.util.regex.Matcher mp2 = DSML_PARAM.matcher(block);
+                while (mp2.find()) pStarts.add(mp2.start());
+                for (int k = 0; k < pSpans.size(); k++) {
+                    int vs = pSpans.get(k)[0];
+                    int ve = (k + 1 < pStarts.size()) ? pStarts.get(k + 1) : block.length();
+                    if (ve <= vs) continue;
+                    String v = block.substring(vs, ve);
+                    // 值尾部常常跟着 </parameter>、</invoke>、</tool_calls>，逐个剔掉
+                    v = DSML_CLOSE_PARAM.matcher(v).replaceAll("");
+                    v = v.replaceAll("(?s)</[|｜]{1,3}\\s*DSML\\s*[|｜]{1,3}[^>]*>", "");
+                    v = unescapeXml(v).trim();
+                    if (v.matches("-?\\d{1,9}")) args.put(pNames.get(k), Long.parseLong(v));
+                    else args.put(pNames.get(k), v);
+                }
+                JSONObject fn = new JSONObject();
+                fn.put("name", toolNames.get(i));
+                fn.put("arguments", args.toString());
+                JSONObject call = new JSONObject();
+                call.put("id", "call_dsml_" + (++idx));
+                call.put("type", "function");
+                call.put("function", fn);
+                st.toolCalls.put(idx, call);
+                added++;
+            } catch (Throwable e) {
+                Log.w(TAG, "DSML 调用解析失败", e);
+            }
+        }
+        return added;
+    }
+
+    /** 把正文里的 DSML 标签段整段剔掉，只留下模型真正想说的话 */
+    private static String stripDsml(String raw) {
+        if (raw == null) return "";
+        String s = raw;
+        s = s.replaceAll("(?s)" + DSML_SEP + "tool_calls\\s*>.*?</[|｜]{1,3}\\s*DSML\\s*[|｜]{1,3}\\s*tool_calls\\s*>", "");
+        s = s.replaceAll("(?s)" + DSML_SEP + "invoke\\b[^>]*>.*?</[|｜]{1,3}\\s*DSML\\s*[|｜]{1,3}\\s*invoke\\s*>", "");
+        int p = s.indexOf("DSML");
+        if (p > 0) {
+            // 剩下没闭合的标签：从标签开头截断，避免半截标签留在气泡里
+            int lt = s.lastIndexOf('<', p);
+            if (lt > 0) s = s.substring(0, lt);
+        }
+        return s;
+    }
+
     /**
      * 回答疑似被截断：代码围栏（```）数量为奇数，说明最后一段代码没闭合，
      * 基本可以确定是被长度上限砍断的。只在网关不给 finish_reason 时才用。
@@ -850,6 +1279,50 @@ public class ChatClient {
                 || e.contains("context window");
     }
 
+    /**
+     * 这次调用是不是「纯查询」——查询重复跑没有副作用，可以复用上次结果。
+     *
+     * <p>判断从严：名字里带 list/read/inspect/search/changes/status 的算查询；
+     * bash_exec 要看命令本身，ls/cat/grep 这类算，带重定向或 -i 的一律不算（会改文件）。
+     * 宁可漏判多跑一次，也不能把写操作当成查询——那会让模型以为改完了其实没改。
+     */
+    private static boolean readOnlyTool(String name, String rawArgs) {
+        if (name == null || name.isEmpty()) return false;
+        String n = name.toLowerCase(Locale.ROOT);
+        // bash_exec 是新的工具名（原来叫 run_shell），两个都得认，
+        // 否则改名之后每条命令都会被当成写操作，白白多一轮确认。
+        if (n.contains("shell") || n.contains("bash_exec")) return readOnlyShell(rawArgs);
+        return n.contains("list") || n.contains("read") || n.contains("inspect")
+                || n.contains("search") || n.contains("changes") || n.contains("status");
+    }
+
+    /** shell 命令逐段看首词：查询类放行，任何可能写文件的直接否决 */
+    private static boolean readOnlyShell(String rawArgs) {
+        try {
+            JSONObject o = new JSONObject(rawArgs == null || rawArgs.trim().isEmpty()
+                    ? "{}" : rawArgs);
+            String cmd = o.optString("command", o.optString("cmd", "")).trim();
+            if (cmd.isEmpty()) return false;
+            if (cmd.contains(">") || cmd.contains(" -i ") || cmd.contains("--in-place")) {
+                return false;
+            }
+            for (String seg : cmd.split("&&|;|\\|")) {
+                String t = seg.trim();
+                if (t.isEmpty()) continue;
+                String head = t.split("\\s+")[0];
+                if (head.equals("sudo") || head.equals("cd") || head.equals("export")) continue;
+                if (!head.matches("ls|cat|grep|find|head|tail|wc|file|stat|du|df|which|"
+                        + "echo|pwd|zipinfo|tree|strings|md5sum|sha256sum|sed|awk|"
+                        + "diff|cmp|sort|uniq|cut|tr")) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** max_tokens 超过模型允许的输出上限 */
     private static boolean isMaxTokensTooLarge(String err) {
         if (err == null) return false;
@@ -866,6 +1339,40 @@ public class ChatClient {
         if (!e.contains("model")) return false;
         return e.contains("not found") || e.contains("not exist") || e.contains("does not exist")
                 || e.contains("invalid") || e.contains("unsupported") || e.contains("unknown");
+    }
+
+    /**
+     * 本次请求要不要在 assistant 消息上带 reasoning_content。
+     *
+     * <p>判据用「用户把思考开到了哪一档」，而不是「这一轮有没有思考内容」。
+     * 用后者会漏掉「模型这一合懒得想、上来直接调工具」的轮次，
+     * 而那正是长任务跑到第 N 次调用时突然 400 的来源。
+     *
+     * <p>用户显式关掉思考（档位=默认）且这条消息本来也没推理时不带，
+     * 免得给不思考的模型塞一个它不认识的字段。
+     */
+    private static boolean thinkingEchoOn(Settings s, String model, CharSequence reasoning) {
+        if (s != null
+                && Settings.reasoningEffort(Settings.effectiveThinkLevel(s, model)) != null) {
+            return true;
+        }
+        return reasoning != null && reasoning.length() > 0;
+    }
+
+    /** 服务端要求回传推理内容，而我们漏了字段（区别于「网关拒收该字段」） */
+    private static boolean isReasoningEchoMissing(String err) {
+        if (err == null) return false;
+        String e = err.toLowerCase(Locale.ROOT);
+        return e.contains("reasoning_content") && e.contains("passed back");
+    }
+
+    /** 网关完全拒收 reasoning_content 字段（区别于「要求回传」） */
+    private static boolean isReasoningEchoRejected(String err) {
+        if (err == null) return false;
+        String e = err.toLowerCase(Locale.ROOT);
+        if (!e.contains("reasoning_content")) return false;
+        // 「must be passed back」是要求带上，属于该补的，不是该停发的
+        return !(e.contains("must be passed back") || e.contains("passed back"));
     }
 
     /** 判断 400 错误是否由不认识的参数导致 */
@@ -908,44 +1415,100 @@ public class ChatClient {
      * 请求体越来越大、每轮越来越慢，最后容易超时或被网关拒掉（表现为「跑很久没结果」）。
      * tool 消息必须与 assistant.tool_calls 成对，不能删，所以只把较早结果的正文换成占位。
      */
-    private static final int MAX_TOOL_CONTEXT_CHARS = 18000;
+    // 最近若干条工具结果在上下文里保留的正文总量。从 12000 收到 6000：
+    // 这部分是每一轮都要重新发一遍的，减半等于把整条工具链的输入成本减半。
+    private static final int MAX_TOOL_CONTEXT_CHARS = 4000;
 
+    /** 最近几条工具结果保留原文（模型正要用它做下一步） */
+    private static final int TOOL_ECHO_RECENT_RAW = 2;
+    /** 再往前几条保留头尾 */
+    private static final int TOOL_ECHO_MID = 8;
+    /** 工具回显总字符硬上限：不管跑多少轮，都不许超过这个量 */
+    private static final int TOOL_ECHO_MAX_CHARS = 24000;
+
+    /**
+     * 压缩工具回显（toolMsgs）。
+     *
+     * <p>这是长任务里最大的开销源，也是唯一没有天然上限的部分：一个 60 轮的任务，
+     * 每轮 assistant 的工具请求 + tool 返回结果都留在这里，每发一次请求都要重发一遍。
+     * 旧逻辑「最近 2 条原文 + 更早的一律留头 700/尾 200」在轮次少时够用，轮次一多就失效：
+     * 60 轮 × 900 字 ≈ 5.4 万字，光历史回显就吃掉一半输入额度，而且逐轮付费。
+     *
+     * <p>现在分三档，并且压缩后的内容同样计入总预算：
+     * <ol>
+     *   <li>最近 2 条：原文（模型正要用它做下一步）</li>
+     *   <li>再往前 8 条：头 700 + 尾 200（报错和结论通常在尾部）</li>
+     *   <li>更早的：压成一行（保留命令/结论开头，够模型认出「这步做过了」）</li>
+     * </ol>
+     * 最后再卡一道硬上限，保证不管跑多少轮，工具回显都不超过 {@link #TOOL_ECHO_MAX_CHARS}。
+     */
     private void trimToolContext() {
         int total = 0;
-        int kept = 0;
+        int rank = 0;          // 从最新往前数第几条工具结果
         for (int i = toolMsgs.size() - 1; i >= 0; i--) {
             JSONObject o = toolMsgs.get(i);
-            if (o == null) continue;
-            if (!"tool".equals(o.optString("role"))) continue;
+            if (o == null || !"tool".equals(o.optString("role"))) continue;
             String c = o.optString("content", "");
             int len = c.length();
-            // 最近 3 条一律原文；更早的只要还在预算内也原文
-            if (kept < 3 || total + len <= ctxBudget) {
-                total += len;
-                kept++;
-                continue;
-            }
-            if (c.startsWith("【较早结果已压缩")) continue;
+            rank++;
             try {
-                // 不要一刀切成一句占位：模型看不到细节就会把同一个工具重跑一遍，重跑比留着更贵。
-                // 保留头 700 + 尾 200 字（报错信息、结尾结论通常在尾部），中间省略。
-                String head;
-                if (len > 900) {
-                    String h = c.substring(0, 700);
-                    if (Character.isHighSurrogate(h.charAt(h.length() - 1))) {
-                        h = h.substring(0, h.length() - 1);
-                    }
-                    String t = c.substring(len - 200);
-                    if (Character.isLowSurrogate(t.charAt(0))) t = t.substring(1);
-                    head = h + "\n…（中间省略）…\n" + t;
-                } else {
-                    head = c;
+                if (rank <= TOOL_ECHO_RECENT_RAW) {
+                    total += len;
+                    continue;
                 }
-                o.put("content", "【较早结果已压缩，原 " + len + " 字】\n" + head
-                        + "\n（这一步已完成，不要重复执行；要看完整内容就重新读取当前文件）");
+                if (rank <= TOOL_ECHO_RECENT_RAW + TOOL_ECHO_MID && total < TOOL_ECHO_MAX_CHARS / 2) {
+                    // 第二档：留头留尾。已经压缩过的不再重复处理，避免越压越短
+                    if (c.startsWith("【较早结果已压缩")) { total += len; continue; }
+                    if (len > 900) {
+                        String h = c.substring(0, 700);
+                        if (Character.isHighSurrogate(h.charAt(h.length() - 1))) h = h.substring(0, h.length() - 1);
+                        String t = c.substring(len - 200);
+                        if (Character.isLowSurrogate(t.charAt(0))) t = t.substring(1);
+                        c = "【较早结果已压缩，原 " + len + " 字】\n" + h
+                                + "\n…（中间省略）…\n" + t
+                                + "\n（这一步已完成，不要重复执行；要看完整内容就重新读取当前文件）";
+                        o.put("content", c);
+                        len = c.length();
+                    }
+                    total += len;
+                    continue;
+                }
+                // 第三档：一行。仍然保留「做过什么」的信号，否则模型会把同一步重跑一遍，
+                // 重跑的成本远高于留这一行。
+                if (c.startsWith("【早期步骤】")) { total += len; continue; }
+                c = "【早期步骤，原 " + len + " 字】" + oneLine(c, 120);
+                o.put("content", c);
+                total += c.length();
             } catch (Exception ignored) {
             }
         }
+        // 兜底：极端情况下（单条超长、档位判断失效）仍然超过硬上限，就从最老的一条开始丢
+        if (total > TOOL_ECHO_MAX_CHARS) {
+            for (int i = 0; i < toolMsgs.size() && total > TOOL_ECHO_MAX_CHARS; i++) {
+                JSONObject o = toolMsgs.get(i);
+                if (o == null || !"tool".equals(o.optString("role"))) continue;
+                String c = o.optString("content", "");
+                if (c.startsWith("【早期步骤已省略】")) continue;
+                try {
+                    total -= c.length();
+                    o.put("content", "【早期步骤已省略】");
+                    total += 12;
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    /** 取一段文本的第一行做摘要，跳过已有的压缩标记行 */
+    private static String oneLine(String c, int max) {
+        if (c == null) return "";
+        String s = c;
+        int nl = s.indexOf('\n');
+        if (s.startsWith("【") && nl > 0 && nl < 90) s = s.substring(nl + 1);
+        s = s.replace('\n', ' ').replace('\r', ' ').trim();
+        // 压缩空白，避免一长串空格占位
+        s = s.replaceAll("\\s{2,}", " ");
+        return s.length() > max ? s.substring(0, max) + "…" : s;
     }
 
     /** 一条消息真正发给模型的文本（兼容旧会话的附件说明） */
@@ -1066,7 +1629,7 @@ public class ChatClient {
 
     /** 按模型名推断上下文窗口；推断不出来给保底值，别假装精确 */
     public static int inferCtxTokens(String model) {
-        String m = model == null ? "" : model.toLowerCase();
+        String m = model == null ? "" : model.toLowerCase(Locale.ROOT);
         if (m.isEmpty()) return DEFAULT_CTX_TOKENS;
         if (m.contains("gemini")) return 1048576;
         if (m.contains("claude")) return 200000;
@@ -1087,8 +1650,11 @@ public class ChatClient {
         }
         Settings st = lastSettings;
         int total = 0;
-        if (st != null) {
-            // system 除用户提示词外还拼了几段内置约束，固定开销按 400 粗估
+        // system 优先用上一轮实测的「拼好之后」的体积：用户提示词之外还拼了技能索引、
+        // 环境信息、内置约束，只算用户提示词 + 400 会明显低报占用。
+        if (lastSysTokens > 0) {
+            total += lastSysTokens;
+        } else if (st != null) {
             total += estTokens(st.systemPrompt) + 400;
         }
         if (history != null) {
@@ -1102,6 +1668,7 @@ public class ChatClient {
             }
         }
         for (JSONObject o : toolMsgs) total += estMsgTokens(o);
+        total += lastSchemaTokens;
         return total;
     }
 
@@ -1120,14 +1687,22 @@ public class ChatClient {
             // 真值能否沿用：必须是同一个会话的历史，且条数只差本轮回答那一条。
             // 回答落库后历史会多 1 条，若要求「条数完全相等」，真值就永远算过期。
             // 此时正确的占用 = 本轮 prompt + 本轮输出，也就是下一轮要发出去的量。
+            // 同一会话的判据：同一个 List 对象，或首条消息还是同一个对象。
+            // 界面偶尔会换一个列表实例再来刷新，只按引用相等会一直判成换会话，
+            // 从此永远显示本地估算（表现就是「输入 3 万却显示占用 5%」）。
             boolean sameSession = lastHistoryRef != null && lastHistoryRef == history;
+            if (!sameSession && lastHistoryRef != null && history != null
+                    && !lastHistoryRef.isEmpty() && !history.isEmpty()) {
+                sameSession = lastHistoryRef.get(0) == history.get(0);
+            }
             boolean fresh = lastUsageReal && lastPromptTokens > 0 && sameSession
-                    && (total == lastUsageHistorySize || total == lastUsageHistorySize + 1);
+                    && Math.abs(total - lastUsageHistorySize) <= 2;
             int used = fresh ? lastPromptTokens + Math.max(0, lastCompletionTokens)
                     : estimateRequestTokens(history);
             if (used < 0) used = 0;
             return new int[]{used, limit, active, dropped, fresh ? 1 : 0,
-                    Math.max(0, lastCompletionTokens)};
+                    Math.max(0, lastCompletionTokens), Math.max(0, lastPromptTokens),
+                    Math.max(0, lastCacheHitTokens), Math.max(0, lastCacheMissTokens)};
         } catch (Throwable e) {
             return new int[]{0, DEFAULT_CTX_TOKENS, 0, 0, 0, 0};
         }
@@ -1142,6 +1717,15 @@ public class ChatClient {
         if (pt <= 0) {
             JSONObject d = u.optJSONObject("input_tokens_details");
             if (d != null) pt = d.optInt("total_tokens", 0);
+        }
+        int ch = u.optInt("prompt_cache_hit_tokens", 0);
+        int cm = u.optInt("prompt_cache_miss_tokens", 0);
+        if (ch > 0 || cm > 0) {
+            lastCacheHitTokens = ch;
+            lastCacheMissTokens = cm;
+            // 命中率直接决定这轮花多少钱，打出来方便核对账单
+            Log.i(TAG, "缓存命中 " + ch + " / 未命中 " + cm + " = "
+                    + (ch + cm > 0 ? (ch * 100 / (ch + cm)) : 0) + "%");
         }
         if (pt > 0) lastPromptTokens = pt;
         if (ct > 0) lastCompletionTokens = ct;
@@ -1178,7 +1762,101 @@ public class ChatClient {
         return null;
     }
 
+    /**
+     * 按「这次用户到底要干什么」决定挂哪组工具。
+     *
+     * <p>模型看不见的工具不会去调，所以判断要宽：宁可多挂一组，也不能让它在改包任务里
+     * 找不到 apk_unpack、转头用 shell 去瞎试。反过来，闲聊或跑脚本时只挂 3 个核心工具，
+     * 每轮就省下约 2500 tokens——这是按轮付的，一轮工具链跑十几次就是两万多。
+     */
+    private int toolGroupsFor(List<Message> history) {
+        if (history == null || history.isEmpty()) {
+            return ToolRegistry.G_APK | ToolRegistry.G_BUILD;
+        }
+        StringBuilder sb = new StringBuilder();
+        int seen = 0;
+        // 只看最近几条用户话：任务是「改这个 apk」起的，后面几轮也该继续拥有改包工具，
+        // 所以不能只判最后一条，也不能往前翻太远（避免几天前的改包需求一直挂着全量工具）
+        for (int i = history.size() - 1; i >= 0 && seen < 6; i--) {
+            Message m = history.get(i);
+            if (m == null || !Message.ROLE_USER.equals(m.role)) continue;
+            sb.append(apiText(m)).append('\n');
+            seen++;
+        }
+        String t = sb.toString().toLowerCase(java.util.Locale.US);
+        int g = 0;
+        if (containsAny(t, APK_WORDS)) g |= ToolRegistry.G_APK;
+        // 动手做东西时也带上编译组：用户说的「做一个工具 / 网站 / 小程序」最后往往要一张
+        // 能装的包，而这个 App 自带 javac + d8 + aapt2 + apksigner 的编译链，不要 Gradle。
+        // 不挂的代价是实测过的：模型只能拿 bash_exec 挨个探 java、gradle，十二轮后得出
+        // 「这台设备什么二进制都跑不了」的错结论，最后只交了个网页版。
+        // 编译组就 2 个工具（几百 token），比误判一个任务的代价低得多。
+        if (containsAny(t, BUILD_WORDS) || containsAny(t, DOING_WORDS)) g |= ToolRegistry.G_BUILD;
+        return g;
+    }
+
+    /**
+     * 本次任务给多少轮工具额度。
+     *
+     * <p>复用工具分组的判断结果：需要改包/编译工具的任务，说明真在动文件，给足 36 轮；
+     * 否则就是问答或跑一段命令，10 轮足够——多给的额度只会被用满，不会被省下。
+     */
+    private int maxRoundsFor(List<Message> history) {
+        if (toolGroupsFor(history) != 0) return MAX_TOOL_ROUNDS;
+        // 光看工具分组不够：写工程、做工具这类活不需要 apk/编译工具，但轮次需求和改包一样高。
+        // 「帮写一个多功能查询工具」曾被判成闲聊 → 只给 10 轮 → 活干一半被迫收尾，
+        // 续命两次还是撞顶，用户看到的是一句「这活还没收尾」加一笔冤枉钱。
+        if (containsAny(recentUserText(history), DOING_WORDS)) return MAX_TOOL_ROUNDS;
+        return MAX_TOOL_ROUNDS_LIGHT;
+    }
+
+    /** 最近几条用户消息拼成的文本，判定用语 */
+    private String recentUserText(List<Message> history) {
+        if (history == null || history.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        int seen = 0;
+        for (int i = history.size() - 1; i >= 0 && seen < 6; i--) {
+            Message m = history.get(i);
+            if (m == null || !Message.ROLE_USER.equals(m.role)) continue;
+            sb.append(apiText(m)).append('\n');
+            seen++;
+        }
+        return sb.toString().toLowerCase(java.util.Locale.US);
+    }
+
+    private static final String[] APK_WORDS = {
+            "apk", "反编译", "smali", "dex", "改包", "拆包", "解包", "重打包", "二次打包",
+            "重签名", "签名", "安装包", "去广告", "加固", "apktool", "jadx", "baksmali",
+            "androidmanifest", "清单文件", "改应用名", "改图标", "dex2jar"
+    };
+
+    private static final String[] BUILD_WORDS = {
+            "编译", "构建", "gradle", "javac", "源码打包", "生成apk", "build apk", "出一个包"
+    };
+    /**
+     * 「要动手做东西」的说法。
+     *
+     * <p>这类任务不碰 apk / 不相干编译工具，但轮次需求和改包一个量级：
+     * 要建目录、写多个文件、跑起来验证、发现问题再改。给 10 轮必然半途收尾。
+     */
+    private static final String[] DOING_WORDS = {
+            "写一个", "写个", "帮我写", "做一个", "做个", "帮我做", "开发一个", "开发个", "开发",
+            "搭建", "搭一个", "实现一个", "实现个", "生成一个", "重构", "改成", "修改一下",
+            "修复", "完善", "加一个", "加个", "补一个", "补齐", "写出来", "做出来",
+            "工程", "项目", "网站", "网页", "小程序", "界面"
+    };
+
+    private static boolean containsAny(String text, String[] words) {
+        if (text == null || text.isEmpty()) return false;
+        for (String w : words) {
+            if (text.contains(w)) return true;
+        }
+        return false;
+    }
+
     private JSONObject buildBody(Settings s, List<Message> history) throws Exception {
+        // 新会话（只有一条用户消息）重置工具组，避免上一段对话打开的工具组一直挂着
+        if (history == null || history.size() <= 1) sessionGroups = 0;
         preflightShrink(history);
         trimToolContext();
         final String model = pickModel(s);
@@ -1194,96 +1872,96 @@ public class ChatClient {
             sys.append(extra.trim());
         }
         if (sys.length() > 0) sys.append("\n\n");
-        sys.append("【用户文件】用户上传的文件会在消息里以 <file name=\"…\" path=\"…\"/> 给出真实路径。\n"
-                + "1. 必须直接使用该 path，不要改写成 /sdcard/Download/… 之类你猜测的路径。\n"
-                + "2. 工具报「文件不存在」时，先按消息里给的 path 原样重试一次；仍失败就把你用的 path 原样告诉用户请他确认，"
-                + "不要反复换目录去猜。\n"
-                + "3. 用户说「改一下/优化/修改」某个上传文件时，指的是 path 指向的那个文件，先用工具确认真实存在再动手。");
-        if (tools != null && tools.hasTool("run_shell") && !toolsDisabled) {
+        sys.append("【用户文件】上传的文件在消息里以 <file name=\"…\" path=\"…\"/> 给出真实路径。\n"
+                + "必须直接用这个 path，不要改写成 /sdcard/Download/… 之类你猜测的路径。\n"
+                + "工具报「文件不存在」时，按原 path 原样重试一次；仍失败就把你用的 path 告诉用户请他确认，不要反复换目录去猜。\n"
+                + "用户说「改一下/优化/修改」某个上传文件时，指的就是这个 path 下的文件，先用工具确认存在再动手。");
+        if (tools != null && tools.hasTool("bash_exec") && !toolsDisabled) {
             if (sys.length() > 0) sys.append("\n\n");
-            sys.append("【终端执行】你可以用 run_shell 在用户手机的内置终端里真实执行 shell 命令。\n"
-                    + "1. 用户让你「跑一下/执行/运行/测试/验证」代码或命令时，直接调用 run_shell 真实执行，"
-                    + "把真实输出讲给用户，不要只贴命令让他自己跑。\n"
-                    + "2. 用户要你先写好程序再验证时，可以先写文件再执行，中间用简短一句话说明在做什么。\n"
-                    + "3. 命令失败就读输出定位原因，修正后重试，最多试几次；仍失败就把报错原样告诉用户。\n"
-                    + "4. 不要执行破坏性命令（rm -rf /、mkfs、清空用户数据等）；不要在没有用户意图时擅自改他的文件。\n"
-                    + "5. 内置反编译链直接当命令用：jadx（dex/APK → Java）、apktool（解包/回打包）、"
-                    + "baksmali 与 smali（dex ↔ smali）、apkinfo（看清单与体积构成）。"
-                    + "大 APK 先用 apkinfo 看规模再只反编译目标 dex，全量反编译在手机上会被内存限制打断。\n"
-                    + "6. 排查闪退/卡顿/任务中断时直接执行 `dumpsys`（返回内存水位、进程优先级、电池限制、"
-                    + "保活状态等现场快照）与 `logcat`（返回应用自己记账的崩溃堆栈、主线程卡死现场）。"
-                    + "没 root 的手机读不到系统日志，这两条命令已由内置采集接管，一定有内容返回，"
-                    + "不要因为「普通应用没有日志权限」就放弃排查。");
+            sys.append("【终端执行】bash_exec 在手机内置终端里真实执行命令。\n"
+                    + "1. 用户说「跑一下/执行/运行/测试/验证」就直接调用 bash_exec 并把真实输出讲给用户，不要只贴命令让他自己跑。\n"
+                    + "2. 命令失败就读输出定位原因，修正后重试；仍失败把报错原样告诉用户。\n"
+                    + "3. 不执行破坏性命令（rm -rf /、mkfs、清空用户数据）；没有用户意图时不擅自改他的文件。\n"
+                    + "4. 反编译链直接当命令用：jadx（dex/APK → Java）、apktool（解包/回打包）、baksmali 与 smali（dex ↔ smali）、"
+                    + "apkinfo（看清单与体积构成）。大 APK 先用 apkinfo 看规模，只反编译目标 dex，全量反编译会被内存限制打断。\n"
+                    + "5. 排查闪退/卡顿/任务中断直接跑 dumpsys（内存水位、进程优先级、电池限制、保活状态）与 logcat（崩溃堆栈、主线程卡死现场）。"
+                    + "这两条已由内置采集接管，一定有内容返回，不要因为「普通应用没有日志权限」就放弃排查。\n"
+                    + "6. 目录是记着的：这条命令里 cd 到哪儿，下一条默认还在那儿，不用每条都重写绝对路径；"
+                    + "要换目录直接给 cwd 参数。\n"
+                    + "7. 起本地服务、跑长时间任务、要边看日志边干别的，用 bash_bg 后台起"
+                    + "（action=start 启动、log 看输出、list 列任务、stop 停掉），"
+                    + "不要用 bash_exec 干等着它超时——超时会把进程杀掉，前面跑的也白跑。");
         }
-        // —— 以下两条放在最后：越靠后的指令权重越高 ——
+        // —— 以下几条放在最后：越靠后的指令权重越高 ——
         if (sys.length() > 0) sys.append("\n\n");
-        sys.append("【先判断，再动手】\n"
-                + "1. 先判断用户这句话属于哪一类，然后只做这一类该做的事，不要把几套流程混着走：\n"
-                + "   · 直答（问知识/概念/建议）→ 直接答，不调工具；只有需要实时信息才联网查。\n"
-                + "   · 产出（要文案/代码/方案/整理结果）→ 按对应结构直接给成品，不讲方法论。\n"
-                + "   · 改东西（改代码/文件/App）→ 先看清现状再动手，改完必须验证。\n"
-                + "   · 排查（说不对/报错/为什么）→ 先定位原因再给修复，不要上来就列一堆可能原因。\n"
-                + "   · 对话（随口一问/确认/聊一句）→ 一两句回完，别铺开写。\n"
-                + "2. 说法就是需求边界：说「简单说」就简短，说「详细」才展开，没说就按上面分类的默认尺寸；不要自己加戏扩大范围。\n"
-                + "3. 做不对的原因是缺关键信息（缺文件、口径不清、目标模糊）时，一次问清 2-3 个关键点就停，不要边猜边做。\n"
-                + "4. 拿不准用户真实意图时，先给最可能的那一个答案，末尾用一句话确认，而不是先反问。");
+        sys.append("【先判断，再动手】先判断这句话属于哪一类，只做这一类该做的事，不要把几套流程混着走：\n"
+                + "· 直答（知识/概念/建议）→ 直接答，不调工具；只有需要实时信息才联网查。\n"
+                + "· 产出（文案/代码/方案/整理）→ 按对应结构直接给成品，不讲方法论。\n"
+                + "· 改东西（改代码/文件/App）→ 先看清现状再动手，改完必须验证。\n"
+                + "· 排查（说不对/报错/为什么）→ 先定位原因再给修复，不要上来就列一堆可能原因。\n"
+                + "· 对话（随口一问/确认/聊一句）→ 一两句回完。\n"
+                + "说法就是需求边界：说「简单说」就简短，说「详细」才展开，没说就按上面分类的默认尺寸，不要自己加戏扩大范围。\n"
+                + "缺关键信息时一次问清 2-3 个关键点就停；拿不准真实意图时先给最可能的答案，末尾用一句话确认，而不是先反问。");
         if (sys.length() > 0) sys.append("\n\n");
-        sys.append("【表达：必须说中文】\n"
-                + "1. 每条回复的主体必须是中文，包括解释、结论、总结、报错分析、进度说明。"
-                + "只有代码、命令、文件路径、标识符、专有名词才保留英文原文。\n"
-                + "2. 严禁只丢一堆代码/命令/英文日志就结束。代码块或命令的前面或后面必须有中文说明："
-                + "这段是做什么的、执行后看到了什么、接下来准备做什么。\n"
-                + "3. 工具跑完不要沉默，用一两句中文讲清「做了什么、结果如何」；失败了就说失败原因和你的应对。\n"
-                + "4. 遇到英文报错，先用中文讲结论和原因，再只贴关键几行原文，不要把整段英文日志倾倒给用户。\n"
-                + "5. 用户看不懂英文术语时，用中文解释它是什么意思。");
+        sys.append("【表达：必须说中文，只给成品】\n"
+                + "1. 回复主体必须是中文（解释、结论、总结、报错分析、进度说明），只有代码、命令、文件路径、标识符、专有名词保留英文。\n"
+                + "2. 严禁只丢一堆代码/命令/英文日志就结束，代码块前后必须有中文说明：这段做什么、执行后看到什么、接下来做什么。\n"
+                + "3. 工具跑完不要沉默，用一两句中文讲清「做了什么、结果如何」；失败了说原因和应对。英文报错先用中文讲结论，再只贴关键几行。\n"
+                + "4. 不要把内部推演、方案对比、逐行自问自答写成正文；贴代码只贴要交付的最终版，不要半成品、不要同一段重复贴。说明简短，篇幅留给结论和下一步。");
         if (sys.length() > 0) sys.append("\n\n");
-        sys.append("【只给成品，不吐过程】\n"
-                + "1. 不要把内部推演、方案对比、逐行自问自答写成正文。用户要的是结果，不是草稿纸。\n"
-                + "2. 严禁长篇英文思考（例如 computed v5 before loop — fine 这类）。要权衡就先用一两句中文给结论。\n"
-                + "3. 贴代码只贴「要交付/要修改」的最终版本：不要半成品、不要同一段重复贴、不要大段样板。\n"
-                + "4. 说明部分尽量简短，篇幅留给结论、成品和下一步动作；需要长内容时先给一句中文摘要。");
-        if (sys.length() > 0) sys.append("\n\n");
-        sys.append("【动手方式：批量做完，别小步磨】\n"
-                + "1. 改文件不要「读一行 → 改一行 → 再读回来」这样来回磨："
-                + "先一次性看清全貌，再用一条脚本或一次批量替换改完，最后统一验证一遍。\n"
-                + "2. 同一个文件、同一个位置不要反复读取；改完确认一次就够。\n"
-                + "3. 反编译产物（smali、dex 反汇编）和第三方库源码不要抄进正文，"
-                + "只说清改了什么、为什么改；需要贴就最多贴关键三五行。\n"
-                + "4. 工具调用尽量少而准：能一条命令/一个脚本解决的，不要拆成十几次调用。");
-        if (sys.length() > 0) sys.append("\n\n");
-        sys.append("【别重复：重复调用是最贵的错误】\n"
-                + "1. 同一个工具、同一套参数，不要发第二次。上一轮已经拿到结果（包括报错），"
-                + "那就是已知信息，直接基于它往下走。中间插了别的调用再绕回来，同样算重复——"
-                + "交替打转和连续打转一样烧钱。\n"
-                + "2. 确实要重跑，必须满足其一：参数变了、目标变了、或已确认上次的失败原因被消除。"
-                + "动手前先用一句话说清「这次和上次有什么不同」。\n"
-                + "3. 报错要读完再动手：先抓关键词定位原因，不要靠「换个参数再试一次」盲试。"
-                + "同一类报错连续两次，就停下换思路，不要有第三次。\n"
-                + "4. 耗时操作（解包、编译、打包、签名、下载大文件）动手前先用一句话说明"
-                + "「这一步做什么、大概要多久」；跑完先看结果再决定下一步，"
-                + "不要闷头连着跑十几轮什么都不说。\n"
-                + "5. 每完成一个阶段，用一两句话交代：改了什么、产物在哪、下一步做什么。"
-                + "这样即使中途断了，下一轮也不用从头开荒。\n"
-                + "6. 刚读过的文件内容就在上下文里，不要为了「再确认一下」重复读取；"
-                + "要确认状态就查目录/mtime，别重读全文。\n"
-                + "7. 每次调用工具之前先问自己一句：这次会拿到什么新信息？"
-                + "答不上来，就说明不该调。");
+        sys.append("【动手方式：批量做完，不重复】\n"
+                + "1. 改文件不要「读一行 → 改一行 → 再读回来」：先一次看清全貌，用一条脚本或一次批量替换改完，最后统一验证。\n"
+                + "2. 刚读过的内容就在上下文里，同一文件同一位置不要反复读；要确认状态就查目录/mtime。\n"
+                + "3. 反编译产物和第三方库源码不要抄进正文，只说清改了什么、为什么改，要贴最多三五行。\n"
+                + "4. 同一工具同一参数不要发第二次，上一轮的结果（含报错）就是已知信息；中间插了别的调用再绕回来同样算重复。"
+                + "要重跑必须参数变了、目标变了或上次失败原因已消除，并先用一句话说清这次和上次不同在哪。\n"
+                + "5. 报错要读完再动手，先抓关键词定位原因，不要靠换参数盲试；同一类报错连续两次就停下换思路，不要有第三次。\n"
+                + "6. 每次调工具前先问自己一句：这次会拿到什么新信息？答不上来就不该调。");
         if (sys.length() > 0) sys.append("\n\n");
         sys.append("【连续推进：不许做一半就停】\n"
-                + "1. 用户给的是一件事，就一路做到底：理解 → 计划 → 执行 → 验证 → 汇报。"
-                + "不允许做完中间一步就结束回复、把剩下的丢给用户。\n"
-                + "2. 一步做完自动进下一步，不要问「要我继续吗」「需要我接着做吗」——"
-                + "除非涉及不可逆操作（删数据、覆盖用户文件、清空目录）、花钱、或缺少必要信息/权限。\n"
-                + "3. 工具报错不等于任务结束：读报错 → 定位原因 → 换方案重试。"
-                + "实在绕不过去，才停下来明确告诉用户卡在哪、缺什么，并给可执行的替代方案。\n"
-                + "4. 只要还有能自己动手做的下一步，就继续调用工具做，不要写「建议你执行以下步骤」把活推回给用户。\n"
-                + "5. 收尾只有一个条件：任务真的完成，或确实无路可走。"
-                + "收尾必须用中文说明三件事：完成了什么、产物在哪（给完整路径）、还剩什么没做。\n"
-                + "6. 产物要自己验收，别把验收甩给用户：改完安装包就自己回编译、签名、"
-                + "装一遍确认能起来；改完代码就自己运行一次。没验证过的结果等于没做完，"
-                + "不要用「你试试看行不行」当交付。\n"
-                + "7. 「建议你这样做」不算完成。凡是你自己能动手的部分，就不要留给用户；"
-                + "只有真要人来拍板的（删数据、花钱、缺权限）才允许交出去。");
+                + "1. 一件事就一路做到底：理解 → 计划 → 执行 → 验证 → 汇报，不允许做完中间一步就结束回复、把剩下的丢给用户。\n"
+                + "2. 一步做完自动进下一步，不要问「要我继续吗」——除非涉及不可逆操作（删数据、覆盖用户文件、清空目录）、花钱、或缺少必要信息与权限。\n"
+                + "3. 工具报错不等于任务结束：读报错 → 定位原因 → 换方案重试；真绕不过去才停下说清卡在哪、缺什么，并给可执行的替代方案。\n"
+                + "4. 只要还有能自己动手的下一步就继续调用工具，不要写「建议你执行以下步骤」把活推回用户。\n"
+                + "5. 产物必须自己验收：改完安装包就自己回编译、签名、装一遍确认能起；改完代码就跑一次。"
+                + "没验证过的结果等于没做完，不要用「你试试看行不行」当交付。\n"
+                + "6. 收尾只有一个条件：真的完成，或确实无路可走。收尾用中文说清三件事：完成了什么、产物在哪（给完整路径）、还剩什么没做。\n"
+                + "7. 三步以上的任务（尤其「改完还要构建/签名/安装/实跑」这种链式任务）先用 plan 工具把步骤列出来，"
+                + "做完一步就 plan action=done 标一步。这不是走形式：系统会在收尾前核对未完成步骤，"
+                + "有漏步会被打回继续做。\n"
+                + "8. 验证闭环：任何写操作（改文件、重打包、签名、构建）之后必须有一次真实验证，"
+                + "看的是命令退出码、编译结果、运行日志这类真实输出；没验证过的改动不算完成，系统也会打回。");
+        // ===== 长期记忆（跨会话）=====
+        // 只注入最近用到的若干条，不做全量：记忆越多越容易和当前任务打架，
+        // 真需要旧条目让模型自己 memory search 去捞。
+        String memBlock = com.nebula.aichat.data.MemoryStore.promptBlock(null, 12);
+        if (memBlock != null && !memBlock.trim().isEmpty()) {
+            if (sys.length() > 0) sys.append("\n\n");
+            sys.append("【长期记忆（之前会话里确认过的事实，默认继续有效）】\n")
+                    .append(memBlock.trim()).append("\n")
+                    .append("用法：这些是既有约定，不要重复问用户。与当前用户的新说法冲突时以新说法为准，")
+                    .append("并把新结论用 memory 工具覆盖掉旧条目。需要更早的记忆就调用 memory search。");
+        }
+        // ===== 计划自检 =====
+        String planBlock = com.nebula.aichat.data.PlanStore.render();
+        if (planBlock != null && !planBlock.isEmpty()) {
+            if (sys.length() > 0) sys.append("\n\n");
+            int pend = com.nebula.aichat.data.PlanStore.pendingCount();
+            sys.append("【当前计划（" + (pend == 0 ? "已全部完成" : "还剩 " + pend + " 步") + "）】\n")
+                    .append(planBlock).append("\n")
+                    .append(pend == 0
+                            ? "所有步骤都已完成，可以直接收尾汇报。"
+                            : "按顺序继续做未打勾的步骤；每完成一步就用 plan 工具 action=done 标记。")
+                    .append("未完成前不要收尾，也不要把剩下步骤写成建议交给用户。");
+        }
+        // ===== 记忆使用纪律 =====
+        if (sys.length() > 0) sys.append("\n\n");
+        sys.append("【记忆纪律】\n"
+                + "1. 用户说出「以后都这样」「这个项目约定是…」「不要再…」这类跨轮次有效的信息时，"
+                + "立刻用 memory 工具存下来（key 要稳定、value 一句话），不要只在嘴上答应。\n"
+                + "2. 涉及项目约定、构建命令、交付要求、用户习惯时，先 memory search 再动手，别凭印象。\n"
+                + "3. 不存临时中间结果、一次性报错、当轮才有效的内容。");
+
         // ===== 历史裁剪（省 token 的核心）=====
         // 从最新一条往回凑预算，凑不下就丢掉更早的，保证单次请求的历史长度有上限。
         int hFrom;
@@ -1295,13 +1973,12 @@ public class ChatClient {
         if (history.size() > 2) hFrom = Math.min(hFrom, history.size() - 2);
         if (hFrom < 0) hFrom = 0;
         final boolean clipped = hFrom > 0;
-        if (clipped) {
-            // 固定文案（不带变化的条数）：system 是每次请求的前缀，
-            // 一旦这里带上轮次数字，DeepSeek 的前缀缓存就整段失效，等于白花钱。
-            sys.append("\n\n【历史裁剪】为控制开销，较早的中间对话没有带入上下文（最初的需求会单独保留）。\n")
-                    .append("1. 需要旧细节就调用工具重新查看当前文件/目录状态，不要凭记忆猜。\n")
-                    .append("2. 不要让用户重复已经确认过的信息。");
-        }
+        // 这段文案恒定存在，不跟 clipped 走。
+        // 它一旦「有/无」切换，system 就变了一次，后面的全部历史前缀集体失效；
+        // 而它本身的信息（历史可能不全）在任何时候都不算错，恒定反而更稳。
+        sys.append("\n\n【历史裁剪】为控制开销，较早的中间对话可能没有带入上下文（最初的需求会单独保留）。\n")
+                .append("1. 需要旧细节就调用工具重新查看当前文件/目录状态，不要凭记忆猜。\n")
+                .append("2. 不要让用户重复已经确认过的信息。");
         // ===== 思考强度指令放最后：越靠后的指令权重越高 =====
         // 放在中段时会被后面「只给成品，不吐过程」「连续推进」等大段要求稀释，等于没生效。
         // 档位要按"实际生效值"取：极度碰上推理模型会被压到中度，
@@ -1329,6 +2006,11 @@ public class ChatClient {
             String c = clampMsg(apiText(m));
             if (c == null || c.trim().isEmpty()) continue;
             if (Message.ROLE_SYSTEM.equals(m.role)) continue;
+            // 动态信息（当前时间）只挂在本轮最后一条用户消息上，让 system 保持逐字节稳定
+            if (Message.ROLE_USER.equals(m.role) && hi == history.size() - 1
+                    && tailHint != null && !tailHint.isEmpty()) {
+                c = c + "\n\n" + tailHint;
+            }
             if (m.imageUrls != null && !m.imageUrls.isEmpty()) {
                 // 多模态：仅 assistant 之外的 user 消息带图，且图片放在文本之后
                 JSONArray parts = new JSONArray();
@@ -1341,7 +2023,15 @@ public class ChatClient {
                 }
                 msgs.put(new JSONObject().put("role", m.role).put("content", parts));
             } else {
-                msgs.put(new JSONObject().put("role", m.role).put("content", c));
+                JSONObject one = new JSONObject().put("role", m.role).put("content", c);
+                // 历史里的 assistant 也要求带 reasoning_content（同上），
+                // 少了它，第二句提问就会 400，用户看到的是「请求参数有误」。
+                if (Message.ROLE_ASSISTANT.equals(m.role)
+                        && (forceReasoningEcho || thinkingEchoOn(s, model, m.reasoning))
+                        && !reasoningEchoBlockedHosts.contains(gatewayKey(s))) {
+                    one.put("reasoning_content", m.reasoning == null ? "" : m.reasoning);
+                }
+                msgs.put(one);
             }
         }
         // 工具轮次中的临时消息（assistant tool_calls 与 tool 结果）
@@ -1359,21 +2049,74 @@ public class ChatClient {
             body.put("stream_options", new JSONObject().put("include_usage", true));
         }
         body.put("temperature", (double) s.temperature);
-        // 深度档给更多输出额度：额度紧时模型会为了不截断而草草收尾，
-        // 「想得更多」最后变成「写得更赶」。
+        // 正文额度与「思考额度」分开算。
+        //
+        // 关键事实：中转站把 reasoning_content（思考过程）也算进 max_tokens。
+        // 如果只给 2048，而模型这一轮想了 7000 字，额度在思考阶段就烧光了，
+        // finish_reason=length 且正文为空 —— 用户看到的就是「思考了 7160 字就结束了」。
+        // 所以正文额度之外必须额外留一份思考预算，否则省下的 token 换来的是答案消失。
         long outTokens = s.maxTokens;
         final int lvNow = thinkOff ? 0 : Settings.effectiveThinkLevel(s, model);
-        if (lvNow >= 4) outTokens = outTokens * 3 / 2;
-        else if (lvNow == 3) outTokens = outTokens * 6 / 5;
-        body.put("max_tokens", (int) Math.min(65536L, Math.max(256L, outTokens)));
+        long thinkReserve = lvNow >= 4 ? 16384 : lvNow == 3 ? 8192 : lvNow == 2 ? 6144
+                : lvNow >= 1 ? 4096 : 0;
+        // 档位管不住「模型自带思考」。
+        // deepseek-flash 这类模型不认 reasoning_effort，把思考强度设成关闭/轻度时
+        // thinkReserve 只有 0/4096，而它自己会想 5000~16000 字（1 字约 1.3 token），
+        // 额度在思考阶段就烧光 → finish_reason=length 且正文 0 字。
+        // 所以按上一轮实际思考量动态预留，与档位算出的值取大者。
+        if (lastThinkChars > 0) {
+            long auto = (long) (lastThinkChars * 1.3) + 2048L;
+            if (auto > thinkReserve) thinkReserve = auto;
+        }
+        outTokens += thinkReserve;
+        // 上一轮「只思考没正文」的救援请求：模型即使关了思考强度仍自带推理，
+        // 额度给小了会二次失败，所以这一次直接给足。
+        if (thinkBoostOut) {
+            // 按上一次实际思考量给足额度：思考量随任务暴涨，写死 6144 等于让它再空一次。
+            // 多给的部分不是浪费——那是模型自己要想的量，少给了正文就没了。
+            // 换算系数：中文 1 字约 1.1~1.3 token（实测「34261 字」几乎正好烧掉 38357 额度）。
+            // 上一版按 1 字 = 1 token 加 4096 算，等于还是让它想不完。
+            // 第一次救援 1.3 倍；第二次明显更凶（2.6 倍）——因为第一次的 1.3 倍
+            // 被「想得越多给得越多」的模型自己涨上来的思考量吃空过，只加一点等于慢一步。
+            double k = thinkRetry >= 2 ? 2.6 : 1.3;
+            long need = (long) (rescueThinkChars * k) + 8192L;
+            outTokens = Math.max(outTokens, Math.min(49152L, need));
+        }
+        curOutTokens = (int) Math.min(65536L, Math.max(256L, outTokens));
+        body.put("max_tokens", curOutTokens);
 
         // 工具注入：内置 APK 工具 + MCP 工具。
-        // 一律下发，只有服务端真拒绝过一次才由 toolsDisabled 关掉。
-        if (tools != null && !toolsDisabled && !summarizeMode) {
+        // 先按用户这句话定组：闲聊/跑脚本只挂核心 3 个，改包才补 13 个 APK 工具，
+        // 源码编译才补 2 个构建工具。只有服务端真拒绝过一次才由 toolsDisabled 全关。
+        if (tools != null) {
+            // 只增不减：累积到会话级，保证前缀（system + 工具定义）在同一次对话里逐轮一致
+            sessionGroups |= toolGroupsFor(history);
+            tools.setActiveGroups(sessionGroups);
+        }
+        // 轮次预算跟着任务类型走：闲聊 10 轮就够，别给 36 轮的额度让它慢慢磨
+        roundBudget = maxRoundsFor(history);
+        // 打转救援是一次性的：读出来立刻复位，别把后续正常请求也锁死
+        final boolean noToolsNow = forceNoTools;
+        forceNoTools = false;
+        if (tools != null && !toolsDisabled && !noToolsNow && !summarizeMode) {
             JSONArray schema = filterBlockedTools(tools.toSchema());
             if (schema != null && schema.length() > 0) {
                 body.put("tools", schema);
                 body.put("tool_choice", "auto");
+                // 记下这次真实挂上的 schema 有多大，供上下文估算使用
+                try { lastSchemaTokens = estTokens(schema.toString()) + 8; } catch (Throwable ignored) {}
+                // 前缀指纹：system + 工具定义是请求最前面那一段，只有逐字节一致，
+                // 服务端前缀缓存才可能命中。哈希变了就说明这轮缓存一定断，能直接定位到是
+                // 工具组抖动、技能增减、还是历史裁剪开始生效。
+                try {
+                    String pre = sys.toString() + "\u0001" + schema.toString();
+                    int ph = pre.hashCode();
+                    Log.i(TAG, "前缀" + (lastPrefixHash == 0 ? "建立" : (ph == lastPrefixHash ? "稳定" : "变更"))
+                            + " hash=" + Integer.toHexString(ph)
+                            + " sys=" + sys.length() + " schema=" + schema.toString().length()
+                            + " 工具组=" + sessionGroups);
+                    lastPrefixHash = ph;
+                } catch (Throwable ignored) {}
             }
         }
 
@@ -1402,6 +2145,26 @@ public class ChatClient {
             estTok += estMsgTokens(msgs.optJSONObject(i));
         }
         lastSentEstTokens = estTok;
+        // 上下文构成：不打出这一行，「输入 8 万 token」永远是黑箱。
+        // system / 工具定义 / 历史 / 工具回显 四块分开记，钱花在哪一眼能看出来。
+        try {
+            int sysTok = estTokens(sys.toString());
+            lastSysTokens = sysTok;
+            int histTok = 0, echoTok = 0;
+            for (int i = 0; i < msgs.length(); i++) {
+                JSONObject mo = msgs.optJSONObject(i);
+                if (mo == null) continue;
+                String role = mo.optString("role");
+                if ("system".equals(role)) continue;
+                int t = estMsgTokens(mo);
+                if ("tool".equals(role) || mo.has("tool_calls")) echoTok += t;
+                else histTok += t;
+            }
+            Log.i(TAG, "上下文构成 system=" + sysTok + " schema=" + lastSchemaTokens
+                    + " 历史=" + histTok + " 工具回显=" + echoTok
+                    + " 合计≈" + (sysTok + lastSchemaTokens + histTok + echoTok)
+                    + " 条数=" + msgs.length());
+        } catch (Throwable ignored) {}
         // 这次请求对应的历史条数：拿到 usage 后靠它判断真值有没有过期
         lastUsageHistorySize = history == null ? 0 : history.size();
         return body;
@@ -1454,6 +2217,11 @@ public class ChatClient {
             st.keepRaw(line);
             Log.d(TAG, "跳过无法解析的 SSE 行");
         }
+        // 保护触发：当作流正常结束收尾，交给「只思考没正文」的救援分支处理
+        if (st.guardStop) {
+            st.finished = true;
+            return true;
+        }
         return false;
     }
 
@@ -1483,6 +2251,21 @@ public class ChatClient {
             if (rc.isEmpty()) rc = JsonOpt.str(delta, "reasoning");
             if (!rc.isEmpty()) {
                 st.reasoning.append(rc);
+                // 思考失控保护：正文一个字还没出、思考已经写了几万字 → 立刻掐断这一流。
+                // 为什么只能掐：实测 max_tokens 根本管不住 reasoning_content
+                // （给 6144 它想 16191 字，给 38357 它想 34261 字）——额度给得越多想得越久，
+                // 是个无底洞。唯一有效的手段是「发现跑偏就断线」，把剩余额度换成一次救援请求。
+                // 掐断阈值必须和「真实发出的额度」联动。
+                // 原来死板用 8000/48000 字：额度只有 2048 时，思考 5111 字（约 6600 token）
+                // 早就把额度烧光了，根本等不到 8000 —— 结局是被服务端 length 截断、正文空。
+                // 现在按「额度 - 2048 正文保底」换算成允许的思考字数，吃到线就主动断线换救援。
+                long capChars = (long) ((curOutTokens - 2048) / 1.3);
+                if (capChars < 1200L) capChars = 1200L;
+                if (!st.guardStop && st.content.length() == 0
+                        && st.reasoning.length() > capChars) {
+                    st.guardStop = true;
+                    Log.w(TAG, "思考 " + st.reasoning.length() + " 字仍无正文（额度 " + curOutTokens + "），主动中止本流以止损");
+                }
                 final String rpiece = rc;
                 post(() -> l.onReasoning(rpiece));
             }
@@ -1638,6 +2421,73 @@ public class ChatClient {
      *
      * @return true 表示已经续命，调用方继续执行本轮工具调用；false 表示续命次数用完
      */
+    private static final java.util.regex.Pattern WRITE_CMD = java.util.regex.Pattern.compile(
+            "(^|[\\s;|&()])(>|>>|tee\\s|cp\\s|mv\\s|rm\\s|sed\\s+-i|patch\\s|mkdir\\s|"
+                    + "touch\\s|dd\\s|chmod\\s|chown\\s|ln\\s|unzip\\s|tar\\s+-x|truncate\\s)"
+                    + "|<<-?\\s*['\"]?\\w");
+
+    /** 判断一条 shell 命令是否在改文件（只看命令本体，不看工具名） */
+    private static boolean looksLikeWriteCommand(String args) {
+        if (args == null || args.isEmpty()) return false;
+        String cmd = args;
+        try {
+            JSONObject o = new JSONObject(args);
+            cmd = o.optString("command", o.optString("cmd", args));
+        } catch (Exception ignored) {
+        }
+        if (cmd == null || cmd.isEmpty()) return false;
+        try {
+            return WRITE_CMD.matcher(cmd).find();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 验证闭环的状态跟踪：写操作之后挂上「待验证」，直到有过一次真跑起来的验证才摘掉。
+     *
+     * <p>为什么必须机制化：提示词里写「改完要验证」是没用的——
+     * 模型在上下文里看到自己「已经改好了」，就认为任务完成，直接开始总结。
+     * 只有让「没验证」变成一个能拦住收尾的硬状态，这条要求才真的生效。
+     */
+    private void trackVerify(String name, boolean ok, String args) {
+        if (name == null || !ok) return;
+        // bash 是最常用的「改文件」通道（重定向 / heredoc / sed -i 全都走它）。
+        // 只盯 apk_write_file 会漏掉绝大多数真实改动，闭环等于没做。
+        if ("bash_exec".equals(name) || "bash_bg".equals(name)) {
+            if (looksLikeWriteCommand(args)) {
+                needVerify = true;
+                lastWriteTool = name;
+                Log.d(TAG, "bash 命令含写操作，标记待验证");
+            } else if (needVerify) {
+                needVerify = false;
+                lastWriteTool = "";
+            }
+            return;
+        }
+        for (String w : WRITE_TOOLS) {
+            if (w.equals(name)) {
+                // 写失败不算「改过了」，但也不能因此放行——失败本身会走重试逻辑
+                if (ok) {
+                    needVerify = true;
+                    lastWriteTool = name;
+                    Log.d(TAG, "写操作 " + name + " 成功，标记待验证");
+                }
+                return;
+            }
+        }
+        for (String v : VERIFY_TOOLS) {
+            if (v.equals(name)) {
+                if (ok && needVerify) {
+                    needVerify = false;
+                    Log.d(TAG, "验证动作 " + name + " 完成，待验证标记清除");
+                    lastWriteTool = "";
+                }
+                return;
+            }
+        }
+    }
+
     private boolean revive(Listener l, String why) {
         if (reviveCount >= MAX_REVIVE) return false;
         reviveCount++;
@@ -1723,8 +2573,15 @@ public class ChatClient {
         if (runStartAt == 0L) runStartAt = now;
         if (lastProgressAt == 0L) lastProgressAt = now;
 
+        // 分档判错的自愈：轻任务撞了顶、但这轮仍在产出新东西，说明这是真活不是闲聊，
+        // 直接把预算抬到长任务档。否则续命两次还是撞顶，活干一半被迫收尾。
+        if (toolRound >= roundBudget && roundBudget < MAX_TOOL_ROUNDS && noProgressStreak == 0) {
+            Log.i(TAG, "撞顶但仍在进展，预算 " + roundBudget + " → " + MAX_TOOL_ROUNDS);
+            roundBudget = MAX_TOOL_ROUNDS;
+        }
+
         // 撞预算时不收尾，先续命：清计数、延预算，工具现场原样保留，模型接着干。
-        boolean outOfRounds = toolRound >= MAX_TOOL_ROUNDS;
+        boolean outOfRounds = toolRound >= roundBudget;
         boolean stalled = now - lastProgressAt > STALL_MS;
         boolean tooLong = now - runStartAt > hardLimitMs;
         if (outOfRounds || stalled || tooLong) {
@@ -1741,7 +2598,7 @@ public class ChatClient {
         toolRound++;
         noResultCalls = 0;
         final int rn = toolRound;
-        post(() -> l.onRoundHint(rn, MAX_TOOL_ROUNDS));
+        post(() -> l.onRoundHint(rn, roundBudget));
         // 每进一轮工具调用刷一次现场（内部有限流，不会造成磁盘抖动）
         RunGuard.beat(toolRound);
 
@@ -1822,6 +2679,19 @@ public class ChatClient {
             String partial = st.content.toString();
             asMsg.put("content", partial.isEmpty() ? JSONObject.NULL : partial);
             asMsg.put("tool_calls", calls);
+            // thinking 模式下，带 tool_calls 的 assistant 消息必须原样带回本轮的
+            // reasoning_content，否则下一次请求直接被服务端拒掉（400）。
+            // 这一段就是工具链跑两轮就报错的根因：之前只把思考内容丢给 UI 折叠区了。
+            String thinkNow = st.reasoning == null ? "" : st.reasoning.toString();
+            // 「空也要带」：不是每一轮都会先想再动手。
+            // 有些轮次模型看完工具结果上来就是 tool_calls，reasoning 一个字都没有；
+            // 此时若把字段省掉，服务端判定「思考模式下没回传推理」→ 400，
+            // 表现出来就是「跑到第 N 次调用突然断了」，很难往这上面想。
+            // 传空串是合法的，意思是「这轮确实没推理」，和「漏传字段」是两件事。
+            if ((forceReasoningEcho || thinkingEchoOn(s, pickModel(s), thinkNow))
+                    && !reasoningEchoBlockedHosts.contains(gatewayKey(s))) {
+                asMsg.put("reasoning_content", thinkNow);
+            }
             toolMsgs.add(asMsg);
         } catch (Exception ignored) {
         }
@@ -1848,12 +2718,39 @@ public class ChatClient {
             // 这里持续观察取消标志：点「停止」能立刻中断，不用等它跑完
             final String[] resHolder = new String[1];
             final boolean[] okHolder = new boolean[]{true};
+
+            // 重复调用拦截：只读类工具（列目录/读文件/查状态）一分钟内用同样参数再查，
+            // 直接复用上次结果。模型拿到的数据一样，但省掉一次完整请求的钱。
+            final String dupKey = name + "\u0001" + (rawArgs == null ? "" : rawArgs.trim());
+            String dupHit = null;
+            if (readOnlyTool(name, rawArgs)) {
+                synchronized (recentToolResults) {
+                    Long at = recentToolAt.get(dupKey);
+                    if (at != null
+                            && android.os.SystemClock.elapsedRealtime() - at < DUP_WINDOW_MS) {
+                        dupHit = recentToolResults.get(dupKey);
+                    }
+                }
+            }
+            final String dupCached = dupHit;
+
             Thread worker = new Thread(new Runnable() {
                 @Override
                 public void run() {
+                    if (dupCached != null) {
+                        resHolder[0] = "（同样的查询刚跑过，结果同上，不用再查）\n" + dupCached;
+                        return;
+                    }
                     try {
                         String r = reg.call(name, argHolder[0]);
                         resHolder[0] = r == null ? "（无输出）" : r;
+                        // 只缓存正常返回且不太大的结果，避免把巨量输出反复塞进上下文
+                        if (readOnlyTool(name, rawArgs) && resHolder[0].length() < 20000) {
+                            synchronized (recentToolResults) {
+                                recentToolResults.put(dupKey, resHolder[0]);
+                                recentToolAt.put(dupKey, android.os.SystemClock.elapsedRealtime());
+                            }
+                        }
                     } catch (Throwable t) {
                         okHolder[0] = false;
                         String m = t.getMessage();
@@ -1944,6 +2841,7 @@ public class ChatClient {
 
             final boolean fOk = ok;
             final String fRes = result;
+            trackVerify(name, ok, rawArgs);
             post(() -> l.onToolResult(name, fOk, fRes));
 
             roundFp.append(name).append('|').append(fpOf(result)).append(';');

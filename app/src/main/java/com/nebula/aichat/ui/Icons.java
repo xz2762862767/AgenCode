@@ -42,10 +42,6 @@ public class Icons extends View {
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private final RectF arc = new RectF();
-    /** 下面三个只在 onDraw 里用，提成字段复用：列表滚动时每帧 new 会让 GC 抖 */
-    private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint fillTmp = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF tmpRect = new RectF();
 
     public Icons(Context c) {
         super(c);
@@ -95,7 +91,7 @@ public class Icons extends View {
         float s = Math.min(w, h) / 24f;      // 24 网格 → 实际像素
 
         if (type == GLYPH) {
-            Paint t = textPaint;
+            Paint t = new Paint(Paint.ANTI_ALIAS_FLAG);
             t.setColor(color);
             t.setTextAlign(Paint.Align.CENTER);
             t.setTextSize(Math.min(w, h) * 0.72f);
@@ -159,12 +155,10 @@ public class Icons extends View {
             case TAB:
                 // 前面一张卡片 + 后面一张错开的，两层就够表达「多标签」
                 path.reset();
-                tmpRect.set(9f, 3.5f, 20.5f, 15.5f);
-                path.addRoundRect(tmpRect, 2.6f, 2.6f, Path.Direction.CW);
+                path.addRoundRect(new RectF(9f, 3.5f, 20.5f, 15.5f), 2.6f, 2.6f, Path.Direction.CW);
                 canvas.drawPath(path, stroke);
                 path.reset();
-                tmpRect.set(3.5f, 8.5f, 15.5f, 20.5f);
-                path.addRoundRect(tmpRect, 2.6f, 2.6f, Path.Direction.CW);
+                path.addRoundRect(new RectF(3.5f, 8.5f, 15.5f, 20.5f), 2.6f, 2.6f, Path.Direction.CW);
                 fill(canvas, path, Palette.isLight(getContext()) ? 0xFFF2F5FA : 0xFF141A23);
                 canvas.drawPath(path, stroke);
                 break;
@@ -215,9 +209,10 @@ public class Icons extends View {
 
     /** 用底色填充路径（标签图标的「前一张卡片」要遮住后面那张的线） */
     private void fill(Canvas c, Path p, int color) {
-        fillTmp.setStyle(Paint.Style.FILL);
-        fillTmp.setColor(color);
-        c.drawPath(p, fillTmp);
+        Paint pt = new Paint(Paint.ANTI_ALIAS_FLAG);
+        pt.setStyle(Paint.Style.FILL);
+        pt.setColor(color);
+        c.drawPath(p, pt);
     }
 
     /** 把一个图标包进 34dp 的圆角小方块里，做成菜单行左侧的样子 */

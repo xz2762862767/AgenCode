@@ -27,6 +27,8 @@ public class NebulaApp extends Application {
         RunGuard.attach(this);
         // 产物质检要有 Context 才能解析清单，装早了才好过闸
         com.nebula.aichat.apk.ApkInstaller.attach(this);
+        // 长期记忆要能被非 UI 线程（拼提示词时）读到，这里先绑上全局 Context
+        com.nebula.aichat.data.MemoryStore.attach(this);
         // 自检放到后台线程，别占启动时间
         Guard.install(this);
         AnrWatchdog.start();

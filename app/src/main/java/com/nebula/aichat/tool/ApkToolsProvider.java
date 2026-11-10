@@ -309,7 +309,7 @@ final class ApkToolsProvider {
     /**
      * 独立签名 + 安装。
      *
-     * <p>改包流程里 apk_repack 已经自带签名，但产物不只来自改包：模型用 run_shell 构建的、
+     * <p>改包流程里 apk_repack 已经自带签名，但产物不只来自改包：模型用 bash_exec 构建的、
      * 用户从网上下载的、别人发来的包，都需要一个「不管哪来的都能签一下、装一下」的入口。
      */
     private static void registerSignInstall(final Context c, ToolRegistry reg) {

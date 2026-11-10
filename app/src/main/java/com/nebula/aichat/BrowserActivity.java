@@ -540,6 +540,7 @@ public class BrowserActivity extends Activity {
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setGravity(Gravity.CENTER);
         cell.setPadding(0, Ui.dp(this, 5), 0, Ui.dp(this, 4));
+        cell.setBackground(Ui.ripple(this));   // 点击波纹：底栏 5 格原来完全没反馈
         if (action != null) cell.setOnClickListener(v -> action.run());
 
         ImageView ic = new ImageView(this);

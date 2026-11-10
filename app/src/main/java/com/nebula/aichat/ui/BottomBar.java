@@ -1,9 +1,7 @@
 package com.nebula.aichat.ui;
 
 import android.app.Activity;
-import android.content.res.ColorStateList;
 import android.graphics.Typeface;
-import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -59,10 +57,7 @@ public class BottomBar {
             item.setGravity(Gravity.CENTER);
             item.setClickable(true);
             item.setFocusable(true);
-            // 按下反馈：之前条目没有背景，点下去毫无视觉变化，像没响应
-            item.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(Palette.isLight(act) ? 0x22000000 : 0x33FFFFFF),
-                    null, Ui.roundRect(act, 0xFFFFFFFF, 0, 14f)));
+            item.setBackground(Ui.ripple(act));   // 点击波纹：原来没有背景，点下去毫无反馈
 
             // 图标 + 胶囊背景
             FrameLayout wrap = new FrameLayout(act);

@@ -56,10 +56,20 @@
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
+            <!-- 标题（用户输入内容的显示）与下方模型/余额之间的橙色分隔线 -->
+            <View
+                android:id="@+id/tvTitleDivider"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="2.5dp"
+                android:layout_marginBottom="2.5dp"
+                android:layout_marginEnd="12dp"
+                android:alpha="0.18"
+                android:background="#FFB877" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
@@ -104,7 +114,7 @@
                     android:gravity="center_vertical"
                     android:text=""
                     android:textColor="?attr/neb_dim"
-                    android:textSize="11sp"
+                    android:textSize="10.5sp"
                     android:visibility="gone"
                     android:contentDescription="账户余额" />
 
@@ -165,7 +175,7 @@
             android:maxLines="1"
             android:text=""
             android:textColor="?attr/neb_dim"
-            android:textSize="11sp" />
+            android:textSize="10.5sp" />
 
         <TextView
             android:id="@+id/tvUsage"
@@ -175,7 +185,7 @@
             android:maxLines="1"
             android:text=""
             android:textColor="?attr/neb_dim"
-            android:textSize="11sp" />
+            android:textSize="10.5sp" />
     </LinearLayout>
 
     <!-- 消息区 -->

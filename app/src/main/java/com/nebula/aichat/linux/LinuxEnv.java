@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,8 +29,14 @@ import java.util.List;
 public final class LinuxEnv {
 
     private static final String TAG = "LinuxEnv";
-    /** 资产版本，升级 rootfs 时递增可触发重新安装 */
-    private static final int ASSET_VERSION = 1;
+    /**
+     * 资产版本。rootfs 换了内容（这次是 3.20 → 3.22.1）就必须递增，
+     * 否则老用户的旧环境永远不重装，会一直卡在旧版本上。
+     * 重装时 /root 和 /home 会先移出来再合并回去，用户的项目和脚本不会丢。
+     */
+    private static final int ASSET_VERSION = 2;
+    /** 重装时要保留的用户目录（项目代码、脚本、配置都在这下面） */
+    private static final String[] USER_DIRS = {"root", "home"};
     /** 资产名刻意不用 .tar.gz：aapt2 会把 .gz 资产自动解压成 .tar，导致体积翻倍 */
     private static final String ASSET_ROOTFS = "linux/rootfs.bin";
 
@@ -106,8 +113,37 @@ public final class LinuxEnv {
         if (!prootBin().exists()) return false;
         File m = marker();
         if (!m.isFile()) return false;
+        // 资产版本不一致说明 rootfs 换代了（这次是 3.20 → 3.22.1），必须重装
+        if (!String.valueOf(ASSET_VERSION).equals(markerVersion())) return false;
         File sh = new File(rootfs(), "bin/sh");
         return sh.exists() || new File(rootfs(), "bin/busybox").exists();
+    }
+
+    /** 已装环境的资产版本号；读不出来按 0 处理 */
+    public int installedAssetVersion() {
+        try {
+            return Integer.parseInt(markerVersion());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private String markerVersion() {
+        try {
+            return new String(TarGz.readAll(marker()), StandardCharsets.UTF_8).trim();
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    /**
+     * 旧环境需要升级重装：环境是好的，但资产版本比本包旧。
+     * UI 据此提示「将升级环境，你的项目会保留」，而不是干巴巴一句「未安装」。
+     */
+    public boolean needsUpgrade() {
+        if (!prootBin().exists() || !marker().isFile()) return false;
+        return installedAssetVersion() != ASSET_VERSION
+                && new File(rootfs(), "bin/sh").exists();
     }
 
     /** rootfs 体积缓存：-1 表示尚未计算 */
@@ -238,7 +274,10 @@ public final class LinuxEnv {
             tmp.mkdirs();
         exchangeDir();
 
-        if (p != null) p.onProgress(2, "正在清理旧环境…");
+        // 先把用户数据（项目代码、脚本）挪出来，等新环境解好再合并回去；
+        // 万一解压失败它留在 baseDir 里也不会丢，用户可以再装一次
+        File keep = keepUserData();
+        if (p != null) p.onProgress(2, keep != null ? "正在清理旧环境（你的项目已保留）…" : "正在清理旧环境…");
         // 清理历史安装残留（rename-then-delete 可能留下 trash-* 目录）
         File[] olds = baseDir().listFiles();
         if (olds != null) {
@@ -295,6 +334,8 @@ public final class LinuxEnv {
         configureRootfs();
         log("configureRootfs done");
 
+        restoreUserData(keep);
+
         if (p != null) p.onProgress(97, "正在校验环境…");
         String check = execSync("cat /etc/alpine-release; uname -m; echo OK-NEBULA", 60000);
         log("self-check output: " + check);
@@ -322,8 +363,8 @@ public final class LinuxEnv {
                 "127.0.0.1 localhost nebula\n::1 localhost\n".getBytes(StandardCharsets.UTF_8));
         // apk 镜像：默认换阿里云，国内拉包快很多
         TarGz.writeFile(new File(etc, "apk/repositories"),
-                ("https://mirrors.aliyun.com/alpine/v3.20/main\n"
-                        + "https://mirrors.aliyun.com/alpine/v3.20/community\n")
+                ("https://mirrors.aliyun.com/alpine/v3.22/main\n"
+                        + "https://mirrors.aliyun.com/alpine/v3.22/community\n")
                         .getBytes(StandardCharsets.UTF_8));
         // 基础目录
         for (String d : new String[]{"root", "tmp", "var/tmp", "dev", "proc", "sys", "home", "mnt"}) {
@@ -340,6 +381,78 @@ public final class LinuxEnv {
         }
         if (!old.contains("nebula")) {
             TarGz.writeFile(profile, (old + add).getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * 重装前把用户数据挪到 baseDir 下的 keep-* 里。
+     * <p>
+     * 跨版本升级（3.20 → 3.22.1）没法原地做 —— apk 源和整套库版本都变了，
+     * 只能重解整个 rootfs。但用户的项目代码、脚本、配置都写在 /root 和 /home 下，
+     * 跟着旧 rootfs 一起删掉就等于把人家几小时的活清零。所以先 rename 出来。
+     *
+     * @return 临时保留目录；没有可保留的数据时返回 null
+     */
+    private File keepUserData() {
+        File rf = rootfs();
+        if (!rf.isDirectory()) return null;
+        File keep = new File(baseDir(), "keep-" + System.currentTimeMillis());
+        int moved = 0;
+        for (String name : USER_DIRS) {
+            File src = new File(rf, name);
+            if (!src.exists()) continue;
+            File dst = new File(keep, name);
+            //noinspection ResultOfMethodCallIgnored
+            dst.getParentFile().mkdirs();
+            if (src.renameTo(dst)) {
+                moved++;
+            } else {
+                log("保留 " + name + " 失败（rename 不成功）");
+            }
+        }
+        if (moved == 0) {
+            deleteRecursive(keep);
+            return null;
+        }
+        log("已移出用户数据 " + moved + " 个目录 -> " + keep.getAbsolutePath());
+        return keep;
+    }
+
+    /** 把保留的用户数据合并回新环境，然后清掉临时目录 */
+    private void restoreUserData(File keep) {
+        if (keep == null || !keep.isDirectory()) return;
+        try {
+            for (String name : USER_DIRS) {
+                File src = new File(keep, name);
+                if (src.isDirectory()) mergeInto(src, new File(rootfs(), name));
+            }
+            log("用户数据已合并回新环境");
+        } finally {
+            deleteRecursive(keep);
+        }
+    }
+
+    /** 递归合并目录：目标里已有同名文件就跳过，系统自带文件优先 */
+    private static void mergeInto(File src, File dst) {
+        if (!dst.isDirectory()) {
+            //noinspection ResultOfMethodCallIgnored
+            dst.mkdirs();
+        }
+        File[] list = src.listFiles();
+        if (list == null) return;
+        for (File f : list) {
+            File t = new File(dst, f.getName());
+            if (f.isDirectory()) {
+                mergeInto(f, t);
+            } else if (!t.exists()) {
+                if (!f.renameTo(t)) {
+                    try {
+                        Files.copy(f.toPath(), t.toPath());
+                    } catch (IOException e) {
+                        Log.w(TAG, "复制用户文件失败: " + f, e);
+                    }
+                }
+            }
         }
     }
 

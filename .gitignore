@@ -24,9 +24,6 @@ keystore.properties
 # 例外：App 内置的回编译签名密钥，口令已明文写在 ApkTools.java 中，无保密价值；
 # 缺失会导致「APK 回编译」功能在别人机器上编译后直接崩溃，因此必须随仓库分发
 !app/src/main/assets/apk-tools.p12
-# 例外：内置 Alpine 包（Java 运行时 57MB、基础工具 11MB）。离线能力全靠它们，
-# 缺了就得首次联网下载；单文件最大 57MB，仍在 GitHub 的 100MB 限制内
-!app/src/main/assets/alpack/*.apk
 
 # ---- 运行期产物 ----
 *.log
@@ -43,9 +40,5 @@ env-assets/y/
 
 # ---- 大体积第三方二进制：超 GitHub 100MB 单文件限制，不入库 ----
 app/src/main/assets/revtools/jadx.jar
-
-# ---- 1.0.65 基线里移出的 baseline profile 备份 ----
-.baseline-backup/
-
 __pycache__/
 *.pyc

@@ -7,13 +7,16 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PushbackInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.zip.DataFormatException;
 import java.util.zip.GZIPInputStream;
+import java.util.zip.Inflater;
 
 /**
  * 纯 Java 的 tar.gz 解压器。
@@ -45,7 +48,10 @@ public final class TarGz {
         }
         Path root = destDir.getCanonicalFile().toPath();
 
-        GZIPInputStream gz = new GZIPInputStream(new BufferedInputStream(in, 64 * 1024), 64 * 1024);
+        // 用多段 gzip 流：Alpine 的 .apk 是三段 gzip 首尾相接拼的（签名/控制/数据），
+        // 系统自带的 GZIPInputStream 读完第一段就返回 EOF，会把 180MB 数据段整个丢掉。
+        // 普通单段 .tar.gz 走同一条路径，行为与原来一致。
+        InputStream gz = new MultiGzipInputStream(new BufferedInputStream(in, 64 * 1024));
         byte[] header = new byte[512];
         byte[] buf = new byte[64 * 1024];
         long written = 0;
@@ -381,6 +387,165 @@ public final class TarGz {
     public static byte[] readAll(File f) throws IOException {
         try (InputStream in = new FileInputStream(f)) {
             return readAll(in);
+        }
+    }
+
+    /**
+     * 支持「多段 gzip 首尾相接」的输入流。
+     * <p>
+     * Java 自带的 GZIPInputStream 读到第一个 member 的尾部就返回 EOF；而 Alpine 的 .apk 包
+     * 恰好是三段 gzip 拼起来的（签名 2KB / 控制信息 2.5KB / 数据段 180MB），直接用它只能
+     * 拿到签名那 2KB，数据段整个丢掉，装出来是个空环境。
+     * <p>
+     * 单段 .tar.gz（比如 rootfs.bin）走这里的行为与 GZIPInputStream 完全一致。
+     */
+    private static final class MultiGzipInputStream extends InputStream {
+        private final PushbackInputStream src;
+        private final Inflater inf = new Inflater(true);
+        private final byte[] inBuf = new byte[64 * 1024];
+        private final byte[] outBuf = new byte[64 * 1024];
+        private int inLen;
+        private int outPos;
+        private int outLen;
+        private long memberBytes;
+        private boolean headerRead;
+        private boolean eof;
+
+        MultiGzipInputStream(InputStream in) {
+            // 一段解完时 inflater 的输入缓冲里可能还留着下一段的开头，得能推回去
+            src = new PushbackInputStream(in, 128 * 1024);
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (!ensure()) return -1;
+            return outBuf[outPos++] & 0xff;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (len == 0) return 0;
+            if (!ensure()) return -1;
+            int n = Math.min(len, outLen - outPos);
+            System.arraycopy(outBuf, outPos, b, off, n);
+            outPos += n;
+            return n;
+        }
+
+        @Override
+        public void close() throws IOException {
+            try {
+                inf.end();
+            } catch (Throwable ignored) {
+            }
+            src.close();
+        }
+
+        private boolean ensure() throws IOException {
+            while (outPos >= outLen) {
+                if (!fill()) return false;
+            }
+            return true;
+        }
+
+        private boolean fill() throws IOException {
+            // 开头那一段的 gzip 头也得先吃掉：Inflater 期待的是裸 deflate 数据
+            if (!headerRead) {
+                headerRead = true;
+                if (!readHeader()) {
+                    eof = true;
+                    return false;
+                }
+            }
+            while (true) {
+                if (eof) return false;
+                if (inf.finished()) {
+                    // 本段结束：尾部 8 字节（CRC32 + ISIZE）还在 inflater 的输入缓冲里没被取走
+                    int rem = inf.getRemaining();
+                    int tail = inLen - rem;
+                    if (rem > 8 && tail >= 0) src.unread(inBuf, tail + 8, rem - 8);
+                    inf.reset();
+                    memberBytes = 0L;
+                    inLen = 0;
+                    if (!readHeader()) {
+                        eof = true;
+                        return false;
+                    }
+                    continue;
+                }
+                if (inf.needsInput()) {
+                    int n = src.read(inBuf, 0, inBuf.length);
+                    if (n <= 0) {
+                        eof = true;
+                        return false;
+                    }
+                    inLen = n;
+                    inf.setInput(inBuf, 0, n);
+                }
+                int got;
+                try {
+                    got = inf.inflate(outBuf, 0, outBuf.length);
+                } catch (DataFormatException e) {
+                    throw new IOException("gzip 数据损坏: " + e.getMessage());
+                }
+                if (got > 0) {
+                    outPos = 0;
+                    outLen = got;
+                    memberBytes += got;
+                    return true;
+                }
+                if (inf.needsInput()) continue;      // 这一段的输入刚好用完，下一轮再读
+                if (!inf.finished()) throw new IOException("gzip 解压卡死");
+            }
+        }
+
+        /** 读下一段的 gzip 头；返回 false 表示后面没有数据了（正常结束） */
+        private boolean readHeader() throws IOException {
+            byte[] h = new byte[10];
+            int n = readFullyOrEof(src, h, 10);
+            if (n == 0) return false;
+            if (n < 10) throw new IOException("gzip 头不完整");
+            if ((h[0] & 0xff) != 0x1f || (h[1] & 0xff) != 0x8b || h[2] != 8) {
+                throw new IOException("不是 gzip 数据");
+            }
+            int flg = h[3] & 0xff;
+            if ((flg & 0x04) != 0) {                        // FEXTRA
+                byte[] x = new byte[2];
+                if (readFullyOrEof(src, x, 2) != 2) throw new IOException("gzip 头损坏");
+                skipExactly(src, (x[0] & 0xff) | ((x[1] & 0xff) << 8));
+            }
+            if ((flg & 0x08) != 0) skipToZero(src);         // FNAME
+            if ((flg & 0x10) != 0) skipToZero(src);         // FCOMMENT
+            if ((flg & 0x02) != 0) skipExactly(src, 2);     // FHCRC
+            return true;
+        }
+    }
+
+    private static int readFullyOrEof(InputStream in, byte[] b, int len) throws IOException {
+        int off = 0;
+        while (off < len) {
+            int r = in.read(b, off, len - off);
+            if (r < 0) break;
+            off += r;
+        }
+        return off;
+    }
+
+    private static void skipExactly(InputStream in, int n) throws IOException {
+        byte[] b = new byte[Math.min(Math.max(n, 1), 256)];
+        int left = n;
+        while (left > 0) {
+            int r = in.read(b, 0, Math.min(left, b.length));
+            if (r < 0) throw new IOException("gzip 头被截断");
+            left -= r;
+        }
+    }
+
+    private static void skipToZero(InputStream in) throws IOException {
+        while (true) {
+            int c = in.read();
+            if (c < 0) throw new IOException("gzip 头被截断");
+            if (c == 0) return;
         }
     }
 }

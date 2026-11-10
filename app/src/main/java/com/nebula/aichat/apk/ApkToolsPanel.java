@@ -408,19 +408,20 @@ public class ApkToolsPanel {
 
     /** 供外部（如沙箱页）查询文件名 */
     public static String displayName(Activity act, Uri uri) {
+        android.database.Cursor c = null;
         try {
-            android.database.Cursor c = act.getContentResolver()
-                    .query(uri, null, null, null, null);
+            c = act.getContentResolver().query(uri, null, null, null, null);
             if (c != null) {
                 int idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                if (c.moveToFirst() && idx >= 0) {
-                    String s = c.getString(idx);
-                    c.close();
-                    return s;
-                }
-                c.close();
+                if (c.moveToFirst() && idx >= 0) return c.getString(idx);
             }
         } catch (Throwable ignored) {
+        } finally {
+            // getString 也可能抛（乱码/列被回收），统一在 finally 关，别漏
+            if (c != null) try {
+                c.close();
+            } catch (Throwable ignored) {
+            }
         }
         return uri.getLastPathSegment();
     }

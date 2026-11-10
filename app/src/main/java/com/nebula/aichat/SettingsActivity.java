@@ -4,6 +4,8 @@ import com.nebula.aichat.ui.NebAlert;
 import android.content.Intent;
 import android.app.Dialog;
 import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
@@ -37,12 +39,20 @@ import com.nebula.aichat.net.ModelListClient;
 import com.nebula.aichat.ui.ChatBackground;
 import com.nebula.aichat.ui.Palette;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
 public class SettingsActivity extends AppCompatActivity {
 
+    /** 选自定义形象图的请求码（与背景图 REQ_PICK_BG 区分开） */
+    private static final int REQ_PICK_FACE = 0x5A12;
+
     private Settings settings;
+    /** AI 形象卡片里"当前状态"的文案 */
+    private TextView tvAiImgState;
     private EditText etKey, etBase, etModel, etSystem, etMaxTokens;
     private SeekBar sbTemp, sbFont;
     private TextView tvTemp, tvFont, tvToggleKey, tvPickModel, tvModelHint;
@@ -122,6 +132,7 @@ public class SettingsActivity extends AppCompatActivity {
         bindDataGroup();
         bindPermissionGroup();
         bindPreferenceGroup();
+        bindAiFaceGroup();
 
         sbTemp.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
@@ -194,6 +205,88 @@ public class SettingsActivity extends AppCompatActivity {
         };
         etKey.addTextChangedListener(invalidate);
         etBase.addTextChangedListener(invalidate);
+    }
+
+    /**
+     * AI 本体形象：显示开关 / 九宫格位置 / 大小 / 透明度 / 换自己的图。
+     * 改一项存一项——纯外观偏好不该让用户再去点一次「保存」。
+     */
+    private void bindAiFaceGroup() {
+        SwitchCompat swShow = findViewById(R.id.swAiFace);
+        SeekBar sbSize = findViewById(R.id.sbAiSize);
+        SeekBar sbAlpha = findViewById(R.id.sbAiAlpha);
+        TextView tvSize = findViewById(R.id.tvAiSize);
+        TextView tvAlpha = findViewById(R.id.tvAiAlpha);
+
+        swShow.setChecked(settings.aiFaceShow);
+        sbSize.setProgress(clampInt(settings.aiFaceSizeDp - 60, 0, 200));
+        sbAlpha.setProgress(clampInt(settings.aiFaceAlpha - 20, 0, 80));
+        tvSize.setText(settings.aiFaceSizeDp + "dp");
+        tvAlpha.setText(settings.aiFaceAlpha + "%");
+
+        // 九宫格：点哪格，形象就贴哪一格
+        final TextView[] cells = new TextView[9];
+        for (int i = 0; i < 9; i++) {
+            int id = getResources().getIdentifier("cellAi" + i, "id", getPackageName());
+            cells[i] = findViewById(id);
+            final int idx = i;
+            cells[i].setOnClickListener(v -> {
+                settings.aiFacePos = idx;
+                settings.save(this);
+                paintAiCells(cells, idx);
+            });
+        }
+        paintAiCells(cells, settings.aiFacePos);
+
+        swShow.setOnCheckedChangeListener((b, on) -> {
+            settings.aiFaceShow = on;
+            settings.save(this);
+        });
+
+        // 拖动只更新数字，松手才落盘：避免一路拖一路写 prefs
+        SeekBar.OnSeekBarChangeListener l = new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
+                if (sb == sbSize) tvSize.setText((progress + 60) + "dp");
+                else if (sb == sbAlpha) tvAlpha.setText((progress + 20) + "%");
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar sb) { }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar sb) {
+                if (sb == sbSize) settings.aiFaceSizeDp = sb.getProgress() + 60;
+                else if (sb == sbAlpha) settings.aiFaceAlpha = sb.getProgress() + 20;
+                settings.save(SettingsActivity.this);
+            }
+        };
+        sbSize.setOnSeekBarChangeListener(l);
+        sbAlpha.setOnSeekBarChangeListener(l);
+
+        // 自定义形象图：选图 / 清除
+        tvAiImgState = findViewById(R.id.tvAiImgState);
+        TextView btnPick = findViewById(R.id.btnAiPick);
+        TextView btnClear = findViewById(R.id.btnAiClear);
+        if (btnPick != null) btnPick.setOnClickListener(v -> pickAiFace());
+        if (btnClear != null) btnClear.setOnClickListener(v -> clearAiFace());
+        refreshFaceUi();
+    }
+
+    private void paintAiCells(TextView[] cells, int sel) {
+        int dim = getResources().getColor(R.color.text_dim, getTheme());
+        for (int i = 0; i < cells.length; i++) {
+            if (cells[i] == null) continue;
+            boolean on = i == sel;
+            cells[i].setBackgroundResource(on ? R.drawable.bg_cell_on : R.drawable.bg_cell_off);
+            cells[i].setTextColor(on ? 0xFFFFFFFF : dim);
+            cells[i].setTypeface(null, on ? android.graphics.Typeface.BOLD
+                    : android.graphics.Typeface.NORMAL);
+        }
+    }
+
+    private static int clampInt(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     /** 关于区块：版本 / 当前模型 / 进入关于页 */
@@ -377,6 +470,12 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_FACE) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                saveFaceImage(data.getData());
+            }
+            return;
+        }
         if (requestCode != REQ_PICK_BG || resultCode != RESULT_OK || data == null
                 || data.getData() == null) {
             return;
@@ -391,6 +490,131 @@ public class SettingsActivity extends AppCompatActivity {
         } catch (Throwable t) {
             Toast.makeText(this, "设置背景图失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
         }
+    }
+
+    // ==================== AI 形象：自定义图片 ====================
+
+    private void pickAiFace() {
+        Intent it = new Intent(Intent.ACTION_GET_CONTENT);
+        it.setType("image/*");
+        it.addCategory(Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(Intent.createChooser(it, "选择 AI 形象图片"), REQ_PICK_FACE);
+        } catch (Throwable t) {
+            Toast.makeText(this, "没有可用的图片选择器", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 保存形象图：动图（GIF / 动态 WebP）原样留字节交给 ImageDecoder 播放；
+     * 静态图才压到长边 ≤1400px 的 PNG（保留透明通道）。
+     */
+    private void saveFaceImage(Uri uri) {
+        InputStream in = null;
+        try {
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            in = getContentResolver().openInputStream(uri);
+            if (in == null) {
+                Toast.makeText(this, "打不开这个文件", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            byte[] buf = new byte[16 * 1024];
+            int n, total = 0;
+            while ((n = in.read(buf)) > 0) {
+                total += n;
+                if (total > 12 * 1024 * 1024) {
+                    Toast.makeText(this, "图片太大（超过 12MB），换一张吧", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                bos.write(buf, 0, n);
+            }
+            byte[] raw = bos.toByteArray();
+
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(raw, 0, raw.length, bounds);
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                Toast.makeText(this, "这个文件不是有效图片", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            File dir = new File(getFilesDir(), "aiface");
+            if (!dir.exists() && !dir.mkdirs()) {
+                Toast.makeText(this, "无法创建形象目录", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            boolean animated = isAnimatedImage(raw);
+            if (animated) {
+                FileOutputStream fo = new FileOutputStream(new File(dir, "face_anim"));
+                fo.write(raw);
+                fo.flush();
+                fo.close();
+                new File(dir, "face.png").delete();
+                settings.aiFaceImage = "face_anim";
+            } else {
+                int sample = 1;
+                int longSide = Math.max(bounds.outWidth, bounds.outHeight);
+                while (longSide / sample > 1400) sample *= 2;
+                BitmapFactory.Options opt = new BitmapFactory.Options();
+                opt.inSampleSize = sample;
+                opt.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                Bitmap bmp = BitmapFactory.decodeByteArray(raw, 0, raw.length, opt);
+                if (bmp == null) {
+                    Toast.makeText(this, "图片解码失败，换一张试试", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                FileOutputStream fo = new FileOutputStream(new File(dir, "face.png"));
+                bmp.compress(Bitmap.CompressFormat.PNG, 100, fo);
+                fo.flush();
+                fo.close();
+                bmp.recycle();
+                new File(dir, "face_anim").delete();
+                settings.aiFaceImage = "face.png";
+            }
+
+            settings.aiFaceShow = true;
+            settings.save(this);
+            refreshFaceUi();
+            Toast.makeText(this, animated ? "动图已设置，返回聊天页看它动起来" : "形象已设置，返回聊天页即可看到",
+                    Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            Toast.makeText(this, "设置形象失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
+        } finally {
+            try { if (in != null) in.close(); } catch (Throwable ignored) {}
+        }
+    }
+
+    /** API 28+ 用 ImageDecoder 判断是不是多帧动图（GIF / 动态 WebP） */
+    private boolean isAnimatedImage(byte[] raw) {
+        if (Build.VERSION.SDK_INT < 28) return false;
+        try {
+            android.graphics.ImageDecoder.Source src =
+                    android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(raw));
+            android.graphics.drawable.Drawable d = android.graphics.ImageDecoder.decodeDrawable(src);
+            return d instanceof android.graphics.drawable.AnimatedImageDrawable;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private void clearAiFace() {
+        settings.aiFaceImage = "";
+        settings.save(this);
+        try {
+            new File(new File(getFilesDir(), "aiface"), "face.png").delete();
+        } catch (Throwable ignored) {}
+        refreshFaceUi();
+        Toast.makeText(this, "已恢复内置形象", Toast.LENGTH_SHORT).show();
+    }
+
+    private void refreshFaceUi() {
+        if (tvAiImgState == null) return;
+        boolean has = settings.aiFaceImage != null && !settings.aiFaceImage.trim().isEmpty();
+        tvAiImgState.setText(has ? "当前：自定义图片（大小/位置/透明度仍可调）" : "当前：内置形象");
+        // 选图会强制打开显示，开关得跟着变，否则界面和实际状态对不上
+        SwitchCompat sw = findViewById(R.id.swAiFace);
+        if (sw != null && sw.isChecked() != settings.aiFaceShow) sw.setChecked(settings.aiFaceShow);
     }
 
     // ==================== 数据与存储分组 ====================

@@ -14,7 +14,25 @@ public class Message {
 
     public String role;
     public String content;
+
+    /**
+     * 本轮推理内容（reasoning_content）。
+     *
+     * <p>不只是给「思考过程」折叠区看的：DeepSeek 的 thinking 模式要求多轮对话里
+     * 把上一轮 assistant 的 reasoning_content 原样带回去，漏了就直接 400
+     * （The reasoning_content in the thinking mode must be passed back to the API）。
+     * 所以必须随消息一起存、一起发，不能只在 UI 上展示完就丢。
+     */
+    public String reasoning;
     public long time;
+    /**
+     * 本轮累计思考耗时（毫秒，多次工具轮次的思考相加）。
+     *
+     * <p>实时渲染时这个数只活在内存里，重开会话就没了——于是同一个「思考完成」
+     * 折叠头在实时界面显示「用时 12.3 秒」，翻历史时秒数凭空消失，
+     * 看起来像两套界面。存下来，两边才能用同一条文案。
+     */
+    public long thinkMs;
     /** 是否为失败消息（仅 UI 用，不参与持久化语义） */
     public boolean error;
     /** 用户反馈：1 = 有帮助，-1 = 需改进，0 = 未标记 */
@@ -76,6 +94,8 @@ public class Message {
     public static class Step {
         public static final String TEXT = "t";
         public static final String TOOL = "c";
+        /** 一段思考过程：text 存原文，ms 存这一段想了多久 */
+        public static final String THINK = "k";
 
         public String type;
         /** TEXT 当正文用；TOOL 当工具名用 */
@@ -91,6 +111,10 @@ public class Message {
 
         public boolean isTool() {
             return TOOL.equals(type);
+        }
+
+        public boolean isThink() {
+            return THINK.equals(type);
         }
 
         public JSONObject toJson() {
@@ -149,6 +173,12 @@ public class Message {
                 }
                 o.put("tasks", ta);
             }
+            if (reasoning != null && !reasoning.isEmpty()) {
+                // 单条上限 32000 字：正常思考到不了这个量，超了基本都是失控，
+                // 存全量只会把会话文件撑大、把每轮输入顶爆。
+                o.put("rc", reasoning.length() > 32000 ? reasoning.substring(0, 32000) : reasoning);
+            }
+            if (thinkMs > 0) o.put("thk", thinkMs);
             if (conclusionTitle != null && !conclusionTitle.trim().isEmpty()) {
                 o.put("ct", conclusionTitle);
                 if (conclusionDetail != null && !conclusionDetail.trim().isEmpty()) {
@@ -192,6 +222,8 @@ public class Message {
                 m.taskDone = done;
             }
         }
+        m.thinkMs = o.optLong("thk", 0);
+        m.reasoning = JsonOpt.str(o, "rc");
         m.conclusionTitle = JsonOpt.str(o, "ct");
         m.conclusionDetail = JsonOpt.str(o, "cd");
         JSONArray sa = o.optJSONArray("steps");

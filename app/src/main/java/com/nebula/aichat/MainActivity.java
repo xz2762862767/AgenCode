@@ -1,6 +1,7 @@
 package com.nebula.aichat;
 
 import com.nebula.aichat.ui.Palette;
+import com.nebula.aichat.ui.RingDrawable;
 
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
@@ -88,11 +89,11 @@ import com.nebula.aichat.ui.ConclusionParser;
 import com.nebula.aichat.ui.ConfirmSheet;
 import com.nebula.aichat.ui.EnvPage;
 import com.nebula.aichat.ui.MarkdownRenderer;
+import com.nebula.aichat.ui.StreamCursor;
 import com.nebula.aichat.ui.TaskCardView;
 import com.nebula.aichat.util.TaskParser;
 import com.nebula.aichat.ui.ProjectPage;
 import com.nebula.aichat.ui.SandboxPage;
-import com.nebula.aichat.ui.Sheet;
 import com.nebula.aichat.ui.TerminalPage;
 import com.nebula.aichat.ui.Ui;
 
@@ -162,6 +163,10 @@ public class MainActivity extends AppCompatActivity {
     private MarkdownRenderer tlSegR;
     /** streamBuf 中已被前面的段划走的长度，当前段只渲染它之后的部分 */
     private int tlSegStart = 0;
+    /** thinkBuf 里已经落成 step 的位置：保证一段思考只存一次 */
+    private int thinkSegStart = 0;
+    /** 当前这段思考的起点（uptimeMillis），用来给这一段单独计时 */
+    private long thinkSegAt = 0;
 
     /**
      * 本轮已经立起来的执行步骤卡（在气泡顶部）。
@@ -183,8 +188,6 @@ public class MainActivity extends AppCompatActivity {
     private final java.util.List<com.nebula.aichat.data.Message.Step> toolRowStep =
             new java.util.ArrayList<>();
 
-    /** 思考过程折叠时露出多少行 */
-    private static final int THINK_FOLD_LINES = 6;
     /** 用户亲手折叠过卡片后，就不再自动展开打扰他 */
     private boolean toolUserTouched = false;
     private TextView toolFoldBtn;
@@ -193,6 +196,8 @@ public class MainActivity extends AppCompatActivity {
     private int spinIdx = 0;
     private static final String[] SPIN = {"\u25d0", "\u25d3", "\u25d1", "\u25d2"};
     private static final int ST_RUN = 0, ST_OK = 1, ST_FAIL = 2, ST_ABORT = 3;
+    /** 运行色最小可见时长：几十毫秒就跑完的工具，也要让"绿"在屏上停这么久，否则肉眼抓不到 */
+    private static final long RUN_MIN_MS = 900;
 
     // —— 统一状态色板：低饱和、暗底友好。要调整全站配色，只改这几行 ——
     private static final int C_RUN   = 0xFF3DDC97;  // 运行 / 思考：亮绿（还在动）
@@ -254,8 +259,19 @@ public class MainActivity extends AppCompatActivity {
     private StringBuilder streamBuf;
     /** 本轮模型推理内容累积（reasoning_content），流结束后折成「思考过程」块 */
     private StringBuilder thinkBuf;
+    /**
+     * 整轮（可能跨多个工具轮次）的完整思考内容。
+     *
+     * <p>thinkBuf 是给「思考过程」折叠块用的，首个正文到达就清空；
+     * 而发给下一轮请求的 reasoning_content 必须是完整原文，所以单独留一份。
+     */
+    private StringBuilder thinkAll;
     /** 推理折叠块的挂载容器（在状态行下方、正文上方） */
     private LinearLayout thinkHost;
+    /** 工具调用行的容器：独立一格，排在思考块上面 */
+    private LinearLayout toolHost;
+    /** 实时思考块：思考进行中就在场，正文随 reasoning 流式追加 */
+    private View liveThinkBox;
     /** 回编译产生的修改清单块，模型没在回答里复述时自动补到结尾 */
     private String pendingChangeBlock;
 
@@ -280,6 +296,8 @@ public class MainActivity extends AppCompatActivity {
     private Drawable statusAppIcon;
     private ObjectAnimator spinAnim;
     private long thinkStartAt;
+    /** 本轮累计思考耗时：多次工具轮次的思考相加，最后写进消息，历史回放才有秒数 */
+    private long runThinkMs = 0;
     private boolean thinkDone = true;
     /** 正文气泡下方的运行横幅：卡片折叠了也能一眼看出还在跑还是已经停了 */
     private LinearLayout runBannerWrap;
@@ -301,6 +319,15 @@ public class MainActivity extends AppCompatActivity {
     private android.widget.FrameLayout runBannerLineWrap;
     private ObjectAnimator lineAnim;
     private android.widget.FrameLayout runBannerBox;  // 胶囊的不裁剪容器（涟漪可以溢出）
+    // 常驻运行条：位置固定、不随消息滚动、不闪，是"还在跑"的最终判据
+    // 运行秒表：贴在发送键正上方的一颗小胶囊，浮层不占布局
+    private TextView runSec;
+    private boolean runSecOn;
+    private long runSecStart;
+    // 一轮运行的三种收尾结局（原来是 RunBarView 里的常量，条删了以后搬到这里）
+    private static final int RUN_MODE_DONE = 3;
+    private static final int RUN_MODE_FAIL = 4;
+    private static final int RUN_MODE_ABORT = 5;
     private View[] ripples;                            // 结束涟漪（两道错开发射）
     private ObjectAnimator flowAnim;
     private ObjectAnimator pulseAnim;
@@ -398,10 +425,6 @@ public class MainActivity extends AppCompatActivity {
         tvUsage = findViewById(R.id.tvUsage);
         tvUsageCount = findViewById(R.id.tvUsageCount);
         usageRow = findViewById(R.id.usageRow);
-        if (usageRow != null) usageRow.setOnClickListener(v -> showUsageHelp());
-        // 等宽数字：usage 每轮刷新时数字宽度不跳，行不会左右抖
-        if (tvUsage != null) tvUsage.setFontFeatureSettings("tnum");
-        if (tvUsageCount != null) tvUsageCount.setFontFeatureSettings("tnum");
         ivModelIcon = findViewById(R.id.ivModelIcon);
         scroll = findViewById(R.id.scroll);
         if (scroll != null) {
@@ -409,6 +432,10 @@ public class MainActivity extends AppCompatActivity {
                     (v, x, y, ox, oy) -> lastScrollAt = SystemClock.uptimeMillis());
         }
         chatContainer = findViewById(R.id.chatContainer);
+        // 正文气泡靠负 margin 铺满到屏幕两侧，会溢出容器自身边界；
+        // 不关裁剪的话那 1dp 描边会被切掉一半
+        chatContainer.setClipChildren(false);
+        setupQuickNav();
         etInput = findViewById(R.id.etInput);
         // 极端保护：粘贴几十万字符时 EditText 布局会直接卡死（ANR），
         // 这里硬性截断到上限的 4 倍；正常超长内容由 sendMessage 给出明确提示
@@ -560,6 +587,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         fgVisible = false;
+        stopFaceFloat();
+        if (android.os.Build.VERSION.SDK_INT >= 28) stopAnimatedFace();
         super.onPause();
     }
 
@@ -583,6 +612,7 @@ public class MainActivity extends AppCompatActivity {
         syncAliveService();
         updateSubtitle();
         applyChatBackground();
+        applyAiFace();
         // 会话在别处被清空（设置页「清空全部会话」）→ 回到全新会话
         if (current != null && !busy && store.get(current.id) == null) {
             newConversation();
@@ -620,6 +650,229 @@ public class MainActivity extends AppCompatActivity {
             sc.setBackground(com.nebula.aichat.ui.ChatBackground.build(this, name, alpha, dim));
         } catch (Throwable t) {
             sc.setBackground(null);
+        }
+    }
+
+    /**
+     * AI 本体形象：按设置应用可见性、大小、位置、不透明度，并驱动「自动情绪」。
+     *
+     * 形象画在消息列表下层，气泡会盖住一部分——这是故意的：
+     * 它该像背景里的活物，而不是一张挡在字前面的贴纸。
+     */
+    /** 形象图：内置图（assets）或用户自选图，二选一 */
+    private android.widget.ImageView aiFaceImg;
+    /** 内置形象图，打包在 assets 里；用户没自选图时就显示它 */
+    private static final String FACE_ASSET = "ai_face_default.png";
+    private android.graphics.Bitmap aiFaceBmp;
+    private String aiFaceImgPath;
+    /** 图片文件的 lastModified+size 指纹，文件换了就重新解码 */
+    private long aiFaceImgStamp;
+    private android.graphics.drawable.Drawable aiFaceDrawable;
+    private android.animation.Animator aiFaceAnim;
+
+    void applyAiFace() {
+        aiFaceImg = findViewById(R.id.aiFaceImg);
+        if (aiFaceImg == null || settings == null) return;
+        String img = settings.aiFaceImage == null ? "" : settings.aiFaceImage.trim();
+        boolean hasImg = !img.isEmpty()
+                && new java.io.File(new java.io.File(getFilesDir(), "aiface"), img).exists();
+        if (!settings.aiFaceShow) {
+            aiFaceImg.setVisibility(View.GONE);
+            stopFaceFloat();
+            return;
+        }
+        aiFaceImg.setVisibility(View.VISIBLE);
+        // 自选图优先，没有就用内置形象图
+        showFaceImage(hasImg ? img : null);
+    }
+
+    /** 内置形象图：长边超过 1400 先降采样，别为一张图吃掉几 MB 内存 */
+    private android.graphics.Bitmap decodeFaceAsset() {
+        try {
+            android.graphics.BitmapFactory.Options b = new android.graphics.BitmapFactory.Options();
+            b.inJustDecodeBounds = true;
+            java.io.InputStream in0 = getAssets().open(FACE_ASSET);
+            android.graphics.BitmapFactory.decodeStream(in0, null, b);
+            in0.close();
+            int sample = 1;
+            int longSide = Math.max(b.outWidth, b.outHeight);
+            while (longSide / sample > 1400) sample *= 2;
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            o.inSampleSize = sample;
+            o.inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888;
+            java.io.InputStream in = getAssets().open(FACE_ASSET);
+            android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeStream(in, null, o);
+            in.close();
+            return bmp;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 形象图：name 为 null 用内置图，否则用自选图；高度取"大小"设置，宽度按原图比例 */
+    private void showFaceImage(String name) {
+        boolean builtin = name == null;
+        java.io.File f = builtin ? null
+                : new java.io.File(new java.io.File(getFilesDir(), "aiface"), name);
+        boolean anim = !builtin && name.endsWith("_anim") && android.os.Build.VERSION.SDK_INT >= 28;
+        int srcW, srcH;
+        // 文件被替换（清除后重选同名图）也要失效缓存，否则会一直显示旧图
+        String key = builtin ? ("assets:" + FACE_ASSET) : f.getAbsolutePath();
+        long stamp = builtin ? 0L : (f.lastModified() * 31L + f.length());
+        boolean dirty = !key.equals(aiFaceImgPath) || stamp != aiFaceImgStamp;
+
+        if (anim) {
+            if (dirty) {
+                releaseFaceDrawable();
+                try {
+                    android.graphics.ImageDecoder.Source src =
+                            android.graphics.ImageDecoder.createSource(f);
+                    android.graphics.drawable.Drawable dr =
+                            android.graphics.ImageDecoder.decodeDrawable(src,
+                                    (decoder, info, s) -> {
+                                        int iw = info.getSize().getWidth();
+                                        int ih = info.getSize().getHeight();
+                                        int ls = Math.max(iw, ih);
+                                        if (ls > 1200) {
+                                            float k = 1200f / ls;
+                                            decoder.setTargetSize(Math.max(1, (int) (iw * k)),
+                                                    Math.max(1, (int) (ih * k)));
+                                        }
+                                    });
+                    if (dr instanceof android.graphics.drawable.AnimatedImageDrawable) {
+                        android.graphics.drawable.AnimatedImageDrawable ad =
+                                (android.graphics.drawable.AnimatedImageDrawable) dr;
+                        ad.setRepeatCount(android.graphics.drawable.AnimatedImageDrawable.REPEAT_INFINITE);
+                        aiFaceImg.setImageDrawable(ad);
+                        aiFaceDrawable = ad;
+                        ad.start();
+                    } else {
+                        aiFaceImg.setImageDrawable(dr);
+                        aiFaceDrawable = dr;
+                    }
+                    aiFaceImgPath = f.getAbsolutePath();
+                    aiFaceImgStamp = stamp;
+                } catch (Throwable t) {
+                    aiFaceImgPath = null;
+                }
+            }
+            android.graphics.drawable.Drawable dr = aiFaceImg.getDrawable();
+            if (dr == null) {
+                aiFaceImg.setVisibility(View.GONE);
+                return;
+            }
+            // 从后台回来 / 重新应用设置时，动图要重新 start 才会继续播
+            if (dr instanceof android.graphics.drawable.AnimatedImageDrawable) {
+                try {
+                    ((android.graphics.drawable.AnimatedImageDrawable) dr).start();
+                } catch (Throwable ignored) {}
+            }
+            srcW = Math.max(1, dr.getIntrinsicWidth());
+            srcH = Math.max(1, dr.getIntrinsicHeight());
+        } else {
+            if (dirty) {
+                releaseFaceDrawable();
+                aiFaceBmp = builtin ? decodeFaceAsset()
+                        : android.graphics.BitmapFactory.decodeFile(f.getAbsolutePath());
+                aiFaceImgPath = aiFaceBmp == null ? null : key;
+                aiFaceImgStamp = stamp;
+            }
+            if (aiFaceBmp == null || aiFaceBmp.isRecycled()) {
+                aiFaceImg.setVisibility(View.GONE);
+                return;
+            }
+            aiFaceImg.setImageBitmap(aiFaceBmp);
+            srcW = aiFaceBmp.getWidth();
+            srcH = aiFaceBmp.getHeight();
+        }
+
+        aiFaceImg.setAlpha(Math.max(0.2f, Math.min(1f, settings.aiFaceAlpha / 100f)));
+        float d = getResources().getDisplayMetrics().density;
+        int h = Math.max(1, (int) (settings.aiFaceSizeDp * d));
+        int w = Math.max(1, (int) (h * (srcW / (float) srcH)));
+        int maxW = (int) (getResources().getDisplayMetrics().widthPixels * 0.8f);
+        if (w > maxW) {
+            w = maxW;
+            h = Math.max(1, (int) (w * srcH / (float) srcW));
+        }
+        int g = aiGravity(settings.aiFacePos);
+        android.widget.FrameLayout.LayoutParams lp =
+                (android.widget.FrameLayout.LayoutParams) aiFaceImg.getLayoutParams();
+        if (lp.width != w || lp.height != h || lp.gravity != g) {
+            lp.width = w;
+            lp.height = h;
+            lp.gravity = g;
+            aiFaceImg.setLayoutParams(lp);
+        }
+        // 动图自己会动，再叠浮动就晃得厉害；只有静态图才加浮动
+        if (anim) {
+            stopFaceFloat();
+        } else {
+            startFaceFloat();
+        }
+    }
+
+    /** 静态图也给它一点"活着"的感觉：上下轻浮 5dp + 1.5% 呼吸缩放 */
+    private void startFaceFloat() {
+        if (aiFaceAnim != null) return;
+        final float amp = 5f * getResources().getDisplayMetrics().density;
+        android.animation.ValueAnimator va =
+                android.animation.ValueAnimator.ofFloat(0f, (float) (Math.PI * 2));
+        va.setDuration(4200);
+        va.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        va.setInterpolator(new android.view.animation.LinearInterpolator());
+        va.addUpdateListener(a -> {
+            if (aiFaceImg == null) return;
+            float t = (Float) a.getAnimatedValue();
+            aiFaceImg.setTranslationY(-amp * (float) Math.sin(t));
+            float s = 1f + 0.015f * (float) Math.sin(t);
+            aiFaceImg.setScaleX(s);
+            aiFaceImg.setScaleY(s);
+        });
+        va.start();
+        aiFaceAnim = va;
+    }
+
+    private void stopFaceFloat() {
+        if (aiFaceAnim != null) {
+            aiFaceAnim.cancel();
+            aiFaceAnim = null;
+        }
+        if (aiFaceImg != null) {
+            aiFaceImg.setTranslationY(0f);
+            aiFaceImg.setScaleX(1f);
+            aiFaceImg.setScaleY(1f);
+        }
+    }
+
+    /** AnimatedImageDrawable 是 API 28 才有的类：低版本连 instanceof 都不安全，隔离到这个方法里 */
+    @android.annotation.TargetApi(28)
+    private void stopAnimatedFace() {
+        if (aiFaceDrawable instanceof android.graphics.drawable.AnimatedImageDrawable) {
+            try {
+                ((android.graphics.drawable.AnimatedImageDrawable) aiFaceDrawable).stop();
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    private void releaseFaceDrawable() {
+        if (android.os.Build.VERSION.SDK_INT >= 28) stopAnimatedFace();
+        aiFaceDrawable = null;
+        if (aiFaceBmp != null && !aiFaceBmp.isRecycled()) aiFaceBmp.recycle();
+        aiFaceBmp = null;
+    }
+
+    private static int aiGravity(int pos) {
+        switch (pos) {
+            case 0: return android.view.Gravity.LEFT | android.view.Gravity.TOP;
+            case 1: return android.view.Gravity.CENTER_HORIZONTAL | android.view.Gravity.TOP;
+            case 2: return android.view.Gravity.RIGHT | android.view.Gravity.TOP;
+            case 3: return android.view.Gravity.LEFT | android.view.Gravity.CENTER_VERTICAL;
+            case 5: return android.view.Gravity.RIGHT | android.view.Gravity.CENTER_VERTICAL;
+            case 6: return android.view.Gravity.LEFT | android.view.Gravity.BOTTOM;
+            case 7: return android.view.Gravity.CENTER_HORIZONTAL | android.view.Gravity.BOTTOM;
+            case 8: return android.view.Gravity.RIGHT | android.view.Gravity.BOTTOM;
+            default: return android.view.Gravity.CENTER;
         }
     }
 
@@ -661,6 +914,7 @@ public class MainActivity extends AppCompatActivity {
         client.cancel();
         try {
             stopBannerAnim();
+            runUiHide();
             ui.removeCallbacks(keepAliveTick);
             KeepAliveService.stop(this);
         } catch (Throwable ignored) {
@@ -848,7 +1102,9 @@ public class MainActivity extends AppCompatActivity {
             client.cancel();
             busy = false;
             setSendState(false);
+            roundActive = false;
             stopToolTicker();
+            concludeRunBar(RUN_MODE_ABORT, "");
             streamContent = null;
             streamMessage = null;
             streamBuf = null;
@@ -905,6 +1161,11 @@ public class MainActivity extends AppCompatActivity {
                         renderTimeline(content, m, body);
                         attachTasks(content, m);
                     } else {
+                        // 这轮没跑工具：没有折叠头承载秒数，就把耗时写在思考块标题上
+                        if (m.reasoning != null && !m.reasoning.trim().isEmpty()) {
+                            content.addView(buildThinkBox(m.reasoning,
+                                    m.thinkMs > 0 ? fmtSecs(m.thinkMs) : null));
+                        }
                         MarkdownRenderer mr = new MarkdownRenderer(this, content, msgSp);
                         mr.setAutoCollapse(true);
                         mr.setOnConfirmClick(rows -> openConfirmSheet(rows));
@@ -1200,32 +1461,52 @@ public class MainActivity extends AppCompatActivity {
         return false;
     }
 
-    /** 重开会话时按时间线还原过程：正文段与工具行按当时的顺序交错显示 */
+    /**
+     * 重开会话时按时间线还原过程：思考段、工具行、正文段按当时的顺序铺开。
+     *
+     * <p>思考段和工具行收进同一个"过程流"容器，容器内部严格按发生顺序排列，
+     * 于是重开会话看到的就是 调用 → 该次调用后的思考 → 下一次调用 的交替结构，
+     * 与实时界面同一套观感。正文段仍排在过程之后（实时也是过程在上、回答在下）。</p>
+     */
     private void renderTimeline(LinearLayout host, Message m, String body) {
-        // 历史回放的工具记录也统一收进一条「思考完成 ▾」，和实时渲染保持一致
-        LinearLayout procBox = null;
+        boolean hasThinkSeg = false;
+        if (m.steps != null) {
+            for (Message.Step st : m.steps) {
+                if (st != null && st.isThink()) {
+                    hasThinkSeg = true;
+                    break;
+                }
+            }
+        }
+        LinearLayout procHost = null;
+        if (!hasThinkSeg && m.reasoning != null && !m.reasoning.trim().isEmpty()) {
+            // 老记录：整轮 reasoning 只存了一坨，没有分段信息，只能整体显示
+            procHost = newProcHost(host);
+            procHost.addView(buildThinkBox(m.reasoning, null));
+        }
         int calls = 0;
         for (Message.Step st : m.steps) {
             if (st == null) continue;
             if (st.isTool()) {
-                if (procBox == null) {
-                    procBox = new LinearLayout(this);
-                    procBox.setOrientation(LinearLayout.VERTICAL);
-                    procBox.setClipChildren(false);
-                    host.addView(procBox, new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                }
+                if (procHost == null) procHost = newProcHost(host);
                 calls++;
                 // 每次调用各自一个框，点行尾箭头展开它自己的详情
-                LinearLayout wrap = makeToolWrap(procBox);
+                LinearLayout wrap = makeToolWrap(procHost);
                 wrap.setTag(st);
                 TextView row = toolBodyOf(wrap);
                 if (row != null) {
                     fillToolRow(row, st.ok ? ST_OK : ST_FAIL,
                             st.text == null ? "" : st.text, null, st.res, st.ms);
                     updateToolExplain(row, toolExplain(st.text, st.arg, st.res, st.ok),
-                            st.ok ? Palette.c(0xFF9DB2CC) : Palette.c(0xFFFF9BA0));
+                            st.ok ? Palette.c(C_TEXT2) : Palette.c(C_FAIL));
+                    // 重开会话时耗时也从 Step.ms 还原，否则历史里这一行会凭空少一块信息
+                    setExplainMsOnRow(row, st.ms, st.ok ? ST_OK : ST_FAIL);
                 }
+            } else if (st.isThink()) {
+                if (st.text == null || st.text.trim().isEmpty()) continue;
+                if (procHost == null) procHost = newProcHost(host);
+                // 这一段自己带耗时，标题直接写自己的，不写整轮的
+                procHost.addView(buildThinkBox(st.text, st.ms > 0 ? fmtSecs(st.ms) : null));
             } else if (st.text != null && !st.text.trim().isEmpty()) {
                 LinearLayout seg = new LinearLayout(this);
                 seg.setOrientation(LinearLayout.VERTICAL);
@@ -1242,14 +1523,21 @@ public class MainActivity extends AppCompatActivity {
                 mr.collapseCodeBlocks();
             }
         }
-        if (procBox != null) {
-            java.util.List<View[]> one = new java.util.ArrayList<>(1);
-            one.add(new View[]{null, procBox});
-            foldProcess(host, one, calls);
-        }
+        // 有分段思考时秒数已经写在每段自己头上；老记录才需要补整轮耗时
+        if (procHost != null && !hasThinkSeg) putThinkSecs(host, m.thinkMs);
         addConclusionCard(host, m, false);
         attachArtifacts(host, body);
         attachLongPress(host, m);
+    }
+
+    /** 过程流容器：第一次需要时挂在当前位置，后续按发生顺序往里追加 */
+    private LinearLayout newProcHost(LinearLayout host) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setClipChildren(false);
+        host.addView(box, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return box;
     }
 
     /**
@@ -1572,6 +1860,8 @@ public class MainActivity extends AppCompatActivity {
     }
     /** 本轮请求的起始时间与是否联网，用于回答下方的元信息胶囊 */
     private long reqStartAt = 0L;
+    /** 整轮是否还活着：工具全跑完、模型在思考下一步，这段也必须继续读秒 */
+    private boolean roundActive = false;
     private boolean reqNet = false;
 
     private void addUserBubble(Message m) {
@@ -1605,6 +1895,9 @@ public class MainActivity extends AppCompatActivity {
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         blp.gravity = Gravity.END;
+        // 外层容器内边距归零后（正文要铺满屏宽），用户气泡得自己留出右边距
+        blp.rightMargin = dp(10);
+        blp.leftMargin = dp(48);
         blp.leftMargin = dp(76);   // 左侧留白，让气泡靠右、不顶到字
         row.addView(box, blp);
 
@@ -1612,41 +1905,118 @@ public class MainActivity extends AppCompatActivity {
         chatContainer.addView(row);
     }
 
-    /** 产物类型 → 图标 + 中文说明 */
-    private static String[] artifactInfo(String path) {
+    /** 产物扩展名（小写）；没有扩展名返回空串 */
+    private static String extOf(String path) {
         int d = path.lastIndexOf('.');
-        String ext = d > 0 ? path.substring(d + 1).toLowerCase(Locale.US) : "";
-        switch (ext) {
-            case "apk": return new String[]{"📦", "Android 安装包"};
+        return d > 0 ? path.substring(d + 1).toLowerCase(Locale.US) : "";
+    }
+
+    /**
+     * 产物类型 → 矢量图标。
+     * 原来用 emoji（📦 🖼️ 🎬 🗜️）：不同字体渲染出来胖瘦不一、在深色底上自带一圈彩色，
+     * 更关键的是跟工具行那套细线图标完全不是一家人——同一屏里两种图形语言。
+     * 现在统一成和工具行同源的 stroke 图标，只靠 setColorFilter 区分主次与类型。
+     */
+    private static int artifactIcon(String path) {
+        switch (extOf(path)) {
+            case "apk": return R.drawable.ic_call_apk;
             case "png": case "jpg": case "jpeg": case "webp": case "gif":
-                return new String[]{"🖼️", "图片"};
-            case "mp4": case "webm": case "mov": return new String[]{"🎬", "视频"};
-            case "mp3": case "wav": case "m4a": case "aac": return new String[]{"🎵", "音频"};
-            case "zip": case "tar": case "gz": case "7z": return new String[]{"🗜️", "压缩包"};
-            case "json": return new String[]{"🧾", "JSON 数据"};
-            case "md": return new String[]{"📝", "Markdown 文档"};
-            case "txt": case "log": return new String[]{"📄", "文本文件"};
-            case "html": case "htm": return new String[]{"🌐", "网页"};
-            case "py": return new String[]{"🐍", "Python 脚本"};
-            case "sh": return new String[]{"⚙️", "Shell 脚本"};
-            case "java": return new String[]{"☕", "Java 源码"};
-            case "xml": return new String[]{"🧩", "XML 配置"};
-            default: return new String[]{"📎", "文件"};
+                return R.drawable.ic_art_image;
+            case "mp4": case "webm": case "mov": return R.drawable.ic_art_video;
+            case "mp3": case "wav": case "m4a": case "aac": return R.drawable.ic_art_audio;
+            case "zip": case "tar": case "gz": case "7z": return R.drawable.ic_art_zip;
+            case "html": case "htm": return R.drawable.ic_call_web;
+            case "py": case "sh": case "java": case "kt": case "kts":
+            case "json": case "xml": case "yaml": case "yml":
+                return R.drawable.ic_art_code;
+            default: return R.drawable.ic_call_file;
         }
+    }
+
+    /** 产物类型 → 中文说明 */
+    private static String artifactLabel(String path) {
+        switch (extOf(path)) {
+            case "apk": return "Android 安装包";
+            case "png": case "jpg": case "jpeg": case "webp": case "gif": return "图片";
+            case "mp4": case "webm": case "mov": return "视频";
+            case "mp3": case "wav": case "m4a": case "aac": return "音频";
+            case "zip": case "tar": case "gz": case "7z": return "压缩包";
+            case "json": return "JSON 数据";
+            case "md": return "Markdown 文档";
+            case "txt": case "log": return "文本文件";
+            case "html": case "htm": return "网页";
+            case "py": return "Python 脚本";
+            case "sh": return "Shell 脚本";
+            case "java": return "Java 源码";
+            case "xml": return "XML 配置";
+            default: return "文件";
+        }
+    }
+
+    /** 未安装 APK 的"脸"：真实 launcher 图标 + 应用名 + 包名版本 */
+    private static final class ApkFace {
+        android.graphics.drawable.Drawable icon;
+        String label;
+        String pkg;
+        String version;
+    }
+
+    /** 同一文件解析一次就够：读 resources.arsc 再解位图要几百毫秒，卡片一滚动就重解会卡顿 */
+    private final java.util.HashMap<String, ApkFace> apkFaces = new java.util.HashMap<>();
+
+    /**
+     * 读未安装 APK 的应用身份（图标 + 名称 + 包名版本）。
+     * <p>
+     * 关键点：调 loadIcon / loadLabel 之前，必须把 {@code applicationInfo.sourceDir}
+     * 和 {@code publicSourceDir} 指向 APK 文件本身。这两个字段是给"已安装应用"填的，
+     * 直接对 getPackageArchiveInfo 的结果调 loadIcon，PackageManager 找不到资源，
+     * 只会回一个系统默认的绿机器人图标，名字也退化成包名——那就跟安装后看到的完全不是一回事。
+     */
+    private ApkFace apkFace(java.io.File f) {
+        if (f == null) return new ApkFace();
+        String key = f.getAbsolutePath() + "|" + f.length() + "|" + f.lastModified();
+        ApkFace hit = apkFaces.get(key);
+        if (hit != null) return hit;
+        ApkFace face = new ApkFace();
+        try {
+            android.content.pm.PackageManager pm = getPackageManager();
+            android.content.pm.PackageInfo pi = pm.getPackageArchiveInfo(
+                    f.getAbsolutePath(), android.content.pm.PackageManager.GET_META_DATA);
+            if (pi != null) {
+                face.pkg = pi.packageName == null ? "" : pi.packageName;
+                face.version = pi.versionName == null ? "" : pi.versionName.trim();
+                if (pi.applicationInfo != null) {
+                    pi.applicationInfo.sourceDir = f.getAbsolutePath();
+                    pi.applicationInfo.publicSourceDir = f.getAbsolutePath();
+                    try {
+                        face.icon = pi.applicationInfo.loadIcon(pm);
+                    } catch (Throwable ignored) {
+                    }
+                    try {
+                        CharSequence lb = pi.applicationInfo.loadLabel(pm);
+                        if (lb != null) face.label = lb.toString().trim();
+                    } catch (Throwable ignored) {
+                    }
+                    // 没注册 label 的包，loadLabel 会回包名——那不是"安装后看到的名字"，丢掉
+                    if (face.label != null && face.label.equals(face.pkg)) face.label = null;
+                    if (face.label != null && face.label.isEmpty()) face.label = null;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        if (apkFaces.size() > 60) apkFaces.clear();
+        apkFaces.put(key, face);
+        return face;
     }
 
     /** APK 卡片第二行：包名 · 版本 · 大小，拿不到包信息就只报大小 */
     private String apkMeta(java.io.File f, long size) {
+        ApkFace face = apkFace(f);
         String head = "";
-        try {
-            android.content.pm.PackageInfo pi = getPackageManager()
-                    .getPackageArchiveInfo(f.getAbsolutePath(), 0);
-            if (pi != null) {
-                String pkg = pi.packageName == null ? "" : pi.packageName;
-                String vn = pi.versionName == null ? "" : pi.versionName.trim();
-                if (!pkg.isEmpty()) head = pkg + (vn.isEmpty() ? "" : " · v" + vn) + " · ";
-            }
-        } catch (Throwable ignored) {
+        if (face.pkg != null && !face.pkg.isEmpty()) {
+            head = face.pkg
+                    + (face.version == null || face.version.isEmpty() ? "" : " · v" + face.version)
+                    + " · ";
         }
         // 正经 APK 再小也有几十 KB。体积掉到这个量级，多半是空壳或拷贝被截断，
         // 直接在卡片上标出来，别让用户点下去才撞系统报错。
@@ -1715,20 +2085,33 @@ public class MainActivity extends AppCompatActivity {
         if (exists.isEmpty()) return;
 
 
+        // 标题行：原来是「📎 产出物 · N」，emoji 回形针在深色底上是一坨实心色块，
+        // 加粗 12sp 又比卡片标题还重——一个小标题压过了它要引出的一堆卡片。
+        // 现在换成 13dp 叠片图标 + 11.5sp 常规字重，只做"引子"不做主角。
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView hic = new ImageView(this);
+        hic.setImageResource(R.drawable.ic_art_stack);
+        hic.setColorFilter(Palette.c(0xFF6E8098));
+        LinearLayout.LayoutParams hiclp = new LinearLayout.LayoutParams(dp(13), dp(13));
+        hiclp.rightMargin = dp(5);
+        head.addView(hic, hiclp);
         TextView title = new TextView(this);
-        title.setText("📎 产出物 · " + exists.size());
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(Palette.c(0xFFAFC2DC));
+        title.setText("产出物 · " + exists.size());
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        title.setTextColor(Palette.c(0xFF8B9DB3));
+        head.addView(title);
         LinearLayout.LayoutParams tlp2 = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tlp2.topMargin = dp(10);
         tlp2.bottomMargin = dp(4);
-        content.addView(title, tlp2);
+        content.addView(head, tlp2);
 
         for (int i = 0; i < exists.size(); i++) {
             final String path = exists.get(i);
-            String[] info = artifactInfo(path);
+            int iconRes = artifactIcon(path);
+            String label = artifactLabel(path);
             String name = path.substring(path.lastIndexOf('/') + 1);
 
             final boolean isApk = path.toLowerCase(Locale.US).endsWith(".apk");
@@ -1750,28 +2133,50 @@ public class MainActivity extends AppCompatActivity {
                 return true;
             });
 
-            TextView icon = new TextView(this);
-            icon.setText(info[0]);
-            icon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
-            card.addView(icon, new LinearLayout.LayoutParams(dp(30),
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            // APK 卡片挂真实 launcher 图标，跟装完之后桌面上看到的那个一模一样；
+            // 图标 + 间距恒为 30dp，正文左缘不因有没有图标而跳动。
+            ImageView icon = new ImageView(this);
+            LinearLayout.LayoutParams iclp;
+            android.graphics.drawable.Drawable realIcon =
+                    isApk ? apkFace(new java.io.File(path)).icon : null;
+            if (realIcon != null) {
+                icon.setImageDrawable(realIcon);
+                iclp = new LinearLayout.LayoutParams(dp(22), dp(22));
+                iclp.rightMargin = dp(8);
+            } else {
+                icon.setImageResource(iconRes);
+                icon.setColorFilter(isApk ? Palette.c(0xFFFFB36B) : Palette.c(0xFF8FA3BA));
+                iclp = new LinearLayout.LayoutParams(dp(20), dp(20));
+                iclp.rightMargin = dp(10);
+            }
+            card.addView(icon, iclp);
 
             LinearLayout col = new LinearLayout(this);
             col.setOrientation(LinearLayout.VERTICAL);
 
+            // APK 的标题用 android:label（装完在桌面上显示的名字），
+            // 不是文件名：用户认的是应用名，htstorm.apk 这种包名式文件名对不上号。
+            String shownName = name;
+            if (isApk) {
+                String lb = apkFace(new java.io.File(path)).label;
+                if (lb != null && !lb.isEmpty()) shownName = lb;
+            }
+
             TextView nm = new TextView(this);
-            nm.setText(name);
+            nm.setText(shownName);
             nm.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             nm.setTypeface(Typeface.DEFAULT_BOLD);
             nm.setTextColor(Palette.c(0xFFE6EEFB));
             nm.setMaxLines(1);
-            nm.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+            // 应用名截尾（"夜袭压测…"保留开头才是有效信息），文件名截中（保住 .apk 后缀）
+            nm.setEllipsize(isApk ? android.text.TextUtils.TruncateAt.END
+                    : android.text.TextUtils.TruncateAt.MIDDLE);
             col.addView(nm);
 
             TextView meta = new TextView(this);
             meta.setText(isApk
                     ? apkMeta(new java.io.File(path), sizes.get(i))
-                    : info[1] + " · " + humanSize(sizes.get(i)) + " · 点按复制路径");
+                    : label + " · " + humanSize(sizes.get(i)) + " · 点按复制路径");
             meta.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
             meta.setTextColor(Palette.c(0xFF8896AB));
             col.addView(meta);
@@ -1806,6 +2211,8 @@ public class MainActivity extends AppCompatActivity {
                 card.addView(install, ilp);
             }
 
+            // 左右缝隙统一由外层容器给（12dp），卡片自己不再加 margin，
+            // 否则会叠成 24dp，卡片比正文还往里缩，看着像错位
             LinearLayout.LayoutParams clp2 = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             clp2.topMargin = dp(6);
@@ -1958,26 +2365,39 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         rowLp.bottomMargin = dp(18);
-        // 气泡左右直接撑到容器内边距，比原来再宽 8dp，但不贴边
-        rowLp.leftMargin = 0;
-        rowLp.rightMargin = 0;
+        // 对话框模式：气泡左右各留 10dp（chatContainer 自带内边距），
+        // 与用户气泡同一套视觉——左边距不铺满，一眼能看出这是"一条消息"而不是整页文档
+
         row.setLayoutParams(rowLp);
         row.setClipChildren(false);
         row.setClipToPadding(false);
 
         LinearLayout bubble = new LinearLayout(this);
         bubble.setOrientation(LinearLayout.VERTICAL);
-        bubble.setBackgroundResource(R.drawable.bubble_ai);
-        bubble.setPadding(dp(14), dp(13), dp(14), dp(10));
+        // 正文不再套圆角卡片：一个 18dp 圆角 + 边框把整段回答框成一张"大卡"，
+        // 屏宽被吃掉 24dp，长回答读起来像在看文档阅读器而不是聊天。
+        // 现在直接铺满：背景取消、左右只留 2dp 呼吸位，文字行宽 = 屏宽
+        bubble.setBackground(null);
+        // 左右各留 12dp 缝隙：贴到屏幕边上时，长段文字的首尾字符直接顶着实屏边缘，
+        // 视觉上又挤又憋。12dp 是"看得出留白但不显空"的量，正文仍然几乎占满整屏。
+        bubble.setPadding(dp(12), dp(4), dp(12), dp(2));
         // 过程块用负 margin 略微外扩，关闭裁剪以免细框被切掉
         bubble.setClipChildren(false);
         bubble.setClipToPadding(false);
 
         if (withStatus) {
+            runThinkMs = 0;          // 新一轮从零开始累计，别把上一轮的耗时带进来
+            liveThinkBox = null;     // 上一轮的思考块已经随消息定格，引用要断开
+            thinkHost = null;        // 思考段已并入过程流，不再有独立容器
             addStatusRow(bubble);
-            thinkHost = new LinearLayout(this);
-            thinkHost.setOrientation(LinearLayout.VERTICAL);
-            bubble.addView(thinkHost, new LinearLayout.LayoutParams(
+            // 排序：状态行 → 工具调用行 → 思考块 → 正文。
+            // 工具行单独占一格是这轮改动的关键：以前它和正文共用 content，
+            // 想把它排在思考块上面根本插不进去；现在先把「做了什么」摆在最上面，
+            // 「想了什么」折叠着跟在它下面，正文收尾在最底下。
+            toolHost = new LinearLayout(this);
+            toolHost.setOrientation(LinearLayout.VERTICAL);
+            toolHost.setClipChildren(false);
+            bubble.addView(toolHost, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
@@ -1988,14 +2408,10 @@ public class MainActivity extends AppCompatActivity {
         if (withStatus) clp.topMargin = dp(9);
         bubble.addView(content, clp);
 
-        // 常驻横幅挂在正文下方、按钮条上方：不展开工具卡片也知道现在是死是活
-        if (withStatus) {
-            runBannerWrap = buildRunBanner();
-            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            rlp.topMargin = dp(8);
-            bubble.addView(runBannerWrap, rlp);
-        }
+        // 气泡底部不再挂常驻横幅：监控信息已并进每个工具行下面那条“活翻译行”
+        // （跑的时候光扫+秒数，跑完定格成翻译）。同一件事在两个位置说一遍，
+        // 读的人得先判断这两处是不是同一件事，这本身就是成本。
+        // “整轮跑到哪了 / 总用时”仍由顶部状态行负责。
 
         addAiActions(bubble, m);
 
@@ -2005,74 +2421,103 @@ public class MainActivity extends AppCompatActivity {
         return content;
     }
 
-    /** 「思考过程」折叠块：默认收起，点开才显示模型推理原文 */
+    /**
+     * 「思考过程」行：紧跟在触发它的那次工具调用下面，只占一行。
+     *
+     * <p>以前是把整段思考摊开铺出来，一轮任务里调用几次就多出几屏文字，
+     * 把后面的调用行全挤到看不见的地方。现在压成一行：一行小标题 + 一行滚动文字，
+     * 行尾一个 ▾，想看全文就点开。思考中这行文字一直在滚，滚完这轮就该下一次调用了，
+     * 于是自然形成 调用 → 思考(滚) → 调用 → 思考(滚) 的循环。</p>
+     */
     private View buildThinkBox(final String text, String costSecs) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackgroundResource(R.drawable.think_bg);
+        // 不再用左侧绿竖线做「思考」的标识：竖线要占 11dp 缩进，
+        // 会让「思考」比「调用」往右缩一截，而且压住新加的矢量图标。
+        // 现在两行都是 图标 + 标签 + 内容，只靠图标和文字颜色区分，左缘齐平。
+        box.setBackground(null);
+        box.setPadding(0, dp(1), 0, dp(1));
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        blp.topMargin = dp(8);
-        blp.bottomMargin = dp(8);
-        // 细框之后再把块向左右各外扩 6dp：比正文宽一点，又不至于顶到气泡边缘
-        blp.leftMargin = -dp(6);
-        blp.rightMargin = -dp(6);
+        blp.topMargin = dp(3);
+        blp.bottomMargin = dp(3);
         box.setLayoutParams(blp);
 
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        box.addView(row, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // 行首图标：和调用行同一尺寸（14dp）、同一右边距（6dp），保证两行左缘齐平
+        ImageView thIc = new ImageView(this);
+        thIc.setImageResource(R.drawable.ic_act_think);
+        thIc.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams thlp = new LinearLayout.LayoutParams(dp(14), dp(14));
+        thlp.rightMargin = dp(6);
+        row.addView(thIc, thlp);
+
+        // 小标签：只写「思考」，秒数等这轮结束再补上，收起态也放得下
+        TextView label = new TextView(this);
+        label.setTag(TAG_THINK_LABEL);
+        label.setText((costSecs == null || costSecs.trim().isEmpty())
+                ? "思考" : "思考 \u00b7 " + costSecs);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        label.setTextColor(Palette.c(0xB83FB950));
+        label.setPadding(0, 0, dp(6), 0);
+        label.setIncludeFontPadding(false);
+        row.addView(label, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         final TextView body = new TextView(this);
+        body.setTag(TAG_THINK_BODY);
         body.setText(text);
-        body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         body.setTextColor(Palette.c(0xFF9DB3A4));
-        body.setLineSpacing(dp(4), 1.45f);
-        body.setPadding(dp(12), dp(2), dp(12), dp(11));
-        // 折叠时只露 6 行（末尾省略号），展开后不设上限、整段显示
-        body.setMaxLines(THINK_FOLD_LINES);
-        body.setEllipsize(TextUtils.TruncateAt.END);
-        body.setVisibility(View.GONE);
-
-        final TextView label = com.nebula.aichat.ui.Ui.foldTitle(this,
-                "思考过程 · 用时 " + costSecs + " 秒");
-        label.setTextColor(Palette.c(0xFF7EE787));
-
-        final TextView chip = greenPill("\u25be 展开");
-
-        LinearLayout head = new LinearLayout(this);
-        head.setOrientation(LinearLayout.HORIZONTAL);
-        head.setGravity(Gravity.CENTER_VERTICAL);
-        head.setPadding(dp(12), dp(8), dp(12), dp(8));
-
-        // 绿色小圆点：一眼认出这是「思考」而不是普通折叠块
-        View dot = new View(this);
-        dot.setBackground(Ui.roundRect(this, Palette.c(0xFF3FB950), 0, 3f));
-        LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(6), dp(6));
-        dotLp.rightMargin = dp(7);
-        head.addView(dot, dotLp);
-
-        head.addView(label, new LinearLayout.LayoutParams(0,
+        body.setSingleLine(true);
+        // 默认收起成一行：放不下就省略，想看全文点箭头
+        body.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        row.addView(body, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        head.addView(chip);
 
-        final boolean[] open = {false};
-        View.OnClickListener tg = new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                open[0] = !open[0];
-                body.setVisibility(open[0] ? View.VISIBLE : View.GONE);
-                body.setMaxLines(open[0] ? Integer.MAX_VALUE : THINK_FOLD_LINES);
-                body.setEllipsize(open[0] ? null : TextUtils.TruncateAt.END);
-                chip.setText(open[0] ? "\u25b4 收起" : "\u25be 展开");
-                // 展开后让外层的滚动容器重新按内容量布局，否则可能停在旧高度
-                box.requestLayout();
-                android.view.ViewParent vp = box.getParent();
-                if (vp instanceof View) ((View) vp).requestLayout();
+        final TextView arrow = new TextView(this);
+        arrow.setTag(TAG_THINK_CHEVRON);
+        arrow.setText("\u25be");
+        arrow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        // 和调用行的箭头同一种橙色：两条过程行里，"能点开"的信号保持一致
+        arrow.setTextColor(Palette.c(0xFFFFA44D));
+        arrow.setPadding(dp(8), dp(1), dp(2), dp(1));
+        row.addView(arrow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // 点这一行展开全文，再点收回到一行
+        row.setOnClickListener(v -> {
+            boolean collapsed = body.getMaxLines() == 1;
+            if (collapsed) {
+                body.setSelected(false);
+                body.setSingleLine(false);
+                body.setHorizontallyScrolling(false);
+                body.setMaxLines(Integer.MAX_VALUE);
+                body.setEllipsize(null);
+                body.setLineSpacing(dp(3), 1.4f);
+                body.setPadding(0, dp(3), 0, dp(3));
+                arrow.setText("\u25b4");
+            } else {
+                body.setPadding(0, 0, 0, 0);
+                body.setLineSpacing(0, 1f);
+                body.setSingleLine(true);
+                body.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                arrow.setText("\u25be");
             }
-        };
-        head.setOnClickListener(tg);
-        chip.setOnClickListener(tg);
-
-        box.addView(head);
-        box.addView(body);
+        });
         return box;
+    }
+
+    /** 折叠箭头：展开朝下、收起朝右，跟标题行同色 */
+    private void setThinkChevron(View box, boolean expanded) {
+        if (box == null) return;
+        View v = box.findViewWithTag(TAG_THINK_CHEVRON);
+        if (v instanceof TextView) ((TextView) v).setText(expanded ? "\u25be" : "\u25b8");
     }
 
     /** 思考状态行：小图标（旋转中）+ 文案，完成后变为耗时 */
@@ -2112,15 +2557,23 @@ public class MainActivity extends AppCompatActivity {
         tlp.leftMargin = dp(7);
         row.addView(statusText, tlp);
 
-        parent.addView(row, lp);
-
-        // 思考区与正文之间的分隔线：1dp 两端渐隐实线（比虚线更干净，不会碎成噪点）
-        View hair = new View(this);
-        hair.setBackground(new android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{Palette.c(0x003FB950), Palette.c(0x553FB950), Palette.c(0x003FB950)}));
-        parent.addView(hair, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
+        // 状态行与它下面那条分隔线都不再进视图树：思考中、执行中、完成，一律不在
+        // 正文上方顶一行。反馈交给实时思考块和调用行本身，那两处已经写得很清楚了。
+        //
+        // 两个 View 仍然建出来：setStatusBusy / 计时器 / setStatusTint / markStatusFinal
+        // 全都在往它们身上写字，不挂出去只是空写，不会 NPE，也不用把十几处调用点
+        // 统统改成 null 判断。要恢复这行，把下面两段 addView 放回来即可。
+        //
+        // parent.addView(row, lp);
+        //
+        // // 思考区与正文之间的分隔线：1dp 两端渐隐实线（比虚线更干净，不会碎成噪点）
+        // View hair = new View(this);
+        // hair.setTag(TAG_THINK_HAIR);
+        // hair.setBackground(new android.graphics.drawable.GradientDrawable(
+        //         android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+        //         new int[]{Palette.c(0x003FB950), Palette.c(0x553FB950), Palette.c(0x003FB950)}));
+        // parent.addView(hair, new LinearLayout.LayoutParams(
+        //         ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
 
         thinkStartAt = SystemClock.uptimeMillis();
         thinkDone = false;
@@ -2136,19 +2589,31 @@ public class MainActivity extends AppCompatActivity {
         if (thinkDone || statusText == null) return;
         thinkDone = true;
         long cost = Math.max(0, SystemClock.uptimeMillis() - thinkStartAt);
+        runThinkMs += cost;
         // 有推理内容就折成一块「思考过程」，默认收起，不占正文地方
-        if (thinkHost != null && thinkBuf != null && thinkBuf.length() > 0) {
-            thinkHost.addView(buildThinkBox(thinkBuf.toString(),
-                    String.format(Locale.US, "%.1f", cost / 1000.0)));
-            thinkBuf.setLength(0);
+        // 实时块已经边想边显示了：这里只停光、改标题，不再重复建一块
+        boolean hadLive = liveThinkBox != null;
+        stopLiveThink();
+        if (!hadLive && thinkBuf != null && thinkBuf.length() > 0) {
+            // 兜底：思考内容没能边想边显示（例如一次性整段返回）时，这里补一段进去
+            LinearLayout h = toolHost != null ? toolHost : streamContent;
+            if (h != null) h.addView(buildThinkBox(thinkBuf.toString(), null));
         }
+        // 本段思考到此定格：后续思考另起一段，落在下一次调用行下面，
+        // 不再往旧块里续写（那样又会变成"一整块思考"）
+        liveThinkBox = null;
+        // 这段思考已经显示完：存进时间线（历史回放靠它还原成一段一段）
+        takeThinkStep();
+        thinkSegStart = 0;
+        thinkSegAt = SystemClock.uptimeMillis();
+        if (thinkBuf != null) thinkBuf.setLength(0);
         // 命令还在跑的时候，状态行必须继续转，不能提前变成「思考完成」的静态灰字，
         // 否则用户看着一动不动的界面，根本分不清是执行中还是已经结束
         if (pendingToolCount() > 0) {
             setStatusBusy("正在执行 " + lastToolName() + " …");
             return;
         }
-        statusText.setText("思考完成（用时 " + String.format(Locale.US, "%.1f", cost / 1000.0) + " 秒）");
+        statusText.setText("完成");
         statusText.setTextColor(Palette.c(C_OK));
         setStatusTint(Palette.c(C_OK));
         if (spinAnim != null) {
@@ -2230,16 +2695,198 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * 把整轮总耗时写到当前这条回复的动作条上。
+     * 沿状态文字向上找宿主气泡，不依赖任何全局引用——
+     * 回复可能在别的消息里流式生成，全局引用早就指错了也不会报错。
+     */
+    // ================= 正文右侧的快速上/下浏览 =================
+
+    /** 悬浮的上下翻页条； 表示还没建（或这个页面没有聊天滚动区） */
+    private View quickNav;
+
+    /**
+     * 在正文右侧挂一对「向上 / 向下」快速浏览按钮。
+     *
+     * 长对话里要回到上面看一段旧内容，得反复甩好几次屏幕；要回最新一条，
+     * 又得一路往下甩。这两个按钮各管一个方向，一下翻大半屏。
+     *
+     * 挂在 ScrollView 的父容器上（不是 ScrollView 内部），所以它不跟着内容滚，
+     * 永远停在视野里同一个位置。
+     */
+    private void setupQuickNav() {
+        if (scroll == null || quickNav != null) return;
+        if (!(scroll.getParent() instanceof ViewGroup)) return;
+        ViewGroup host = (ViewGroup) scroll.getParent();
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setClipChildren(false);
+        box.setClipToPadding(false);
+
+        ImageView up = makeQuickNavBtn(true);
+        ImageView down = makeQuickNavBtn(false);
+        // 尺寸必须在这里给死：addView(v, lp) 会用传进去的 lp 覆盖 view 自己的，
+        // 若这里写 WRAP_CONTENT，就会把 42dp 冲掉。而 ImageView 在 wrap_content
+        // 且 drawable 没有 intrinsic 尺寸时，量出来的只有 "padding + 1px"，
+        // 内容区就剩 1 个像素——画出来的图形只有 1px，等于没画。
+        LinearLayout.LayoutParams gapLp = new LinearLayout.LayoutParams(dp(42), dp(42));
+        gapLp.bottomMargin = dp(8);
+        box.addView(up, gapLp);
+        box.addView(down, new LinearLayout.LayoutParams(dp(42), dp(42)));
+
+        up.setOnClickListener(v -> quickNavScroll(-1));
+        down.setOnClickListener(v -> quickNavScroll(1));
+
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+        blp.rightMargin = dp(3);
+        host.addView(box, blp);
+        quickNav = box;
+
+        // 滚动时立刻判断；内容变高（流式输出）、键盘弹出改变高度时也要重新判断，
+        // 否则会出现「已经到底了按钮还挂着」或者「明明能滚却不显示」。
+        // 原来那条只记 lastScrollAt 的监听合并到这里，别丢——它管着「要不要自动跟到底」。
+        scroll.setOnScrollChangeListener((v, x, y, ox, oy) -> {
+            lastScrollAt = SystemClock.uptimeMillis();
+            updateQuickNav();
+        });
+        scroll.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, orr, ob) -> updateQuickNav());
+        if (chatContainer != null) {
+            chatContainer.addOnLayoutChangeListener(
+                    (v, l, t, r, b, ol, ot, orr, ob) -> updateQuickNav());
+        }
+        scroll.post(this::updateQuickNav);
+    }
+
+    /** 圆形透明按钮，里面一枚实心三角：向上的尖端朝上，向下的尖端朝下 */
+    private ImageView makeQuickNavBtn(boolean up) {
+        ImageView iv = new ImageView(this);
+        // 直接用箭头本身表明方向，不再靠旋转一个 V 形折线
+        iv.setImageDrawable(new ArrowDrawable(Palette.c(0xFFF4F8FF), up));
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        iv.setPadding(dp(11), dp(11), dp(11), dp(11));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        // 底子压到很淡，只留一圈细边交代位置：它是常驻的，不该比正文更抢眼
+        bg.setColor(Palette.c(0x5C101A26));
+        bg.setStroke(Math.max(1, dp(1)), Palette.c(0x59FFFFFF));
+        iv.setBackground(bg);
+        iv.setContentDescription(up ? "向上浏览" : "向下浏览");
+        iv.setLayoutParams(new LinearLayout.LayoutParams(dp(42), dp(42)));
+        return iv;
+    }
+
+    /** 按滚动位置刷新这组按钮：到底整组收起，到顶只留「向下」，不够一屏就不要出现 */
+    private void updateQuickNav() {
+        if (quickNav == null || scroll == null) return;
+        View child = scroll.getChildAt(0);
+        if (child == null) return;
+        int viewH = scroll.getHeight();
+        int contentH = child.getHeight();
+        if (viewH <= 0) return;
+
+        // 内容还没超过一屏：根本没有可翻的，出现只会挡字
+        if (contentH <= viewH + dp(8)) {
+            fadeQuickNav(false);
+            return;
+        }
+
+        int y = scroll.getScrollY();
+        boolean atTop = y <= dp(6);
+        boolean atBottom = contentH - (y + viewH) <= dp(8);
+
+        // 滑到底就把整组收起来：屏幕最下方正是你要看的地方，按钮不该压在那儿
+        fadeQuickNav(!atBottom);
+
+        // 已经在顶上了，向上的那个没有可翻的内容，先退场留出干净的一侧。
+        // 用透明度而不是 INVISIBLE：隐藏不能改变占位，否则下面那个按钮会往上跳 8dp
+        View up = quickNav instanceof ViewGroup ? ((ViewGroup) quickNav).getChildAt(0) : null;
+        if (up != null) {
+            float want = atTop ? 0f : 1f;
+            if (Math.abs(up.getAlpha() - want) > 0.01f) {
+                up.animate().cancel();
+                up.animate().alpha(want).setDuration(130).start();
+            }
+            up.setClickable(!atTop);
+        }
+    }
+
+    private void fadeQuickNav(boolean show) {
+        if (quickNav == null) return;
+        if (show) {
+            if (quickNav.getVisibility() == View.VISIBLE && quickNav.getAlpha() > 0.99f) return;
+            quickNav.animate().cancel();
+            quickNav.setVisibility(View.VISIBLE);
+            quickNav.animate().alpha(1f).setDuration(130).start();
+        } else {
+            if (quickNav.getVisibility() != View.VISIBLE) return;
+            if (quickNav.getAlpha() < 0.02f) {
+                quickNav.setVisibility(View.GONE);
+                return;
+            }
+            quickNav.animate().cancel();
+            quickNav.animate().alpha(0f).setDuration(130)
+                    .withEndAction(() -> {
+                        // 期间可能又被叫出来，别把刚显示的东西按回去
+                        if (quickNav != null && quickNav.getAlpha() < 0.05f) {
+                            quickNav.setVisibility(View.GONE);
+                        }
+                    })
+                    .start();
+        }
+    }
+
+    /** 点一下翻大半屏：留一点上一屏的尾巴，方便接上刚才读到的位置 */
+    private void quickNavScroll(int dir) {
+        if (scroll == null) return;
+        View child = scroll.getChildAt(0);
+        if (child == null) return;
+        int step = Math.max(dp(200), (int) (scroll.getHeight() * 0.82f));
+        int max = Math.max(0, child.getHeight() - scroll.getHeight());
+        int target = scroll.getScrollY() + (dir > 0 ? step : -step);
+        target = Math.max(0, Math.min(max, target));
+        scroll.smoothScrollTo(0, target);
+    }
+
+    private void setMsgCost(long ms) {
+        if (ms <= 0) return;
+        // 锚点用正文容器：状态行已经不进视图树，没法再从它身上往上去找宿主气泡
+        View p = streamContent != null ? streamContent : toolHost;
+        if (p == null) return;
+        for (int depth = 0; depth < 7 && p != null; depth++) {
+            if (!(p.getParent() instanceof ViewGroup)) return;
+            ViewGroup g = (ViewGroup) p.getParent();
+            View hit = g.findViewWithTag(TAG_MSG_COST);
+            if (hit instanceof TextView) {
+                TextView tv = (TextView) hit;
+                tv.setText(dur(ms));
+                tv.setVisibility(View.VISIBLE);
+                return;
+            }
+            p = g;
+        }
+    }
+
     /** 整轮结束：状态行给出总耗时，旋转停下，界面明确「不再动了」 */
     private void markStatusFinal(boolean ok) {
+        roundActive = false;
         stopToolTicker();
         finishRunBanner(ok);
         if (statusText == null) return;
         long cost = Math.max(0, SystemClock.uptimeMillis() - reqStartAt);
         // 停止时把「还能接着做」说清楚：30 分钟内直接发消息，现场会自动接上，
         // 不用再记住「继续」两个字，也不用担心重新解包一遍。
-        statusText.setText(ok ? "完成 · 总用时 " + dur(cost)
-                : "已停止 · 总用时 " + dur(cost) + " · 直接发消息会接着做");
+        // 正常完成则不写「完成 · 总用时」：耗时已经落在动作条上，
+        // 正文上方不该再多留一行，见下面的 hideStatusRow。
+        if (!ok) {
+            statusText.setText("已停止 · 总用时 " + dur(cost) + " · 直接发消息会接着做");
+        }
+        // 同一个数字、两个位置：状态行说一遍，动作条再留一份底。
+        // 这不是重复：状态行会随滚动出屏，而动作条是回复自带的尾巴
+        setMsgCost(cost);
         statusText.setTextColor(ok ? Palette.c(C_OK) : Palette.c(C_ABORT));
         setStatusTint(ok ? Palette.c(C_OK) : Palette.c(C_ABORT));
         if (spinAnim != null) {
@@ -2253,6 +2900,33 @@ public class MainActivity extends AppCompatActivity {
                     : R.drawable.ic_tool_abort);
             statusIcon.setColorFilter(ok ? Palette.c(C_OK) : Palette.c(C_ABORT));
             statusIcon.setVisibility(View.VISIBLE);
+        }
+        // 正常跑完：正文上方那行「完成 · 总用时」连同它下面的分隔线一起撤掉，
+        // 回复直接从顶部开始，不再头顶挂一条已结束的状态说明
+        if (ok) hideStatusRow();
+    }
+
+    /**
+     * 撤掉正文上方的状态胶囊行（含它下面那条 1dp 渐隐分隔线）。
+     *
+     * <p>只在整轮成功收尾时调用：耗时已经写到回复底部动作条上，状态行留着
+     * 就是同一件事说两遍、还白占正文前面一行。停下来/出错的情况不撤——
+     * 那一行承载「直接发消息会接着做」的提示，有信息量。</p>
+     */
+    private void hideStatusRow() {
+        if (statusRow == null) return;
+        ViewGroup par = (statusRow.getParent() instanceof ViewGroup)
+                ? (ViewGroup) statusRow.getParent() : null;
+        statusRow.setVisibility(View.GONE);
+        if (par == null) return;
+        // 只找它后面紧邻的、带 hair 标记的那一条，不误伤别的视图
+        int from = par.indexOfChild(statusRow) + 1;
+        for (int i = from; i < par.getChildCount(); i++) {
+            View c = par.getChildAt(i);
+            if (TAG_THINK_HAIR.equals(c.getTag())) {
+                c.setVisibility(View.GONE);
+                break;
+            }
         }
     }
 
@@ -2307,6 +2981,20 @@ public class MainActivity extends AppCompatActivity {
         // 弹性空隙，把「重新生成」推到最右，和其他按钮拉开
         View spacer = new View(this);
         bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+
+        // 整轮总耗时：9.5sp 等宽、对比度压到最低，紧贴操作区右边界。
+        // 它只陈述一个事实（这条回复一共跑了多久），不参与强调：
+        // 长回答把顶部状态行顶出屏幕之后，这里是准备看总账时唯一还在的地方
+        TextView costTv = new TextView(this);
+        costTv.setTag(TAG_MSG_COST);
+        costTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        costTv.setTypeface(Typeface.MONOSPACE);
+        costTv.setTextColor(Palette.c(0xFF5A6775));
+        costTv.setGravity(Gravity.CENTER_VERTICAL);
+        costTv.setPadding(dp(6), 0, dp(4), 0);
+        costTv.setVisibility(View.GONE);
+        bar.addView(costTv, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         ImageButton btnAgain = chipButton(R.drawable.ic_refresh, "重新生成", Palette.c(COLOR_REGEN));
         btnAgain.setOnClickListener(v -> regenerateFrom(m));
@@ -2525,130 +3213,57 @@ public class MainActivity extends AppCompatActivity {
         startRequest();
     }
 
-    /** 长按正文：弹出消息操作面板 */
-    private void attachLongPress(final View v, final Message m) {
+    private void attachLongPress(View v, Message m) {
         if (v == null || m == null) return;
         v.setOnLongClickListener(view -> {
             // 长按这一刻 view 可能已经被流式重绘换掉（父容器 detach），
             // PopupMenu 依赖 anchor 的 WindowToken，这种时候会直接抛 BadTokenException 闪退。
-            // 所以用不依赖 anchor 的底部面板，并且整段兜底。
+            // 所以这里不再用 PopupMenu，改成不依赖 anchor 的对话框，并且整段兜底。
             try {
                 com.nebula.aichat.util.CrashLog.d("ui", "长按菜单 role=" + m.role);
-                showMessageSheet(m);
+                final String body = cleanBody(m.content);
+                boolean assistant = Message.ROLE_ASSISTANT.equals(m.role);
+                java.util.List<String> items = new java.util.ArrayList<String>();
+                items.add("复制");
+                if (assistant) {
+                    items.add("重新生成");
+                    items.add("标记为有帮助");
+                    items.add("标记为需改进");
+                }
+                items.add("删除这条");
+                final String[] arr = items.toArray(new String[0]);
+                new NebAlert.Builder(MainActivity.this)
+                        .setTitle("这条消息")
+                        .setItems(arr, (d, which) -> {
+                            try {
+                                String t = arr[which];
+                                if (t.equals("复制")) {
+                                    copyToClipboard(body);
+                                } else if (t.equals("重新生成")) {
+                                    regenerate();
+                                } else if (t.startsWith("标记")) {
+                                    m.rating = t.contains("有帮助") ? 1 : -1;
+                                    if (store != null) store.save();
+                                    Toast.makeText(this, "已标记：" + (m.rating == 1 ? "有帮助" : "需改进"),
+                                            Toast.LENGTH_SHORT).show();
+                                    renderConversation(current);
+                                } else if (t.equals("删除这条")) {
+                                    current.messages.remove(m);
+                                    if (store != null) store.save();
+                                    renderConversation(current);
+                                }
+                            } catch (Throwable e) {
+                                android.util.Log.e("nebula", "长按菜单动作失败", e);
+                                Toast.makeText(this, "操作失败：" + e, Toast.LENGTH_SHORT).show();
+                            }
+                        })
+                        .show();
             } catch (Throwable e) {
                 android.util.Log.e("nebula", "长按菜单弹出失败", e);
-                Toast.makeText(MainActivity.this, "长按菜单打开失败：" + e, Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "长按菜单打开失败：" + e, Toast.LENGTH_SHORT).show();
             }
             return true;
         });
-    }
-
-    /**
-     * 消息操作面板。
-     * 以前是六行一模一样的纯文字列表：复制和删除挨着排、反馈和重新生成混在一起，
-     * 误触代价差得远却看不出差别。现在按「拿内容 / 换一条 / 评价 / 删掉」分四组，
-     * 标题下面带正文预览——让人先确认自己长按的是哪一条，再决定动手。
-     */
-    private void showMessageSheet(final Message m) {
-        final String body = cleanBody(m.content);
-        final boolean assistant = Message.ROLE_ASSISTANT.equals(m.role);
-
-        final Sheet s = Sheet.of(this);
-        s.title(assistant ? "这条回答" : "这条消息").subtitle(preview(body, 40));
-
-        Sheet act = s.group();
-        act.row(R.drawable.ic_copy, "复制文字", "整段放进剪贴板", v -> {
-            s.dismiss();
-            copyToClipboard(body);
-        });
-        act.row(R.drawable.ic_share, "分享", "发到其他应用", v -> {
-            s.dismiss();
-            shareText(body);
-        });
-        // 长按被菜单占用了，就没法再靠长按正文选中其中一句——单开一个可选中的面板补回来
-        act.rowGlyph("选", "自由复制", "拖选任意片段，可以只复制其中一句", v -> {
-            s.dismiss();
-            showFreeCopy(body);
-        });
-
-        if (assistant) {
-            Sheet gen = s.group();
-            gen.row(R.drawable.ic_refresh, "重新生成",
-                    busy ? "正在生成中，等这轮结束" : "删掉这条及之后的回答，重新问一次",
-                    v -> {
-                        s.dismiss();
-                        regenerateFrom(m);
-                    }, !busy, false);
-
-            Sheet fb = s.group();
-            fb.rowValue(R.drawable.ic_thumb_up, "有帮助",
-                    m.rating == 1 ? "再点一次取消标记" : "记下来，以后多这样答",
-                    m.rating == 1 ? "已标记" : null, v -> {
-                        s.dismiss();
-                        rate(m, 1);
-                    });
-            fb.rowValue(R.drawable.ic_thumb_down, "需改进",
-                    m.rating == -1 ? "再点一次取消标记" : "记下来，这类回答要改",
-                    m.rating == -1 ? "已标记" : null, v -> {
-                        s.dismiss();
-                        rate(m, -1);
-                    });
-        }
-
-        Sheet del = s.group();
-        del.rowDanger(R.drawable.ic_delete, "删除这条", "只从当前对话里移除", v -> {
-            s.dismiss();
-            current.messages.remove(m);
-            if (store != null) store.save();
-            renderConversation(current);
-        });
-
-        s.show();
-    }
-
-    /**
-     * 自由复制面板：整段正文放进一个可选中的文本里，长按拖动选任意片段，
-     * 用系统自带的复制菜单取走。比在气泡里直接开选择模式干净——
-     * 不会把聊天列表的 TextView 留在「可选中」状态，也不会跟长按菜单抢手势。
-     */
-    private void showFreeCopy(String body) {
-        final Sheet s = Sheet.of(this);
-        // 看正文要一次看全，放宽到 90% 屏高：普通操作面板用不上这么高
-        s.heightRatio(0.9f);
-        s.title("选取文字").subtitle("长按文字拖动选择，松开后点系统的「复制」");
-
-        TextView tv = new TextView(this);
-        tv.setText(body);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
-        tv.setTextColor(Palette.text(this));
-        tv.setLineSpacing(dp(4), 1.3f);
-        tv.setTextIsSelectable(true);
-        tv.setPadding(dp(14), dp(13), dp(14), dp(13));
-        s.group().rowCustom(tv);
-
-        s.secondary("复制全部", () -> copyToClipboard(body));
-        s.show();
-    }
-
-    /** 点一下标记，再点一下取消：同一档位反复点不该越点越乱 */
-    private void rate(Message m, int v) {
-        m.rating = (m.rating == v) ? 0 : v;
-        if (store != null) store.save();
-        Toast.makeText(this, m.rating == 0 ? "已取消标记"
-                : (m.rating == 1 ? "已标记为有帮助" : "已标记为需改进"), Toast.LENGTH_SHORT).show();
-        renderConversation(current);
-    }
-
-    /** 面板标题下的正文预览：换行压成空格，超长补省略号 */
-    private static String preview(String s, int max) {
-        if (s == null) return "";
-        String t = s.replace('\n', ' ').replace('\r', ' ').trim();
-        while (t.contains("  ")) t = t.replace("  ", " ");
-        if (t.length() <= max) return t;
-        int cut = max;
-        // 别把 emoji 的代理对切成半个，切出来是方块
-        if (Character.isHighSurrogate(t.charAt(cut - 1))) cut--;
-        return t.substring(0, cut) + "…";
     }
 
     private void copyToClipboard(String text) {
@@ -3242,7 +3857,7 @@ public class MainActivity extends AppCompatActivity {
                 api.append("<file name=\"").append(f.name).append("\" path=\"")
                         .append(sp)
                         .append("\" bytes=\"").append(f.size).append("\" binary=\"true\"/>\n")
-                        .append("（二进制文件，内容未内联。请用 run_shell / read_file / apk_unpack 等工具按上面的路径实际操作，"
+                        .append("（二进制文件，内容未内联。请用 bash_exec / read_file / apk_unpack 等工具按上面的路径实际操作，"
                                 + "不要凭空猜测其内容。）\n");
                 if (f.name.toLowerCase(Locale.ROOT).endsWith(".apk")) {
                     api.append("（这是一个 APK：需要看内部结构就用 apk_unpack 解包，改完用 apk_repack 回编译并自动签名。）\n");
@@ -3337,10 +3952,6 @@ public class MainActivity extends AppCompatActivity {
         try {
             if (settings != null && settings.aliveNotify) KeepAliveService.startIdle(this);
             else KeepAliveService.stop(this);
-            // 悬浮球与常驻通知互不相干：各自独立判断，不能挤进上面那条 if/else
-            if (settings != null && settings.floatingBall && FloatingBallService.canDraw(this)) {
-                FloatingBallService.start(this);
-            }
         } catch (Throwable ignored) {
         }
     }
@@ -3400,12 +4011,16 @@ public class MainActivity extends AppCompatActivity {
         toolRowState.clear();
         streamTaskCard = null;
         stopToolTicker();
+        // 从发出请求这一刻就开始读秒：等首包的那几秒是最像"卡死"的时候，
+        // 以前 ticker 在这里是停的，整块界面一动不动
+        roundActive = true;
+        startToolTicker();
         toolUserTouched = false;
         toolFoldBtn = null;
         toolTraceCollapsed = false;
         if (tools == null) {
             tools = new ToolRegistry(this);
-            // 让 AI 能真的在终端里执行命令（run_shell），执行过程同步回显到终端页
+            // 让 AI 能真的在终端里执行命令（bash_exec），执行过程同步回显到终端页
             ShellToolProvider.register(tools, this);
             bindShellMirror();
         }
@@ -3434,6 +4049,7 @@ public class MainActivity extends AppCompatActivity {
         lastRenderLen = 0;
         thinkBuf = new StringBuilder();
         thinkHost = null;
+        toolHost = null;
         runBannerWrap = null;
         runBanner = null;
         stopBannerAnim();
@@ -3457,18 +4073,23 @@ public class MainActivity extends AppCompatActivity {
         statusRow = null;
         statusRowBg = null;
         streamMessage = new Message(Message.ROLE_ASSISTANT, "");
+        thinkAll = new StringBuilder();
         streamContent = addAiBubble(streamMessage, true);
         attachLongPress(streamContent, streamMessage);
         // 时间线复位：正文段与工具行都从零开始，按发生顺序交错往下排
         tlSeg = null;
         tlSegR = null;
         tlSegStart = 0;
+        thinkSegStart = 0;
+        thinkSegAt = SystemClock.uptimeMillis();
         tlSteps = new java.util.ArrayList<>();
         toolRowStep.clear();
         final MarkdownRenderer renderer = new MarkdownRenderer(this, streamContent, msgSp);
         renderer.setOnConfirmClick(rows -> openConfirmSheet(rows));
         renderer.setOnConfirmSubmit(msg -> submitConfirmCard(msg));
         streamRenderer = renderer;
+        // 正文一生成就挂呼吸光标：工具行有光扫，写正文时一个工具都没跑，没有光标就分不清"还在写"和"写完了"
+        renderer.setStreaming(true);
 
         // 传给模型的历史（占位 assistant 消息尚未加入列表，故取全部）
         List<Message> history = new ArrayList<>();
@@ -3479,10 +4100,13 @@ public class MainActivity extends AppCompatActivity {
         String skillInject = com.nebula.aichat.skill.SkillStore.buildIndex(this);
         client.extraSystem = STYLE_HINT + "\n\n" + ECONOMY_HINT + "\n\n" + TASK_HINT
                 + "\n\n" + CONFIRM_HINT
-                + "\n\n" + CONCLUSION_HINT + "\n\n" + timeContext()
+                + "\n\n" + CONCLUSION_HINT
                 + (settings.browserEnabled ? "\n\n" + WEB_HINT : "")
                 + (skillInject == null || skillInject.isEmpty() ? "" : "\n\n" + skillInject)
                 + "\n\n" + com.nebula.aichat.apk.SandboxBridge.describe(this);
+        // 时间走 tailHint（挂在最后一条用户消息上），不进 system：
+        // system 多一个字，后面所有历史的前缀缓存就全废了。
+        client.tailHint = timeContext();
         // 发车前把这一轮的上下文占用刷给用户看
         refreshUsage(history);
         client.send(settings, history, new ChatClient.Listener() {
@@ -3517,6 +4141,22 @@ public class MainActivity extends AppCompatActivity {
                 if (streamStale) return;
                 if (thinkBuf == null) thinkBuf = new StringBuilder();
                 if (thinkBuf.length() < 20000) thinkBuf.append(piece);
+                if (thinkAll == null) thinkAll = new StringBuilder();
+                // 32000 字兜底：真到这个量说明思考已经失控，再攒下去每轮输入都要爆
+                if (thinkAll.length() < 32000) thinkAll.append(piece);
+                // 边想边显示：思考块立起来、标题行走光、正文跟着长
+                appendLiveThink(piece);
+                scrollToBottom(false);
+            }
+
+            @Override
+            public void onContentReset(String clean) {
+                // DSML 文本调用被识别成真调用后，把气泡里已经显示出来的
+                // <｜DSML｜invoke ...> 标签抹掉，只留模型真正说出口的话
+                if (streamStale || streamBuf == null) return;
+                streamBuf.setLength(0);
+                if (clean != null) streamBuf.append(clean);
+                scheduleRender(renderer);
             }
 
             @Override
@@ -3528,11 +4168,6 @@ public class MainActivity extends AppCompatActivity {
                 String text = (full == null || full.isEmpty())
                         ? (streamBuf == null ? "" : streamBuf.toString()) : full;
                 finishStream(true, text, null, renderer);
-                // usage 是流末尾才回来的：这里立刻刷一次，
-                // 顶栏那行就从 ~ 估算切成服务端回报的真值
-                if (current != null && current.messages != null) {
-                    refreshUsage(current.messages);
-                }
                 // 用户已经切到别的应用时，回一条通知把他叫回来
                 notifyIfBackground(false, text);
                 // 这轮已经消耗了 token，顺手刷新顶栏余额
@@ -3590,7 +4225,7 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onRoundHint(final int round, final int max) {
-                ui.post(() -> setStatusBusy("第 " + round + "/" + max + " 轮 · 正在调用工具…"));
+                ui.post(() -> setStatusBusy("正在调用工具…"));
             }
 
             @Override
@@ -3602,8 +4237,26 @@ public class MainActivity extends AppCompatActivity {
     // 旧的「独立固定高度工具卡片」已废除：工具行现在直接内联在正文流里，
     // 与文字按发生顺序交错排列（见 newToolRow / renderTimeline）。
 
+    /** 重排整条轨迹：谁不是第一条、谁是最后一条，决定竖线从哪起、到哪淡出 */
+    private void refreshTrack() {
+        int n = toolRows.size();
+        for (int i = 0; i < n; i++) {
+            Object o = toolRows.get(i).getTag();
+            if (!(o instanceof View)) continue;
+            if (!(((View) o).getBackground() instanceof com.nebula.aichat.ui.TrackBg)) continue;
+            com.nebula.aichat.ui.TrackBg t =
+                    (com.nebula.aichat.ui.TrackBg) ((View) o).getBackground();
+            t.setHasPrev(i > 0);
+            t.setTailFade(i == n - 1);
+        }
+    }
+
     private void addToolCall(String name, String argsJson) {
         if (streamStale) return;
+        // 上一次思考到此为止：先按段落存进时间线，再定格，后面的思考另起一段落到本行下面
+        takeThinkStep();
+        stopLiveThink();
+        liveThinkBox = null;
         // 关键一步：先把已写的正文收尾成独立一段。
         // 这样工具行才是插在「刚才那段文字」和「一会儿要写的文字」之间，
         // 形成 文字 → 工具行 → 文字 的交错流水，而不是全部堆在正文前面。
@@ -3628,8 +4281,11 @@ public class MainActivity extends AppCompatActivity {
 
         bindToolRowIndex(row, toolRows.size() - 1);
         fillToolRow(row, ST_RUN, name, brief, null, 0);
-        updateToolExplain(row, toolExplain(name, argsJson, null, true) + " …", Palette.c(0xFF7E93AE));
+        updateToolExplain(row, toolExplain(name, argsJson, null, true) + " …",
+                Palette.c(C_RUN), true);
+        setExplainMsOnRow(row, 1, ST_RUN);
         trimToolRows();
+        refreshTrack();
         refreshToolGroup();
         updateToolHead();
         updateRunBanner();
@@ -3655,10 +4311,35 @@ public class MainActivity extends AppCompatActivity {
             if (idx < toolRowState.size()) toolRowState.set(idx, ok ? ST_OK : ST_FAIL);
             if (idx < toolRowDetail.size()) toolRowDetail.set(idx, rawDetail);
             long ms = SystemClock.uptimeMillis() - toolRowStart.get(idx);
-            fillToolRow(toolRows.get(idx), ok ? ST_OK : ST_FAIL, name, null, detail, ms);
-            updateToolExplain(toolRows.get(idx),
-                    toolExplain(name, toolRowArgs.get(idx), detail, ok),
-                    ok ? Palette.c(0xFF9DB2CC) : Palette.c(0xFFFF9BA0));
+            final int fi = idx;
+            final boolean fok = ok;
+            final String fdetail = detail;
+            final long fms = ms;
+            /*
+             * 最小可见时长。本地工具（读文件、列目录、跑条命令）几十毫秒就结束，
+             * addToolCall 的绿和 addToolResult 的灰几乎同时投递到 UI 线程，
+             * 中间只隔一两帧——绿在屏幕上存在不到 0.1 秒，眼睛根本抓不到，
+             * 于是每条都"一出生就是完成色"，看起来像从来没绿过。
+             * 这里让运行色至少停留 RUN_MIN_MS：没跑满的先把绿留住，再翻成完成色。
+             */
+            long hold = Math.max(0, RUN_MIN_MS - ms);
+            if (hold > 0) {
+                ui.postDelayed(() -> {
+                    if (streamStale || fi >= toolRows.size()) return;
+                    fillToolRow(toolRows.get(fi), fok ? ST_OK : ST_FAIL, name, null, fdetail, fms);
+                    updateToolExplain(toolRows.get(fi),
+                            toolExplain(name, fi < toolRowArgs.size() ? toolRowArgs.get(fi) : "",
+                                    fdetail, fok),
+                            fok ? Palette.c(C_TEXT2) : Palette.c(C_FAIL));
+                    setExplainMsOnRow(toolRows.get(fi), fms, fok ? ST_OK : ST_FAIL);
+                }, hold);
+            } else {
+                fillToolRow(toolRows.get(idx), ok ? ST_OK : ST_FAIL, name, null, detail, ms);
+                updateToolExplain(toolRows.get(idx),
+                        toolExplain(name, toolRowArgs.get(idx), detail, ok),
+                        ok ? Palette.c(C_TEXT2) : Palette.c(C_FAIL));
+                setExplainMsOnRow(toolRows.get(idx), ms, ok ? ST_OK : ST_FAIL);
+            }
             refreshToolDetailIfOpen(idx);
             updateStepResult(idx, ok, detail, ms);
             // 一个工具跑完 = 又做完一步：把顶部步骤卡的下一项勾上
@@ -3676,7 +4357,7 @@ public class MainActivity extends AppCompatActivity {
             bindToolRowIndex(row, toolRows.size() - 1);
             fillToolRow(row, ok ? ST_OK : ST_FAIL, name, null, detail, 0);
             updateToolExplain(row, toolExplain(name, "", detail, ok),
-                    ok ? Palette.c(0xFF9DB2CC) : Palette.c(0xFFFF9BA0));
+                    ok ? Palette.c(C_TEXT2) : Palette.c(C_FAIL));
             // 没有对应的调用行（异常路径）也要补一条，时间线才不会缺口
             com.nebula.aichat.data.Message.Step st = new com.nebula.aichat.data.Message.Step();
             st.type = com.nebula.aichat.data.Message.Step.TOOL;
@@ -3687,6 +4368,7 @@ public class MainActivity extends AppCompatActivity {
             if (tlSteps != null) tlSteps.add(st);
         }
         trimToolRows();
+        refreshTrack();
         refreshToolGroup();
         updateToolHead();
         // 命令跑完了但整轮还没结束：状态行切到「整理结果」，让人知道还在等模型接着写
@@ -3699,12 +4381,17 @@ public class MainActivity extends AppCompatActivity {
      * 窗口只有 3 行高，一旦换行就会把气泡重新撑长，所以这里绝不换行。
      */
     /**
-     * 行首图标的状态切换：
-     * 运行态是 3/4 圆环，转一个 900ms 的无限循环（属性动画，走硬件加速，不占主线程循环）；
-     * 结束态换成对勾/叉/横线并停转；成功时补一个 0.55→1 的回弹，比干切有回应。
-     * tv 的父容器就是 head，第 0 个子 View 是图标。
+     * 行首图标：状态 + 语义两层。
+     *
+     * <p>外层「轨道环」是自绘 Drawable，自己匀速转一圈 900ms；里层的核心图标按工具类型换
+     * （终端 / 文件 / 搜索 / 网络 / 包裹 / 星芒 / 六边形），只做缩放呼吸、不参与旋转。
+     * 语义图标一旦跟着转，转完就只剩一团线，看不出这一步到底在干什么，
+     * 所以环放 background 层、图标留 foreground 层，两层各跑各的节奏。
+     *
+     * <p>结束态把环收成静止圆盘：转动停下＝进程结束。成功保留语义图标（配绿色），
+     * 失败换叉、中止换横线，颜色仍由状态决定，扫一眼就知道这一步成没成。
      */
-    private void updateToolMark(TextView tv, int st, int color) {
+    private void updateToolMark(TextView tv, int st, int color, String toolName) {
         if (tv == null) return;
         View parent = (View) tv.getParent();
         if (!(parent instanceof ViewGroup)) return;
@@ -3714,148 +4401,182 @@ public class MainActivity extends AppCompatActivity {
         if (!(v0 instanceof ImageView)) return;
         ImageView iv = (ImageView) v0;
 
-        // 先收掉上一轮的旋转，否则 cancel 后角度停在随机位置
+        // 先收掉上一轮所有动画：旋转停在随机角度、呼吸停在半缩状态，
+        // 静止态看着就像卡住了，比没有动画还糟
         Object t = iv.getTag();
-        if (t instanceof ObjectAnimator) {
-            ((ObjectAnimator) t).cancel();
-            iv.setTag(null);
+        if (t instanceof ObjectAnimator[]) {
+            for (ObjectAnimator a : (ObjectAnimator[]) t) {
+                if (a != null) a.cancel();
+            }
         }
+        iv.setTag(null);
         iv.setRotation(0f);
-        iv.setColorFilter(color);
-        // 圆底只给一丝同色，靠它把图标和文字分到两个层次
-        android.graphics.drawable.GradientDrawable chip =
-                new android.graphics.drawable.GradientDrawable();
-        chip.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        chip.setColor((color & 0x00FFFFFF) | Palette.c(0x24000000));
-        iv.setBackground(chip);
+        iv.setScaleX(1f);
+        iv.setScaleY(1f);
+        iv.setAlpha(1f);
+        iv.animate().cancel();
 
-        if (st == ST_RUN) {
-            iv.setImageResource(R.drawable.ic_tool_arc);
-            ObjectAnimator rot = ObjectAnimator.ofFloat(iv, "rotation", 0f, 360f);
-            rot.setDuration(900L);
-            rot.setRepeatCount(android.animation.ValueAnimator.INFINITE);
-            rot.setInterpolator(new android.view.animation.LinearInterpolator());
-            iv.setTag(rot);
-            rot.start();
+        boolean running = st == ST_RUN;
+        int icon = callIconFor(toolName);
+
+        // 轨道环画在 background 层：它自己转，核心图标不跟着转
+        RingDrawable ring = new RingDrawable(color);
+        iv.setBackground(ring);
+        iv.setColorFilter(color);
+
+        if (running) {
+            iv.setImageResource(icon);
+            // 环匀速转属于"动"不是"闪"，留着；图标的缩放+透明度呼吸去掉了。
+            // 之前卡片在闪、文字在扫光、图标在呼吸、外围在跑马灯，四五处同时动，
+            // 眼睛累还看不出重点——现在"在跑"只由输入框上方那条运行条表达
+            ring.startSpin();
             return;
         }
 
-        // 成功态用「停止符」而不是对勾：这一步跑完了、收尾了
-        iv.setImageResource(st == ST_OK ? R.drawable.ic_tool_stop
+        // 结束态：环收成静止圆盘
+        ring.stopSpin();
+        ring.setShowArc(false);
+        iv.setImageResource(st == ST_OK ? icon
                 : st == ST_FAIL ? R.drawable.ic_tool_fail : R.drawable.ic_tool_abort);
         if (st == ST_OK) {
-            iv.setScaleX(0.55f);
-            iv.setScaleY(0.55f);
+            // 成功时补一个回弹：比干切状态有回应，又不至于像失败那样抢眼
+            iv.setScaleX(0.6f);
+            iv.setScaleY(0.6f);
             iv.animate().scaleX(1f).scaleY(1f).setDuration(320)
                     .setInterpolator(new OvershootInterpolator(2.2f)).start();
-        } else {
-            iv.setScaleX(1f);
-            iv.setScaleY(1f);
         }
-    }
-
-    /** 数字加千分位：131072 → 131,072，一眼能读出量级 */
-    private static String group(int v) {
-        String s = String.valueOf(Math.max(0, v));
-        StringBuilder sb = new StringBuilder();
-        int n = s.length();
-        for (int i = 0; i < n; i++) {
-            if (i > 0 && (n - i) % 3 == 0) sb.append(',');
-            sb.append(s.charAt(i));
-        }
-        return sb.toString();
     }
 
     /**
-     * 正文上方那一行：左边「💬 本次发出去的对话条数」，右边「⚡ 已用 token / 窗口容量 (百分比)」。
-     * <p>
-     * 口径说明（统计必须准，不能拿字符数冒充 token）：
-     * 1. 已用/输出 token 优先用服务端在流末尾回报的 usage —— 那是唯一真值；
-     * 2. 拿不到真值（网关不支持 / 还没发过请求）才用本地估算，并在数字前标 ~；
-     * 3. 真值只在「历史条数没变」时沿用，用户又添了内容就重新估算，
-     *    绝不把上一轮的数字挂在这儿冒充这一轮。
+     * 工具名 → 语义矢量图标。
+     *
+     * <p>顺序有讲究：「web_search」既含 web 又含 search，这里要的是放大镜而不是地球，
+     * 所以检索分支必须排在地球分支前面。认不出的一律落六边形通用图标，绝不留空位。
      */
+    private static int callIconFor(String name) {
+        String n = name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
+        if (n.contains("search") || n.contains("find") || n.contains("grep")
+                || n.contains("query") || n.contains("lookup")) {
+            return R.drawable.ic_call_search;
+        }
+        if (n.contains("shell") || n.contains("bash") || n.contains("term")
+                || n.contains("exec") || n.contains("run") || n.contains("cmd")) {
+            return R.drawable.ic_call_terminal;
+        }
+        if (n.contains("http") || n.contains("fetch") || n.contains("web")
+                || n.contains("browse") || n.contains("url") || n.contains("net")) {
+            return R.drawable.ic_call_web;
+        }
+        if (n.contains("apk") || n.contains("build") || n.contains("gradle")
+                || n.contains("sign") || n.contains("install") || n.contains("pack")) {
+            return R.drawable.ic_call_apk;
+        }
+        if (n.contains("skill") || n.contains("mcp") || n.contains("plugin")) {
+            return R.drawable.ic_call_skill;
+        }
+        if (n.contains("file") || n.contains("read") || n.contains("write")
+                || n.contains("edit") || n.contains("patch") || n.contains("cat")
+                || n.contains("list") || n.contains("dir") || n.contains("doc")) {
+            return R.drawable.ic_call_file;
+        }
+        return R.drawable.ic_call_default;
+    }
+
+    /**
+     * 正文上方那一行：左边「⚡ 当前条数 ÷ 已总结条数」，右边「体积/上限 (百分比)」。
+     * 两段分开摆——左边看对话长短，右边看这次请求还剩多少空间，各看各的不挤在一起。
+     * 「当前条数」是这次真正发给模型的窗口条数，「已总结」是被窗口裁掉的历史条数。
+     */
+    /** 最近一次用量快照：长按用量行时用它出成本明细 */
+    private int[] lastUsage = null;
+
+    /**
+     * 成本明细：把「这一轮到底发了多少、命中多少缓存、回来了多少」摊开给用户看。
+     * 界面上那行 ⚡ 只是占用率，看不出花费，所以长按补一个明细。
+     */
+    private void showCostDetail() {
+        try {
+            int[] u = lastUsage;
+            if (u == null || u.length < 9) {
+                Toast.makeText(this, "还没有可统计的用量", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            int used = u[0], limit = u[1];
+            int outT = u[5], inT = u[6], hit = u[7], miss = u[8];
+            int cachePct = (hit + miss > 0) ? (hit * 100 / (hit + miss)) : -1;
+            StringBuilder sb = new StringBuilder();
+            sb.append("本轮输入  ").append(inT).append(" token\n");
+            sb.append("  · 命中缓存  ").append(hit).append("\n");
+            sb.append("  · 未命中    ").append(miss);
+            if (cachePct >= 0) sb.append("   (").append(cachePct).append("% 命中)");
+            sb.append("\n本轮输出  ").append(outT).append(" token\n");
+            sb.append("上下文占用  ").append(used).append(" / ").append(limit)
+              .append("  (").append(limit > 0 ? Math.min(100, used * 100 / limit) : 0).append("%)")
+              .append(u.length > 4 && u[4] == 1 ? "  服务端真值" : "  本地估算").append("\n");
+            if (inT + outT > 0) {
+                // 按 deepseek-chat 公开价粗算：命中 0.5 / 未命中 2 / 输出 8（元每百万 token）
+                double yuan = (hit * 0.5 + miss * 2.0 + outT * 8.0) / 1000000.0;
+                sb.append("\n按 deepseek-chat 价粗算 ≈ ¥").append(String.format(java.util.Locale.US, "%.4f", yuan));
+                sb.append("\n（单价以官方为准，命中缓存通常便宜 5~10 倍）");
+            }
+            if (cachePct >= 0 && cachePct < 30 && inT > 3000) {
+                sb.append("\n\n缓存命中偏低：这一轮几乎全价计费，多出现在长时间中断后第一次对话。");
+            }
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("本轮用量明细")
+                    .setMessage(sb.toString())
+                    .setPositiveButton("知道了", null)
+                    .show();
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void refreshUsage(List<Message> history) {
         try {
             if (tvUsage == null || tvUsageCount == null) return;
             int[] u = client.usageSnapshot(history);
-            if (u == null || u.length < 6 || u[1] <= 0) {
+            int active = (u != null && u.length > 2) ? u[2] : 0;
+            if (u == null || u.length < 2 || u[1] <= 0 || active <= 0) {
                 if (usageRow != null) usageRow.setVisibility(View.GONE);
                 fitSubtitle();
                 return;
             }
-            final int used = Math.max(0, u[0]);
-            final int limit = u[1];
-            final int active = Math.max(0, u[2]);
-            final int dropped = Math.max(0, u[3]);
-            final boolean real = u[4] == 1;
-            final int out = Math.max(0, u[5]);
-            final int pct = (int) Math.min(100, Math.round(used * 100f / limit));
+            lastUsage = u;
+            int dropped = u.length > 3 ? u[3] : 0;
+            int pct = (int) Math.min(100, Math.round(u[0] * 100f / u[1]));
 
-            // 左段：条数指的是「这次真正发出去多少条」，不是历史里存了多少条。
-            // 有历史没随请求发出（被窗口裁掉/被总结）才提示，否则不塞噪音。
-            String cnt = "💬 " + active + " 条";
-            StringBuilder tail = new StringBuilder();
-            if (dropped > 0) tail.append(" · 未发 ").append(dropped);
-            if (out > 0) tail.append(" · 本轮输出 ").append(group(out));
-            SpannableStringBuilder head = new SpannableStringBuilder(cnt + tail);
+            // 左段青色（对话条数），右段灰/黄/橙（体积占比）：两条信息用两套颜色，扫一眼就能分开
+            String cnt = "💬 " + active + "条";
+            String sum = " ÷ 已总结 " + dropped;
+            SpannableStringBuilder head = new SpannableStringBuilder(cnt + sum);
             head.setSpan(new ForegroundColorSpan(0xFF4FC3D9), 0, cnt.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             head.setSpan(new ForegroundColorSpan(0xFF2F7C8E), cnt.length(), head.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             tvUsageCount.setText(head);
 
-            // 右段：token 口径。
-            // 估算态用「≈」而不是「~」：≈ 是数学近似号、与数字同一基线，不像波浪号那样
-            // 飘在字上方；再配三段色（符号暗 / 已用略亮 / 上限与百分比暗），既有「这是估的」
-            // 的提示，又不至于整段压灰像被禁用。
-            final int dimC = 0xFF5A6472;
-            final int strongC = pct >= 85 ? 0xFFFFB020 : pct >= 70 ? 0xFFD8C08A : 0xFFC2CAD6;
-            // 不加任何符号：靠明暗冷暖区分。亮 = 服务端真值，冷暗 = 本地估算。
-            // 真值比估算亮一档多，一眼能分，但两者都在「可读」区间，不像禁用态。
-            final int usedC = real ? strongC : 0xFF78859A;
-            final int tailC = (real && pct >= 70) ? strongC : dimC;
+            tvUsage.setText("⚡ " + u[0] + "/" + u[1] + " (" + pct + "%)");
+            // 70% 开始泛黄、85% 转橙：快满了要能一眼看出来
+            tvUsage.setTextColor(pct >= 85 ? 0xFFFFB020
+                    : pct >= 70 ? 0xFFD8C08A : Palette.c(0xFF6E7A8C));
 
-            SpannableStringBuilder us = new SpannableStringBuilder("⚡ ");
-            final int uStart = us.length();
-            us.append(group(used));
-            final int uEnd = us.length();
-            us.append("/").append(group(limit))
-                    .append(" (").append(String.valueOf(pct)).append("%)");
-            us.setSpan(new ForegroundColorSpan(dimC), 0, uStart, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            us.setSpan(new ForegroundColorSpan(usedC), uStart, uEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            us.setSpan(new ForegroundColorSpan(tailC), uEnd, us.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            tvUsage.setText(us);
-
-            if (usageRow != null) usageRow.setVisibility(View.VISIBLE);
+            if (usageRow != null) {
+                usageRow.setVisibility(View.VISIBLE);
+                // 长按看明细：只挂一次监听，避免每次刷新都新建对象
+                if (!"cost_detail".equals(usageRow.getTag())) {
+                    usageRow.setTag("cost_detail");
+                    usageRow.setOnLongClickListener(new View.OnLongClickListener() {
+                        @Override
+                        public boolean onLongClick(View v) {
+                            showCostDetail();
+                            return true;
+                        }
+                    });
+                }
+            }
             fitSubtitle();
         } catch (Throwable ignored) {
         }
-    }
-
-    /**
-     * 统计行的口径说明。
-     *
-     * <p>这一行为省地方用了缩写（「本轮输出 396」），第一眼不容易看懂；点一下把每个
-     * 数字的来源讲清楚，省得把 token 数当成字数、条数或余额。
-     */
-    private void showUsageHelp() {
-        final Sheet s = Sheet.of(this);
-        s.title("这行数字怎么读");
-        s.subtitle("全部来自真实请求，不做假账");
-
-        String left = tvUsageCount == null ? "" : String.valueOf(tvUsageCount.getText());
-        String right = tvUsage == null ? "" : String.valueOf(tvUsage.getText());
-        if (!left.isEmpty() || !right.isEmpty()) {
-            s.note("当前这一行：\n" + left + "    " + right);
-        }
-
-        s.note("💬 6 条 —— 这次请求真正发出去的对话条数。历史里存得更多、但被窗口裁掉或被总结掉的部分不算在内。\n\n"
-                + "未发 12 —— 有 12 条历史这次没发出去（超出窗口或被总结）。没有这一项就说明全发了。\n\n"
-                + "本轮输出 396 —— 模型这次回答用掉的 token 数，取自服务端返回的 usage，不是字符数。\n\n"
-                + "⚡ 3,717 / 128,000 (3%) —— 当前上下文占用 / 模型窗口上限（百分比）。这串数字偏冷偏暗时表示是本地估算，服务端回报真实 usage 后会转成亮色；橙/黄则提醒上下文快满了。");
-        s.primary("知道了", null);
-        s.show();
     }
 
     /** 回复结束/出错：应用不在前台就发一条完成提醒，声音和振动按设置走 */
@@ -3870,90 +4591,312 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /** 每行的中文句子：key 用视图本身，行被丢掉时随 WeakHashMap 自动回收 */
+    private final java.util.WeakHashMap<View, String> toolRowZh = new java.util.WeakHashMap<>();
+
+    private String zhOf(View row) {
+        if (row == null) return "";
+        String s = toolRowZh.get(row);
+        return s == null ? "" : s;
+    }
+
+    private void setZh(View row, String zh) {
+        if (row == null) return;
+        if (zh == null || zh.isEmpty()) toolRowZh.remove(row);
+        else toolRowZh.put(row, zh);
+    }
+
+    /** 中文或状态变了就原地重画这一行：沿用已存的工具名、参数、结果 */
+    private void repaintToolRow(TextView tv) {
+        if (tv == null) return;
+        int i = toolRows.indexOf(tv);
+        if (i < 0) return;
+        int st = i < toolRowState.size() ? toolRowState.get(i) : ST_RUN;
+        String name = i < toolRowNames.size() ? toolRowNames.get(i) : "";
+        String args = i < toolRowArgs.size() ? toolRowArgs.get(i) : "";
+        String res = i < toolRowDetail.size() ? toolRowDetail.get(i) : "";
+        String detail = res == null ? "" : res;
+        // 原始结果里带「出错 · 」前缀，行内摘要不要它，失败靠颜色表达
+        if (detail.startsWith("出错 · ")) detail = detail.substring(4);
+        detail = briefText(detail);
+        fillToolRow(tv, st, name, args, detail, 0);
+    }
+
+    /** 秒级时间戳：日志窗里每条事件前面挂一下，滚动感立刻就有了 */
+    private String hhmmssNow() {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        return String.format(java.util.Locale.US, "%02d:%02d:%02d",
+                c.get(java.util.Calendar.HOUR_OF_DAY),
+                c.get(java.util.Calendar.MINUTE),
+                c.get(java.util.Calendar.SECOND));
+    }
+
+    /** 第二行：⎿ 后面接状态或结果，缩进对齐到工具名，像引用一段输出 */
+    private void setSubline(TextView row, String text, int color, boolean visible) {
+        // 调用行下面那条复述行彻底停用：
+        // 上面一行已经写着「调用 · 工具名 · 命令摘要」，下面再摆一遍命令原文，
+        // 等于每个调用占两行——而思考段现在也是一行，两种行混在一起就分不清
+        // 哪行是"模型在想"、哪行是"它真的调了东西"。留一行，信息一点没少，
+        // 命令原文完整内容仍在这一行点开后的详情里。
+        if (row == null) return;
+        View line = findSublineOf(row);
+        if (line != null) line.setVisibility(View.GONE);
+    }
+
+    /** 找到这一行下面那条复述行（可能挂在 wrap 上，也可能挂在 head 上） */
+    private View findSublineOf(TextView row) {
+        if (row == null) return null;
+        View t = row.findViewWithTag(TAG_SUBLINE);
+        if (t != null) return t;
+        Object tag = row.getTag();
+        if (tag instanceof View) {
+            return ((View) tag).findViewWithTag(TAG_SUBLINE);
+        }
+        return null;
+    }
+
+    /** 取这一行下面的实时日志窗 */
+    private LinearLayout liveLogOf(TextView row) {
+        Object o = row == null ? null : row.getTag();
+        if (!(o instanceof View)) return null;
+        View v = ((View) o).findViewWithTag(TAG_LIVE_LOG);
+        return v instanceof LinearLayout ? (LinearLayout) v : null;
+    }
+
+    /** 开/关实时日志窗：跑起来才占位，跑完立刻收回去 */
+    private void liveShow(TextView row, boolean on) {
+        LinearLayout live = liveLogOf(row);
+        if (live == null) return;
+        if (on) {
+            if (live.getVisibility() == View.VISIBLE) return;
+            live.setVisibility(View.VISIBLE);
+            live.setAlpha(0f);
+            live.animate().alpha(1f).setDuration(150).start();
+        } else {
+            if (live.getVisibility() != View.VISIBLE) return;
+            live.animate().cancel();
+            live.animate().alpha(0f).setDuration(130).withEndAction(() -> {
+                live.setVisibility(View.GONE);
+                live.removeAllViews();
+            }).start();
+        }
+    }
+
+    /** 往日志窗顶一条：超过 3 条就把最旧的挤出去，视觉上就是内容在往上滚 */
+    private void liveAppend(TextView row, String text, int color) {
+        LinearLayout live = liveLogOf(row);
+        if (live == null || text == null) return;
+        liveShow(row, true);
+        TextView t = new TextView(this);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+        t.setTypeface(Typeface.MONOSPACE);
+        t.setSingleLine(true);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        t.setTextColor(color);
+        t.setText(text);
+        t.setPadding(0, dp(1), 0, dp(1));
+        t.setAlpha(0f);
+        live.addView(t);
+        t.animate().alpha(1f).setDuration(150).start();
+        while (live.getChildCount() > 3) live.removeViewAt(0);
+    }
+
+    /** 行尾光标闪烁：跑着时 0.9s 一个来回，收尾时按时停掉并隐藏 */
+    private void blinkCaret(TextView row, boolean on) {
+        if (row == null || !(row.getTag() instanceof View)) return;
+        if (((View) row.getTag()).findViewWithTag(TAG_LIVE_CARET) == null) return;
+        Object o = row == null ? null : row.getTag();
+        if (!(o instanceof View)) return;
+        View v = ((View) o).findViewWithTag(TAG_LIVE_CARET);
+        if (!(v instanceof TextView)) return;
+        TextView c = (TextView) v;
+        Object t = c.getTag();
+        if (t instanceof ObjectAnimator) ((ObjectAnimator) t).cancel();
+        c.setTag(null);
+        c.animate().cancel();
+        if (on) {
+            c.setVisibility(View.VISIBLE);
+            ObjectAnimator a = ObjectAnimator.ofFloat(c, "alpha", 1f, 0.15f);
+            a.setDuration(450L);
+            a.setRepeatCount(ValueAnimator.INFINITE);
+            a.setRepeatMode(ValueAnimator.REVERSE);
+            a.start();
+            c.setTag(a);
+        } else {
+            c.setAlpha(1f);
+            c.setVisibility(View.GONE);
+        }
+    }
+
+    /** 行首实时日志的第一条：把这一步实际在跑什么原样摆出来 */
+    private String liveCmdOf(String name, String args) {
+        String a = args == null ? "" : args.trim();
+        if (a.isEmpty()) return "$ " + name;
+        return "$ " + name + " " + briefText(a);
+    }
+
+    /**
+     * 这次调用提交的代码有多少行。
+     *
+     * <p>只数真正的内容字段（command / code / content / script），不数 JSON 骨架——
+     * 否则 {"command": ...} 这种外壳会白送一两行。参数里的换行有两种写法：
+     * 真实换行符和转义的 \n 两个字，两种都要算，不然多行脚本会被数成 1 行。
+     */
+    private static int codeLines(String argsJson) {
+        if (argsJson == null || argsJson.trim().isEmpty()) return 0;
+        String body = argsJson;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "\"(?:command|code|content|cmd|script|patch)\"\\s*:\\s*\""
+                        + "((?:[^\"\\\\]|\\\\.)*)\"")
+                .matcher(argsJson);
+        if (m.find()) body = m.group(1);
+        int lines = 1;
+        for (int i = 0; i < body.length(); i++) {
+            char ch = body.charAt(i);
+            if (ch == '\n') {
+                lines++;
+            } else if (ch == '\\' && i + 1 < body.length() && body.charAt(i + 1) == 'n') {
+                lines++;
+                i++;
+            }
+        }
+        return lines;
+    }
+
     private void fillToolRow(TextView tv, int st, String name, String args, String result, long ms) {
+        if (tv == null) return;
         boolean running = st == ST_RUN;
-        // 边和底跟着状态走：跑着泛绿，跑完收成中性，失败才红
+        int stColor = running ? 0xFF37E8A6
+                : st == ST_FAIL ? 0xFFFF6B6B
+                : st == ST_OK ? 0xFF56D96A : 0xFF6E7B8B;
+
         Object wrapTag = tv.getTag();
-        if (wrapTag instanceof View) {
-            View w = (View) wrapTag;
-            w.setBackground(null);
-            // 状态刷新会重跑这一行，箭头得跟着详情区的开合走，不能被复位成朝下
-            View aw = w.findViewWithTag(TAG_TOOL_ARROW);
-            if (aw != null) {
-                LinearLayout det = w instanceof LinearLayout
-                        ? findDetailArea((LinearLayout) w) : null;
+        View wrap = wrapTag instanceof View ? (View) wrapTag : null;
+        if (wrap != null) {
+            // 节点直接由状态驱动：空心环 → 发光环 → 实心打勾
+            if (wrap.getBackground() instanceof com.nebula.aichat.ui.TrackBg) {
+                ((com.nebula.aichat.ui.TrackBg) wrap.getBackground())
+                        .setState(running ? com.nebula.aichat.ui.TrackBg.RUN
+                                : st == ST_OK ? com.nebula.aichat.ui.TrackBg.OK
+                                : st == ST_FAIL ? com.nebula.aichat.ui.TrackBg.FAIL
+                                : com.nebula.aichat.ui.TrackBg.PENDING);
+            }
+            TextView badge = wrap.findViewWithTag(TAG_TOOL_BADGE);
+            if (badge != null && name != null && !name.isEmpty()) {
+                // 小写：跟终端里敲出来的写法一致，也让「调用 bash_exec」读起来是一句话
+                badge.setText(name.toLowerCase(java.util.Locale.US));
+                badge.setTextColor(soften(stColor, running ? 0.52f : 0.34f));
+                badge.setBackground(Ui.roundRect(this,
+                        (0x1C << 24) | (stColor & 0x00FFFFFF), 0, 4f));
+            }
+            TextView linesV = wrap.findViewWithTag(TAG_TOOL_LINES);
+            if (linesV != null) {
+                // 用原始参数算行数：这里传进来的 args 有时是给行内展示用的简述
+                // （多行会被压成一行），拿它数会把 80 行的脚本数成 1 行
+                int li = toolRows.indexOf(tv);
+                String rawArgs = (li >= 0 && li < toolRowArgs.size())
+                        ? toolRowArgs.get(li) : args;
+                int n = codeLines(rawArgs);
+                if (n > 0) {
+                    linesV.setText(n + " 行");
+                    linesV.setVisibility(View.VISIBLE);
+                } else {
+                    linesV.setVisibility(View.GONE);
+                }
+            }
+            // 工具名和「N 行」在这之前刚换过文本，两者宽度都变了，命令的可用宽度必须
+            // 跟着重算一次。少了这一步，行数从一位数变两位数时，行尾标记和箭头就会被
+            // 挤到卡片外面——这正是调用一多、靠后的行看起来错位的原因。
+            if (linesV != null && linesV.getParent() instanceof LinearLayout) {
+                final LinearLayout headV = (LinearLayout) linesV.getParent();
+                headV.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        applyToolHeadBudget(headV);
+                    }
+                });
+            }
+            View arrow = wrap.findViewWithTag(TAG_TOOL_ARROW);
+            LinearLayout det = findDetailArea(wrap);
+            if (arrow != null) {
                 boolean open = det != null && det.getVisibility() == View.VISIBLE;
-                aw.setRotation(open ? 180f : 0f);
+                arrow.setRotation(open ? 180f : 0f);
             }
-        }
-        int markColor = running ? Palette.c(C_RUN) : st == ST_OK ? Palette.c(C_OK)
-                : st == ST_FAIL ? Palette.c(C_FAIL) : Palette.c(C_ABORT);
-        // 行首图标交给 head 里那个独立 ImageView：文本里不再塞字符，
-        // 图标才能自己跑平滑旋转，不受 ticker 的 500ms 节奏拖累。
-        updateToolMark(tv, st, markColor);
-        SpannableStringBuilder sb = new SpannableStringBuilder();
-
-        int s0 = sb.length();
-        sb.append(name);
-        int nameColor = running ? Palette.c(0xFFB9C6D6) : st == ST_FAIL ? C_FAIL
-                : st == ST_ABORT ? Palette.c(C_ABORT) : Palette.c(C_TEXT);
-        sb.setSpan(new StyleSpan(Typeface.BOLD), s0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        sb.setSpan(new ForegroundColorSpan(nameColor), s0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-        // 终端回显感：执行中跟在命令后面的参数，完成后直接给结果摘要
-        String detail = running ? args : result;
-        if (detail != null && !detail.isEmpty()) {
-            String one = briefText(detail);
-            if (one.length() > 40) one = one.substring(0, 40) + "\u2026";
-            // 用「·」当分隔，比两个空格更能看出「工具名 / 参数」的层级
-            int sep = sb.length();
-            sb.append(" \u00b7 ");
-            sb.setSpan(new ForegroundColorSpan(Palette.c(0x66FFFFFF)), sep, sb.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            int d0 = sb.length();
-            sb.append(one);
-            // 失败行的摘要偏红，扫一眼就知道这条不是正常结果
-            sb.setSpan(new ForegroundColorSpan(running ? Palette.c(0xFF8FA0B4)
-                    : st == ST_FAIL ? Palette.c(0xFFE8A0A0) : C_TEXT2), d0, sb.length(),
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            markKeyInfo(sb, d0, sb.length(), st == ST_FAIL ? Palette.c(0xFFFF9B9B) : Palette.c(0xFFBFD6F2), false);
-        }
-
-        // 输出行数徽标：结果有几行就标「45行」，一眼看出这次吐了多少东西
-        if (!running && result != null && !result.isEmpty()) {
-            int lines = 1;
-            for (int i = 0; i < result.length(); i++) {
-                if (result.charAt(i) == '\n') lines++;
+            // 运行态用「银光闪烁」：一条银白光带 1.1s 扫一遍，
+            // 字是冷银灰底上的银白高光。光还在走 = 这一步还在跑；光停下 = 已经结束。
+            // 不再挂圆点读秒——那是行尾多出来的一坨符号，而光直接长在正文上：
+            // 视线本来就在读这行字，跑没跑第一眼就撞上了
+            View bodyV = wrap.findViewWithTag(TAG_TOOL_BODY);
+            com.nebula.aichat.ui.ShimmerTextView bodySh =
+                    bodyV instanceof com.nebula.aichat.ui.ShimmerTextView
+                            ? (com.nebula.aichat.ui.ShimmerTextView) bodyV : null;
+            View subLine = wrap.findViewWithTag(TAG_SUBLINE);
+            View subBox = wrap.findViewWithTag(TAG_SUB_ROW);
+            boolean subOn = subBox != null && subBox.getVisibility() == View.VISIBLE;
+            // 「在跑」现在只由输入框上方那条常驻运行条表达（环在转、秒数在跳）。
+            // 这里原先挂着银光扫 + 卡片呼吸，两层闪烁叠在一起整屏都在动，
+            // 反而分不清是动画还是卡死了——工具行统一改成静态：不扫、不呼吸
+            if (bodySh != null) bodySh.stopShimmer();
+            if (subLine instanceof com.nebula.aichat.ui.ShimmerTextView) {
+                ((com.nebula.aichat.ui.ShimmerTextView) subLine).stopShimmer();
             }
-            if (lines > 1) {
-                sb.append(" ");
-                int l0 = sb.length();
-                sb.append(String.valueOf(lines)).append("\u884c");
-                sb.setSpan(new ForegroundColorSpan(Palette.c(0xFF93A2B4)), l0, sb.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                sb.setSpan(new RelativeSizeSpan(0.92f), l0, sb.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                sb.setSpan(new BackgroundColorSpan(Palette.c(0x14FFFFFF)), l0, sb.length(),
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                sb.append(" ");
+            // 卡片底色跟着读秒浅浅地亮一下暗一下。
+            // 单个节点在动，扫一眼未必抓得住；整张卡片一起呼吸，余光都能看见。
+            // 跑完所有行同时静下来，这片"安静"本身就是结束的信号
+            View cardV = wrap.findViewWithTag(TAG_TOOL_CARD);
+            if (cardV != null) {
+                // 运行中整张卡片泛一层淡绿，跑完退干净。
+                // 文字变色只覆盖几行字，卡片底色是整块面积——余光扫过去就能看出
+                // "这块还亮着"。而且它是静态的：从亮到退只发生一次，不是来回闪
+                cardV.setBackground(toolCardBg(running ? 0x1A3DDC97 : 0x0AFFFFFF));
             }
         }
 
-        // 耗时改成右端的小胶囊：前面的点线是"过程"，它是"结果"，单独一块更清楚
-        int t0 = sb.length();
-        sb.append(" ");
-        int c0 = sb.length();
-        sb.append(st == ST_ABORT ? "\u5df2\u4e2d\u6b62" : dur(ms));
-        sb.setSpan(new ForegroundColorSpan(running ? Palette.c(C_DIM) : Palette.c(0xFF93A2B4)), c0, sb.length(),
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        sb.setSpan(new RelativeSizeSpan(0.92f), c0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        sb.setSpan(new BackgroundColorSpan(Palette.c(0x1AFFFFFF)), c0, sb.length(),
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        int t1 = sb.length();
-        sb.append(" ");
+        // 结果回填时只带了 result、没带 args，命令会凭空消失——从行记录里补回来。
+        // 调用行必须自始至终都是同一条命令，它才是「这步干了什么」的唯一凭据
+        String cmd = args;
+        if (cmd == null || cmd.isEmpty()) {
+            int i = toolRows.indexOf(tv);
+            if (i >= 0 && i < toolRowArgs.size()) cmd = toolRowArgs.get(i);
+        }
 
-        tv.setTextColor(Palette.c(0xFFC9D4E2));
+        if (cmd == null || cmd.trim().isEmpty()) {
+            tv.setVisibility(View.GONE);
+            return;
+        }
+        tv.setVisibility(View.VISIBLE);
+        String one = briefText(cmd.trim());
+        if (one.length() > 120) one = one.substring(0, 120) + "…";
+        // 颜色即状态：还在跑是亮绿，跑完落回雾灰，失败柔红、中止暖橙。
+        // 关键顺序——色必须先算出来、再交给 markKeyInfo：那一步会给路径/参数/数字
+        // 逐个打 ForegroundColorSpan，而 span 的优先级高于 setTextColor。
+        // 一行命令里这些片段往往占大半，用旧写法它们会一直停在固定的蓝灰上，
+        // 于是"整行变色"实际只变了几个标点，肉眼看当然像没在跑
+        int bodyColor = running ? C_RUN
+                : st == ST_FAIL ? C_FAIL
+                : st == ST_ABORT ? C_ABORT
+                : C_TEXT2;
+        SpannableStringBuilder sb = new SpannableStringBuilder(one);
+        markKeyInfo(sb, 0, sb.length(), Palette.c(bodyColor), false);
+        tv.setTextColor(Palette.c(bodyColor));
+        if (tv instanceof com.nebula.aichat.ui.ShimmerTextView) {
+            com.nebula.aichat.ui.ShimmerTextView bsh =
+                    (com.nebula.aichat.ui.ShimmerTextView) tv;
+            bsh.stopShimmer();
+            bsh.stopWave();
+            bsh.setColors(bodyColor, bodyColor);
+        }
         tv.setText(sb);
+    }
+
+    /** 工具行卡片底：圆角/描边跟 makeToolWrap 完全一致，只换底色，否则呼吸时会跳框 */
+    private android.graphics.drawable.GradientDrawable toolCardBg(int color) {
+        android.graphics.drawable.GradientDrawable g =
+                new android.graphics.drawable.GradientDrawable();
+        g.setCornerRadius(dp(9));
+        g.setColor(Palette.c(color));
+        g.setStroke(1, Palette.c(0x14FFFFFF));
+        return g;
     }
 
     /** 新建一行：等宽字体、单行、超长省略；点一下弹窗看完整参数和结果 */
@@ -3965,86 +4908,221 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout makeToolWrap(LinearLayout host) {
         LinearLayout wrap = new LinearLayout(this);
         wrap.setOrientation(LinearLayout.VERTICAL);
-        // 框比之前更实：淡绿底 + 更深的绿边，一眼能划出「这是一步工具」
-        // 亮绿描边 + 外发光：本体线 #4ADE80 1.6dp，外面再套一层 33% 的绿晕（外扩 1.5dp）。
-        // 底色只给 12% 深绿做衬托，亮的是「边」而不是整块，看着像通了电的边框。
-        // host 必须 clipChildren=false，否则那圈外发光会被父容器裁掉。
-        // 无边框：工具行直接融进正文流，靠图标/字重/箭头分层；
-        // 展开后的详情区自带淡底，负责把内容托住，不需要外框再画一圈。
+        // 不再画「星轨」：那条竖线 + 22dp 缩进 + 4% 白卡片，本意是让步骤连成轨迹，
+        // 实际效果是每一行都被压成很淡的小字，一眼扫过去像"根本没有调用行"。
+        // 现在就是平铺的一行：调用 + 工具名 + 命令，颜色直接给足
         wrap.setBackground(null);
+        wrap.setPadding(0, dp(2), 0, dp(2));
+
         LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        wlp.topMargin = dp(6);
-        wlp.bottomMargin = dp(0);
-        // 左右各外扩 1dp：配合外发光，让这一步工具比正文段落「胖」一点点，
-        // 视觉上更靠前，也不会因为发光溢出而显得边被压掉
+        wlp.topMargin = dp(1);
         host.setClipChildren(false);
         host.addView(wrap, wlp);
+
+        // 卡片只包「做了什么」。结果那行移出卡片，
+        // 这样它的图标才能落到星轨节点那一列上，两列各自成一条竖线
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setTag(TAG_TOOL_CARD);
+        card.setBackground(null);   // 不要卡片底了：一层极淡的框只是让字更难看清
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.leftMargin = 0;         // 原来让开的 22dp 时间轴一起去掉，整行铺满
+        wrap.addView(card, clp);
 
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        // 框已外扩到气泡边缘，内容留 10/8 的内边距，别贴着绿边
-        head.setPadding(dp(0), 0, dp(0), 0);
+        head.setMinimumHeight(dp(28));
+        head.setPadding(0, 0, 0, 0);
 
-        // 行首状态图标：独立 ImageView，才能跑真正的旋转动画（ticker 500ms 太慢）
-        ImageView mark = new ImageView(this);
-        mark.setScaleType(ImageView.ScaleType.FIT_XY);
-        // 图标坐进一个同色系的小圆底里，比裸图标多一层"徽章"的感觉
-        mark.setPadding(dp(3), dp(3), dp(3), dp(3));
-        LinearLayout.LayoutParams markLp = new LinearLayout.LayoutParams(dp(20), dp(20));
-        markLp.rightMargin = dp(10);
-        head.addView(mark, markLp);
+        // 行首：矢量图标 + 「调用」两个字。图标 14dp 与 11sp 标签同高、右距 6dp，
+        // 和下面思考行的灯泡图标用同一套尺寸，所以两行的图标、文字左缘都在一条线上。
+        ImageView actIc = new ImageView(this);
+        actIc.setImageResource(R.drawable.ic_act_call);
+        actIc.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams ailp = new LinearLayout.LayoutParams(dp(14), dp(14));
+        ailp.rightMargin = dp(6);
+        head.addView(actIc, ailp);
 
-        TextView body = new TextView(this);
-        body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        TextView act = new TextView(this);
+        act.setText("调用");
+        act.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        act.setTextColor(Palette.c(0xFF8FA3B8));
+        act.setPadding(0, 0, dp(6), 0);
+        act.setIncludeFontPadding(false);
+        head.addView(act, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        card.addView(head, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // 工具名方牌：等宽大写 + 放开字距 + 状态色低透底，和命令形成两个层级
+        TextView badge = new TextView(this);
+        badge.setTag(TAG_TOOL_BADGE);
+        badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
+        badge.setLetterSpacing(0.08f);
+        badge.setTypeface(Typeface.MONOSPACE);
+        badge.setGravity(Gravity.CENTER);
+        // 工具名给宽度上限：BUILD_ENV_STATUS 这种长名字加字距后会横着长到 100dp 以上，
+        // 把右边真正有用的命令内容挤成几个字符。宁可把名字截断，也要保住命令。
+        badge.setSingleLine(true);
+        badge.setEllipsize(TextUtils.TruncateAt.END);
+        badge.setMaxWidth(dp(104));
+        badge.setTextColor(Palette.c(0xFF7EE787));
+        badge.setBackground(null);   // 去掉底色块，纯彩色等宽字更干净也更醒目
+        badge.setPadding(0, 0, dp(6), 0);
+        head.addView(badge, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        com.nebula.aichat.ui.ShimmerTextView body =
+                new com.nebula.aichat.ui.ShimmerTextView(this);
+        body.setTag(TAG_TOOL_BODY);
+        body.setColors(0xFF9FB2C6, 0xFFDCEBFA);
+        body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         body.setTypeface(Typeface.MONOSPACE);
         body.setSingleLine(true);
         body.setEllipsize(TextUtils.TruncateAt.END);
-        // 上下 padding 加到 9，框整体「厚」一档；配合 CENTER_VERTICAL，
-        // 15dp 的图标和等宽正文在同一条水平中线上，不会一个偏高一个偏低
-        body.setPadding(0, dp(9), 0, dp(9));
         body.setGravity(Gravity.CENTER_VERTICAL);
-        body.setTextColor(Palette.c(0xFFD3DDE9));
-        head.addView(body, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        body.setTextColor(Palette.c(0xFFDCE7F2));   // 提亮：这行是主体信息，不该比思考字更弱
+        // 不撑满整行（weight=1 会让短命令后面拖出一片空白，把「N 行」和箭头顶到屏幕最右），
+        // 按内容自然宽度排版；超长时靠 maxWidth 截断。
+        // 预算不能写死：左边「图标 + 调用 + 工具名」的宽度随工具名长短浮动，
+        // 写死一个数字很容易算少，整行超宽后右边的「N 行」和箭头会被直接裁到屏幕外——
+        // 所以等布局完，用同级子控件的真实宽度倒推出还能给命令多少位置。
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.leftMargin = dp(8);
+        head.addView(body, blp);
+
+        // 首帧兜底：精确预算要等一次布局才跑得到，在那之前先给个上限，
+        // 免得特别长的命令在第一帧就把「N 行」和箭头顶出屏幕（随后会被重算，但会闪一下）
+        int scrW = getResources().getDisplayMetrics().widthPixels;
+        body.setMaxWidth(Math.max(dp(60), scrW - dp(176)));
+
+        head.post(new Runnable() {
+            @Override
+            public void run() {
+                applyToolHeadBudget(head);
+            }
+        });
+
+        // 屏幕宽度变了（旋转、分屏、字号调整）整行可用宽度也变了，得重算。
+        // 只在宽度真的变化时动手，避免 setMaxWidth → layout → 再重算的死循环。
+        head.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, orr, ob) -> {
+            if (r - l != orr - ol) applyToolHeadBudget(head);
+        });
+
+        // 行尾的「N 行」：这次调用真正提交了多少行代码/命令。
+        // 单行命令不标（满屏都是「1 行」反而成噪音），两行以上才亮出来，
+        // 一眼就能知道它刚塞进去的是三行还是八十行。
+        TextView lines = new TextView(this);
+        lines.setTag(TAG_TOOL_LINES);
+        // 原来 10.5sp + 0xFF7C8D9E，屏幕上一眼扫过去基本看不见，等于白标；
+        // 提到 11sp、换成更亮的蓝灰，并且前面留足 12dp，跟命令正文分开，不被当成命令的一部分
+        lines.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        lines.setTextColor(Palette.c(0xFFA9BED2));
+        lines.setSingleLine(true);
+        lines.setIncludeFontPadding(false);
+        lines.setPadding(dp(12), 0, dp(4), 0);
+        lines.setVisibility(View.GONE);
+        head.addView(lines, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         ImageView arrow = new ImageView(this);
         arrow.setTag(TAG_TOOL_ARROW);
-        arrow.setImageDrawable(new ChevronDrawable(Palette.c(0xFF8593A6)));
+        // 橙色：这一行的深浅两档灰里，箭头原来是 0xFF44505E，几乎沉进背景里，
+        // 没人看得出这里能点。换成暖橙之后它成了整行唯一的"可点"提示
+        arrow.setImageDrawable(new ChevronDrawable(Palette.c(0xFFFFA44D)));
         arrow.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        // 放大到 20dp：这张 ▾ 是行上唯一的图形符号，16dp 时在高密度屏上偏小、点起来也费劲
+        arrow.setPadding(dp(2), dp(2), dp(2), dp(2));
         LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(dp(18), dp(18));
-        alp.leftMargin = dp(4);
+        alp.leftMargin = dp(6);   // 紧贴「N 行」后面，不留空档
         head.addView(arrow, alp);
 
-        wrap.addView(head, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // 翻译行（图标 + 中文解释 + 耗时）已整行移除：
+        // 「这一步到底干了什么」由工具行摘要自己说清楚，下面再补一句中文属于复述；
+        // 去掉后调用行下面直接就是思考块，纵向也少一层卡片。
 
-        // 按下有淡绿反馈，暗示这一行可以点开
-        android.graphics.drawable.StateListDrawable bg =
-                new android.graphics.drawable.StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed},
-                Ui.roundRect(this, Palette.c(0x1CFFFFFF), 0, 8f));
-        bg.addState(new int[]{}, Ui.roundRect(this, 0x00000000, 0, 7f));
-        head.setBackground(bg);
 
-        head.setOnClickListener(v -> toggleToolExpand(wrap));
+        wrap.setOnClickListener(v -> toggleToolExpand(wrap));
         return wrap;
+    }
+
+    /**
+     * 重新给调用行的命令正文算一次可用宽度。
+     *
+     * 这行是「图标 + 调用 + 工具名 + 命令 + N 行 + 箭头」横排，命令用 WRAP_CONTENT 自然宽，
+     * 所以必须显式告诉它最多能占多少，否则长命令会把「N 行」和箭头顶出卡片边界。
+     *
+     * 原先这段预算只在建行时 post 跑一次，而且「N 行」还是 GONE 时按写死的 42dp 留位。
+     * 行数到两位数（35 行、48 行）之后，真实宽度早就超过 42dp，等于多给了命令十几个 dp——
+     * 整行超宽，「N 行」和箭头被挤出可见区；等到「N 行」真正显示出来，也没有第二次重算。
+     * 调用越多、命令越长，靠后的行错位越明显，根子就在这里。
+     *
+     * 现在改成可以反复调用：建行时一次，「N 行」/工具名改完文本再一次。
+     */
+    private void applyToolHeadBudget(LinearLayout head) {
+        if (head == null) return;
+        int w = head.getWidth();
+        if (w <= 0) return;
+        View bv = head.findViewWithTag(TAG_TOOL_BODY);
+        if (!(bv instanceof com.nebula.aichat.ui.ShimmerTextView)) return;
+        com.nebula.aichat.ui.ShimmerTextView body =
+                (com.nebula.aichat.ui.ShimmerTextView) bv;
+
+        int fixed = 0;
+        for (int k = 0; k < head.getChildCount(); k++) {
+            View ch = head.getChildAt(k);
+            if (ch == body) continue;
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) ch.getLayoutParams();
+            int cw = ch.getMeasuredWidth();
+            if (TAG_TOOL_LINES.equals(ch.getTag())
+                    && (cw <= 0 || ch.getVisibility() != View.VISIBLE)) {
+                // 还没填内容（或此刻隐藏）：按「两位行数」的真实文本宽预留。
+                // 不能写死 dp——11sp 的两位数行数比 42dp 宽，少留一点就会溢出。
+                cw = toolLinesReserveWidth();
+            } else if (cw <= 0 && ch.getVisibility() == View.VISIBLE) {
+                // 刚 addView 进来还没走过测量（典型就是事后插入的「×k」），
+                // 直接读 measuredWidth 会得到 0，等于没给它留位。自己量一次。
+                ch.measure(android.view.View.MeasureSpec.makeMeasureSpec(
+                                0, android.view.View.MeasureSpec.UNSPECIFIED),
+                        android.view.View.MeasureSpec.makeMeasureSpec(
+                                0, android.view.View.MeasureSpec.UNSPECIFIED));
+                cw = ch.getMeasuredWidth();
+            }
+            fixed += cw + lp.leftMargin + lp.rightMargin;
+        }
+        int avail = w - fixed - dp(4);
+        body.setMaxWidth(Math.max(dp(56), avail));
+    }
+
+    private int toolLinesReservePx = -1;
+
+    /** 「N 行」标注的最宽情形占位：两位行数 + 左右内边距，实测一次后缓存 */
+    private int toolLinesReserveWidth() {
+        if (toolLinesReservePx > 0) return toolLinesReservePx;
+        TextView probe = new TextView(this);
+        probe.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        probe.setIncludeFontPadding(false);
+        probe.setSingleLine(true);
+        probe.setText("888 行");
+        probe.measure(android.view.View.MeasureSpec.makeMeasureSpec(
+                        0, android.view.View.MeasureSpec.UNSPECIFIED),
+                android.view.View.MeasureSpec.makeMeasureSpec(
+                        0, android.view.View.MeasureSpec.UNSPECIFIED));
+        toolLinesReservePx = probe.getMeasuredWidth() + dp(16);
+        return toolLinesReservePx;
     }
 
     /** 从外框里取出摘要行 */
     private static TextView toolBodyOf(LinearLayout wrap) {
-        if (wrap == null || wrap.getChildCount() == 0) return null;
-        View head = wrap.getChildAt(0);
-        if (!(head instanceof LinearLayout)) return null;
-        LinearLayout h = (LinearLayout) head;
-        // 不能再写死 index 0：head 里先是状态图标（ImageView），接着才是正文，
-        // 最后是展开箭头。按类型取第一个 TextView，body 永远排在 arrow 前面。
-        for (int i = 0; i < h.getChildCount(); i++) {
-            View v = h.getChildAt(i);
-            if (v instanceof TextView) return (TextView) v;
-        }
-        return null;
+        if (wrap == null) return null;
+        // 布局改成「外框 → 卡片 → 头行 → 正文」四层后，按下标取子 View 全部失效，
+        // 干脆认 tag：这样以后再怎么调结构，这里都不用跟着改
+        android.view.View v = wrap.findViewWithTag(TAG_TOOL_BODY);
+        return v instanceof TextView ? (TextView) v : null;
     }
 
     /** 行尾箭头：按 tag 取（它现在是 ImageView，不再靠"最后一个 TextView"猜） */
@@ -4067,8 +5145,18 @@ public class MainActivity extends AppCompatActivity {
 
     /** 翻译行的身份标记：挂在它的根容器 tag 上，用来和绿框配对 */
     private static final String TAG_TOOL_ARROW = "tool_arrow";
+    private static final String TAG_TOOL_BADGE = "tool_badge";
+    private static final String TAG_TOOL_LINES = "tool_lines";
+    private static final String TAG_TOOL_BODY = "tool_body";
+    private static final String TAG_TOOL_CARD = "tool_card";
+    private static final String TAG_SUB_ROW = "tool_sub_row";
+    private static final String TAG_SUB_ICON = "tool_sub_icon";
     /** 行尾「×N」调用次数标注 */
     private static final String TAG_TOOL_SEQ = "tool_seq";
+    /** 翻译行右端的耗时标注，与上面的「×N」上下对齐 */
+    private static final String TAG_SUB_COST = "tool_sub_cost";
+    /** 翻译行尾部的展开箭头，与调用行的 ▾ 同一符号、同一尺寸 */
+    private static final String TAG_SUB_ARROW = "tool_sub_arrow";
 
     /**
      * 同一工具被反复调用时，给这一组里的每一行补上「×1 ×2 ×3…」。
@@ -4077,11 +5165,6 @@ public class MainActivity extends AppCompatActivity {
      */
     private void refreshToolSeq(String name) {
         if (name == null) return;
-        int total = 0;
-        for (int i = 0; i < toolRowNames.size(); i++) {
-            if (name.equals(toolRowNames.get(i))) total++;
-        }
-        if (total < 2) return;
         int k = 0;
         for (int i = 0; i < toolRows.size() && i < toolRowNames.size(); i++) {
             if (!name.equals(toolRowNames.get(i))) continue;
@@ -4100,11 +5183,13 @@ public class MainActivity extends AppCompatActivity {
         if (tv == null) {
             tv = new TextView(this);
             tv.setTag(TAG_TOOL_SEQ);
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
             tv.setTypeface(Typeface.MONOSPACE);
-            tv.setTextColor(Palette.c(0xFF7C8B9E));
+            tv.setTextColor(Palette.c(0xFF8A9AAD));
             tv.setGravity(Gravity.CENTER_VERTICAL);
-            tv.setPadding(dp(6), 0, dp(6), 0);
+            // 只给一点点底：次数要标出来，但它是位序信息，不该长成一块徽章
+            tv.setBackground(Ui.roundRect(this, Palette.c(0x0DFFFFFF), 0, 4f));
+            tv.setPadding(dp(5), dp(1), dp(5), dp(1));
             int at = head.getChildCount();
             View arrow = head.findViewWithTag(TAG_TOOL_ARROW);
             if (arrow != null) at = head.indexOfChild(arrow);
@@ -4112,6 +5197,121 @@ public class MainActivity extends AppCompatActivity {
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
         tv.setText("\u00d7" + k);
+
+        // 「×k」是行建好以后才插进来的孩子，这一行凭空多出 20dp 左右。
+        // 不重算的话命令还按老预算铺开，整行超宽，「N 行」和箭头就被挤出卡片可见区——
+        // 而且次数会从一位数涨到两位数，越到后面超得越多。
+        // 这既是「调用多了靠后的行错位」的直接原因，也是它只在后段才明显的原因。
+        if (head instanceof LinearLayout) {
+            final LinearLayout hf = (LinearLayout) head;
+            hf.post(new Runnable() {
+                @Override
+                public void run() {
+                    applyToolHeadBudget(hf);
+                }
+            });
+        }
+    }
+
+    /**
+     * 把耗时写到翻译行右端（箭头左边）。
+     *
+     * <p>为什么从调用行搬下来：调用行要回答的是「做了什么、输出了什么」，
+     * 时间属于结果层，挤在同一行末尾只会变成装饰；翻译行本来就是"这一步的产物"，
+     * 耗时和那句中文解释同源，放一起才对得上。
+     *
+     * <p>运行中不显示：环已经在转，再挂一个跳动的秒数纯属噪音。
+     */
+    private void setExplainMsOnRow(View summaryRow, long ms, int st) {
+        if (!(summaryRow instanceof TextView)) return;
+        // 运行中也挂着：这格是一个一直在涨的事实数字，位置和上面的「×N」对齐。
+        // 闪烁负责说"还在跑"，它负责说"已经跑了多久"——两件事不冲突
+        if (ms <= 0) return;
+        ViewGroup sub = subRowOf(summaryRow);
+        if (sub == null) return;
+        TextView tv = subCostOf(sub, true);
+        if (tv == null) return;
+        // 亮度跟着结果走：成功是工具名方牌那颗绿，失败红、中止琥珀。
+        // 这一格是全行唯一的纯事实数字，值得亮过旁边那句解释
+        int c = 0xFF8A9AAD;
+        if (st == ST_OK) c = 0xFF7EE787;
+        else if (st == ST_FAIL) c = 0xFFFF7B7B;
+        else if (st == ST_ABORT) c = 0xFFD9A441;
+        tv.setTextColor(Palette.c(c));
+        tv.setText(fmtElapsed(ms));
+        tv.setVisibility(View.VISIBLE);
+    }
+
+    /** 把耗时的毫秒数写成给人看的短字符串：秒内一位小数，超过一分钟换成 m:ss */
+    private static String fmtElapsed(long ms) {
+        if (ms < 60000L) {
+            return String.format(java.util.Locale.US, "%.1fs", ms / 1000f);
+        }
+        return String.format(java.util.Locale.US, "%d:%02d", ms / 60000L, (ms % 60000L) / 1000L);
+    }
+
+    /** 从摘要行往上找翻译行那个容器；结构再怎么改，认 tag 总不会错 */
+    private ViewGroup subRowOf(View any) {
+        // 翻译行整行移除后（4.0.24），这里已经不可能找到容器：直接返回 null，
+        // 上游 setExplainMsOnRow 拿到 null 立即退出。
+        //
+        // 必须在这里收住，不能保留"向上找父节点"的循环：旧实现每层都做
+        // (View) v.getParent()，一旦走到窗口根，父节点是 ViewRootImpl（实现 ViewParent
+        // 但不是 View），强转直接 ClassCastException —— 4.0.24 就是死在这一行，
+        // 表现为第一次工具调用、也就是"思考中"闪退。
+        return null;
+    }
+
+    /** 翻译行右端的耗时标签，样式与调用行的「×N」完全一致，两行尾巴才像一对 */
+    private TextView subCostOf(ViewGroup subRow, boolean create) {
+        View found = subRow.findViewWithTag(TAG_SUB_COST);
+        if (found instanceof TextView) return (TextView) found;
+        if (!create) return null;
+        TextView tv = new TextView(this);
+        tv.setTag(TAG_SUB_COST);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        tv.setTypeface(Typeface.MONOSPACE);
+        tv.setTextColor(Palette.c(0xFF8A9AAD));
+        tv.setGravity(Gravity.CENTER_VERTICAL);
+        // 和「×N」同一个框（4dp 圆角 + 5/1 内边距），底色提到 8% 白：
+        // 次数是位序信息，耗时是本步的事实，值得比它重一档
+        tv.setBackground(Ui.roundRect(this, Palette.c(0x14FFFFFF), 0, 4f));
+        tv.setPadding(dp(5), dp(1), dp(5), dp(1));
+        tv.setVisibility(View.GONE);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = dp(6);   // 和左边那句解释留一点缝，别贴上去
+        // 必须插在尾部 ▾ 前面：直接 addView 会排到箭头右边，把箭头挤到行中间
+        View tail = subRow.findViewWithTag(TAG_SUB_ARROW);
+        int at = tail == null ? -1 : subRow.indexOfChild(tail);
+        if (at >= 0) subRow.addView(tv, at, lp); else subRow.addView(tv, lp);
+        return tv;
+    }
+
+    /**
+     * 中止时把还在扫光的解释行收干净：只停光、不动文字。
+     * 不能走 updateToolExplain（），那会把已有的人话清成空字符串。
+     */
+    private void stopExplainShimmer(TextView row) {
+        // 光扫现在跑在工具行本体上，直接停它自己
+        if (row instanceof com.nebula.aichat.ui.ShimmerTextView) {
+            com.nebula.aichat.ui.ShimmerTextView sh =
+                    (com.nebula.aichat.ui.ShimmerTextView) row;
+            sh.stopShimmer();
+            sh.stopDrift();
+            sh.stopWave();
+            sh.setColors(0xFFC3D0DE, 0xFFE8F4FF);
+        }
+        // 翻译行也在闪，一起收干净——否则这一步结束了两行里还剩一行在动，
+        // 那比完全不动更让人怀疑"是不是卡住了"
+        View sub = row.findViewWithTag(TAG_SUBLINE);
+        if (sub instanceof com.nebula.aichat.ui.ShimmerTextView) {
+            com.nebula.aichat.ui.ShimmerTextView s =
+                    (com.nebula.aichat.ui.ShimmerTextView) sub;
+            s.stopShimmer();
+            s.stopWave();
+            s.setColors(0xFFC3D0DE, 0xFFFFFFFF);
+        }
     }
 
     /**
@@ -4158,54 +5358,181 @@ public class MainActivity extends AppCompatActivity {
             return android.graphics.PixelFormat.TRANSLUCENT;
         }
     }
+
+    /**
+     * 实心三角：向上的尖端朝上，向下的尖端朝下。
+     *
+     * <p>正文右侧那对小圆钮原来用的是 ChevronDrawable，那是一条 V 形折线，
+     * 线宽只有图标宽度的 9.5%，放进圆钮里不到 1.5px，叠在半透明底子上
+     * 几乎看不出画了什么。换成实心三角：一整块面，方向只看尖头朝哪边，
+     * 不带任何细线，小尺寸下也不会糊。
+     */
+    private static class ArrowDrawable extends android.graphics.drawable.Drawable {
+        private final android.graphics.Paint p =
+                new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Path path = new android.graphics.Path();
+        private final boolean up;
+
+        ArrowDrawable(int color, boolean up) {
+            p.setColor(color);
+            p.setStyle(android.graphics.Paint.Style.FILL);
+            p.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+            this.up = up;
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas c) {
+            float l = getBounds().left, t = getBounds().top;
+            float w = getBounds().width(), h = getBounds().height();
+            if (w <= 0 || h <= 0) return;
+            float cx = l + w / 2f, cy = t + h / 2f;
+            // 三角尽量撑满图标区，但在上下左右各留一丝，免得贴着按钮圆弧发闷
+            float triW = w * 0.94f, triH = h * 0.82f;
+            float halfW = triW / 2f, halfH = triH / 2f;
+
+            path.reset();
+            if (up) {
+                path.moveTo(cx, cy - halfH);           // 尖端朝上
+                path.lineTo(cx + halfW, cy + halfH);
+                path.lineTo(cx - halfW, cy + halfH);
+            } else {
+                path.moveTo(cx, cy + halfH);           // 尖端朝下
+                path.lineTo(cx + halfW, cy - halfH);
+                path.lineTo(cx - halfW, cy - halfH);
+            }
+            path.close();
+            c.drawPath(path, p);
+        }
+
+        // 必须报告固有尺寸：ImageView 在 wrap_content 下拿不到尺寸时，
+        // 量出来只剩 padding，内容区被压成 1px，图形就没了。
+        @Override
+        public int getIntrinsicWidth() {
+            return 60;
+        }
+
+        @Override
+        public int getIntrinsicHeight() {
+            return 60;
+        }
+
+        @Override
+        public void setAlpha(int a) {
+            p.setAlpha(a);
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter cf) {
+            p.setColorFilter(cf);
+        }
+
+        @Override
+        public int getOpacity() {
+            return android.graphics.PixelFormat.TRANSLUCENT;
+        }
+    }
+
     private static final String TAG_EXPLAIN = "tool_explain";
     private static final String TAG_EXPLAIN_BODY = "tool_explain_body";
     private static final String TAG_EXPLAIN_ICON = "tool_explain_icon";
     private static final String TAG_EXPLAIN_ARROW = "tool_explain_arrow";
+    /** 翻译行右端的耗时文字 */
+    private static final String TAG_EXPLAIN_MS = "tool_explain_ms";
+    private static final String TAG_LIVE_LOG = "tool_live_log";
+    private static final String TAG_LIVE_CARET = "tool_live_caret";
+    private static final String TAG_SUBLINE = "tool_subline";
+    /** 动作条上那个极小的整轮总耗时 */
+    private static final String TAG_MSG_COST = "msg_cost";
 
     /**
      * 绿框下面那条独立翻译行：机器动作在上面（命令原文），人话在下面（中文解析）。
      * 两框等宽并落在同一条竖线上，一行只说一句，读起来是"动作 → 解释"的垂直节奏。
      */
-    private TextView updateToolExplain(TextView tv, String text, int color) {
-        if (tv == null) return null;
-        Object o = tv.getTag();
-        if (!(o instanceof View)) return null;
-        View wrap = (View) o;
-        if (!(wrap.getParent() instanceof LinearLayout)) return null;
-        LinearLayout parent = (LinearLayout) wrap.getParent();
+    /** 这一行当前挂着的原始命令（可能为空：结果回填时不一定带 args） */
+    private String cmdOfRow(TextView tv) {
+        int i = toolRows.indexOf(tv);
+        if (i >= 0 && i < toolRowArgs.size()) {
+            String a = toolRowArgs.get(i);
+            return a == null ? "" : a;
+        }
+        return "";
+    }
 
-        int at = parent.indexOfChild(wrap);
-        LinearLayout box = null;
-        if (at >= 0 && at + 1 < parent.getChildCount()) {
-            View nx = parent.getChildAt(at + 1);
-            if (TAG_EXPLAIN.equals(nx.getTag()) && nx instanceof LinearLayout) {
-                box = (LinearLayout) nx;
+    /**
+     * 把中文解释里与调用行重复的部分抠掉，只留新增信息。
+     *
+     * 例：「正在执行 gradle assembleRelease 构建」+ cmd=gradle assembleRelease
+     *     → 「正在执行 构建」→「正在执行构建」
+     * 如果抠完什么都不剩，说明这句翻译没有任何新信息，整行收掉，
+     * 宁可少一行，也不要让同一件事在同一个卡片里说两遍。
+     */
+    private String dedupExplain(String zh, String cmd) {
+        if (zh == null || zh.isEmpty()) return "";
+        if (cmd == null || cmd.trim().isEmpty()) return zh;
+        String out = zh;
+        String whole = briefText(cmd.trim());
+
+        if (whole.length() >= 4 && out.contains(whole)) {
+            out = out.replace(whole, " ");
+        } else {
+            // 命令常被拆进句子里（「读取 app/build.gradle 的版本号」），按空白切词抠。
+            // 但只允许抠一处：抠两处以上会把句子拆碎
+            //（「在 /root/x 里搜索 Toolchain」会变成「在里搜索」），宁可留着重复
+            String hit = null;
+            int hits = 0;
+            for (String tok : whole.split("\\s+")) {
+                if (tok.length() >= 4 && out.contains(tok)) {
+                    hits++;
+                    hit = tok;
+                }
             }
-        }
-        if (box == null) {
-            box = makeExplainBox();
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            // 无框方案下两者都以气泡内边距为基准，天然对齐，不用再外扩
-            lp.topMargin = dp(4);
-            lp.bottomMargin = dp(9);
-            parent.addView(box, at + 1, lp);
+            if (hits == 1) out = out.replace(hit, " ");
         }
 
-        TextView body = (TextView) box.findViewWithTag(TAG_EXPLAIN_BODY);
-        if (body == null) return null;
-        if (text != null && text.contentEquals(body.getText())) return body;
-        // 动作段加粗提亮、结果段降一档：一句话里也有主次，不是一坨同色小字
-        body.setText(styledExplain(text, color));
-        // 「译」章吃状态色：这一行唯一的高饱和落点，扫一眼就知道这步跑成没成
-        View tagView = box.findViewWithTag(TAG_EXPLAIN_ICON);
-        if (tagView instanceof TextView) {
-            TextView tg = (TextView) tagView;
-            tg.setTextColor(soften(color, 0.85f));
-            tg.setBackground(Ui.roundRect(this, (color & 0x00FFFFFF) | Palette.c(0x4A000000), 0, 4f));
+        out = out.replaceAll("\\s{2,}", " ").trim();
+        // 去掉命令后，中文之间会留下一道缝（「读取 的版本号」），把它补回去
+        out = out.replaceAll("(?<=[\\u4e00-\\u9fa5\\u00b7]) (?=[\\u4e00-\\u9fa5\\u00b7])", "");
+        out = out.replaceAll("^[\\s，,、:：·—]+", "");
+        out = out.replaceAll("[\\s，,、·—]+$", "");
+        // 只剩标点或一两个字，就等于没说，收掉
+        if (out.replaceAll("[\\p{Punct}\\s]", "").length() < 2) return "";
+        return out;
+    }
+
+    private TextView updateToolExplain(TextView tv, String text, int color) {
+        return updateToolExplain(tv, text, color, false);
+    }
+
+    /**
+     * running=true：这一步还没跑完，文字上扫光、右端秒数跳动，充当监控行；
+     * false：跑完了，光停、文字定格成翻译，秒数定格成最终耗时。
+     */
+    private TextView updateToolExplain(TextView tv, String text, int color, boolean running) {
+        if (tv == null) return null;
+        setZh(tv, text == null ? "" : text);
+
+        // 翻译行不再翻译：直接摆这一步的代码原文。
+        // 中文解释十次有八次是把命令重念一遍，扣掉重复段后经常只剩一个空行；
+        // 而"到底跑了哪行命令"才是回头查问题时要盯的东西。
+        // 运行状态不靠这行字表达——银色光扫在跑，光一停就是停了
+        String code = cmdOfRow(tv);
+        if (code == null || code.trim().isEmpty()) code = zhOf(tv);
+        code = code.replace("\r", " ").replace("\n", " ").trim();
+        setSubline(tv, code, color, !code.isEmpty());
+
+        // 光扫的开关不在这里——这里只是换文字，换文字不代表状态变了。
+        // 之前在这里按 running 停扫，而几乎所有调用点都不传 running（缺省 false），
+        // 于是 fillToolRow 刚起的光，下一行文字刷新就被这里掐掉，界面上只剩一行死字。
+        // 现在光扫只由 fillToolRow 按行的真实状态（st == ST_RUN）开关，这里只管颜色
+        if (tv instanceof com.nebula.aichat.ui.ShimmerTextView) {
+            com.nebula.aichat.ui.ShimmerTextView sh =
+                    (com.nebula.aichat.ui.ShimmerTextView) tv;
+            sh.stopShimmer();
+            sh.stopWave();
+            sh.setColors(color, color);
+            sh.setTextColor(color);
         }
-        return body;
+        return tv;
     }
 
     /**
@@ -4219,43 +5546,20 @@ public class MainActivity extends AppCompatActivity {
         SpannableStringBuilder sb = new SpannableStringBuilder(src);
         int cut = src.indexOf(" \u00b7 ");
         int actEnd = cut < 0 ? sb.length() : cut;
-        // 动作段内部再分两级：动作词（执行 / 读取文件 / 在工程里搜索）最亮且加粗，
-        // 后面跟着的命令、路径降一档。之前两者同色同粗，一条长命令铺开之后
-        // 分不清"在干什么"和"在操作什么"，视线找不到落点。
-        int wordEnd = actionWordEnd(src, actEnd);
-        sb.setSpan(new StyleSpan(Typeface.BOLD), 0, wordEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        sb.setSpan(new ForegroundColorSpan(soften(color, 0.98f)), 0, wordEnd,
+        sb.setSpan(new StyleSpan(Typeface.BOLD), 0, actEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        sb.setSpan(new ForegroundColorSpan(soften(color, 0.28f)), 0, actEnd,
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        if (wordEnd < actEnd) {
-            sb.setSpan(new ForegroundColorSpan(soften(color, 0.66f)), wordEnd, actEnd,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
         if (cut >= 0) {
             sb.setSpan(new ForegroundColorSpan(Palette.c(0x66FFFFFF)), cut, cut + 3,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             // 结果段整段定调：失败偏红、成功贴着状态色，"成没成"不用逐字读
             boolean bad = P_ERR.matcher(src.substring(cut + 3)).find();
-            sb.setSpan(new ForegroundColorSpan(bad ? Palette.c(0xFFFFB9B9) : soften(color, 0.60f)),
+            sb.setSpan(new ForegroundColorSpan(bad ? Palette.c(0xFFFF8080) : soften(color, 0.10f)),
                     cut + 3, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         // 路径、文件名、数字、命令参数、错误词各自标记：一句中文里也能直接跳到重点
         markKeyInfo(sb, 0, sb.length(), color, true);
         return sb;
-    }
-
-    /**
-     * 动作词到哪儿结束。中文动作词后面跟的要么是"空格 + 参数"（执行 cd、浏览目录 /root），
-     * 要么是"「 + 名字"（在工程里搜索「x」、把应用名改成「x」）；两种都没有就整段算动作词。
-     */
-    private static int actionWordEnd(String src, int actEnd) {
-        if (actEnd <= 0) return 0;
-        int e = actEnd;
-        int sp = src.indexOf(' ');
-        int br = src.indexOf('\u300c');
-        if (sp >= 0 && sp < e) e = sp;
-        if (br >= 0 && br < e) e = br;
-        // 至少留一个字当动作词，避免整个动作段都被判成参数
-        return e > 0 ? e : actEnd;
     }
 
     /** 关键信息的正则：路径 / 文件名 / 数字+单位 / 命令参数 / 错误词 */
@@ -4285,21 +5589,21 @@ public class MainActivity extends AppCompatActivity {
         java.util.regex.Matcher mp = P_PATH.matcher(sub);
         while (mp.find()) {
             int a = start + mp.start(), b = start + mp.end();
-            sb.setSpan(new ForegroundColorSpan(soften(color, 0.95f)), a, b, EX);
+            sb.setSpan(new ForegroundColorSpan(soften(color, 0.55f)), a, b, EX);
             if (pathMono) sb.setSpan(new android.text.style.TypefaceSpan("monospace"), a, b, EX);
             sb.setSpan(new BackgroundColorSpan((color & 0x00FFFFFF) | Palette.c(0x3A000000)), a, b, EX);
         }
         java.util.regex.Matcher mf = P_FILE.matcher(sub);
         while (mf.find()) {
             int a = start + mf.start(), b = start + mf.end();
-            sb.setSpan(new ForegroundColorSpan(soften(color, 0.92f)), a, b, EX);
+            sb.setSpan(new ForegroundColorSpan(soften(color, 0.50f)), a, b, EX);
             if (pathMono) sb.setSpan(new android.text.style.TypefaceSpan("monospace"), a, b, EX);
             sb.setSpan(new BackgroundColorSpan((color & 0x00FFFFFF) | Palette.c(0x2E000000)), a, b, EX);
         }
         java.util.regex.Matcher mg = P_FLAG.matcher(sub);
         while (mg.find()) {
             int a = start + mg.start(), b = start + mg.end();
-            sb.setSpan(new ForegroundColorSpan(soften(color, 0.80f)), a, b, EX);
+            sb.setSpan(new ForegroundColorSpan(soften(color, 0.38f)), a, b, EX);
             if (pathMono) sb.setSpan(new android.text.style.TypefaceSpan("monospace"), a, b, EX);
         }
         java.util.regex.Matcher mn = P_NUM.matcher(sub);
@@ -4309,18 +5613,30 @@ public class MainActivity extends AppCompatActivity {
             if (g.trim().length() < 2) continue;
             int a = start + mn.start(), b = start + mn.end();
             sb.setSpan(new StyleSpan(Typeface.BOLD), a, b, EX);
-            sb.setSpan(new ForegroundColorSpan(Palette.c(0xFFFFFFFF)), a, b, EX);
+            sb.setSpan(new ForegroundColorSpan(soften(color, 0.62f)), a, b, EX);
         }
         java.util.regex.Matcher me = P_ERR.matcher(sub);
         while (me.find()) {
             int a = start + me.start(), b = start + me.end();
             sb.setSpan(new StyleSpan(Typeface.BOLD), a, b, EX);
-            sb.setSpan(new ForegroundColorSpan(Palette.c(0xFFFF9A9A)), a, b, EX);
+            sb.setSpan(new ForegroundColorSpan(Palette.c(C_FAIL)), a, b, EX);
             sb.setSpan(new BackgroundColorSpan(Palette.c(0x46FF5A5A)), a, b, EX);
         }
     }
 
     /** 把颜色往白里提 t 倍：保留色相的"状态感"，同时压低饱和度免得小字刺眼 */
+    /** 把 over 按 t 混进 base。soften 是往白色提亮，只会让字更抢眼；
+     *  注释层要的是相反方向——沉下去，所以单独一个朝灰蓝靠的函数 */
+    private static int mix(int base, int over, float t) {
+        int a = (base >>> 24) & 0xFF;
+        int r = (base >> 16) & 0xFF, g = (base >> 8) & 0xFF, b = base & 0xFF;
+        int r2 = (over >> 16) & 0xFF, g2 = (over >> 8) & 0xFF, b2 = over & 0xFF;
+        r = Math.round(r + (r2 - r) * t);
+        g = Math.round(g + (g2 - g) * t);
+        b = Math.round(b + (b2 - b) * t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
     private static int soften(int color, float t) {
         int a = (color >>> 24) & 0xFF;
         int r = (color >> 16) & 0xFF, g = (color >> 8) & 0xFF, b = color & 0xFF;
@@ -4342,58 +5658,89 @@ public class MainActivity extends AppCompatActivity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setTag(TAG_EXPLAIN);
-        // 比工具框的 14dp 收紧一档：二级信息不该和一级卡片同样"厚"
-        // 无边框：不再画描边和渐变底，只留按下反馈
+        // 按下反馈只到"能感觉到"为止：翻译行是二级信息，底色一重就抢了工具行的戏
         android.graphics.drawable.StateListDrawable sld =
                 new android.graphics.drawable.StateListDrawable();
         sld.addState(new int[]{android.R.attr.state_pressed},
-                Ui.roundRect(this, Palette.c(0x1CFFFFFF), 0, 8f));
-        sld.addState(new int[]{}, Ui.roundRect(this, 0x00000000, 0, 8f));
+                Ui.roundRect(this, Palette.c(0x14FFFFFF), 0, 6f));
+        sld.addState(new int[]{}, Ui.roundRect(this, 0x00000000, 0, 6f));
         row.setBackground(sld);
 
-        // 行首「译」方章：上面工具行是圆形状态图标（转圈/勾/叉），这里是方块字章，
-        // 形状完全不同，眼睛不会把「执行状态」和「中文解释」看成一回事。
-        TextView tag = new TextView(this);
-        tag.setTag(TAG_EXPLAIN_ICON);
-        tag.setText("译");
-        tag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
-        tag.setTypeface(Typeface.DEFAULT_BOLD);
-        tag.setGravity(Gravity.CENTER);
-        tag.setTextColor(Palette.c(0xFFB6C7D9));
-        tag.setBackground(Ui.roundRect(this, Palette.c(0x2E9DB2CC), 0, 4f));
-        // 18 + 12 = 30dp，与工具行「20dp 图标 + 10dp 间距」的正文左缘对齐
-        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(20), dp(18));
-        ilp.leftMargin = dp(0);
-        ilp.rightMargin = dp(10);
-        row.addView(tag, ilp);
+        // 行首一条引线，是「引用」不是「标记」。
+        // 上一版只给了 15dp 高，而这一行本身有 28dp 左右——线短一截，
+        // 看上去就是根断了的短棍；右边再留 19dp 空隙，它就彻底悬在半空。
+        // 现在：高度贴着文字块（单行 22dp，展开时按实际高度拉伸），
+        // 两端做透明度渐变自然淡出，右边距收到 11dp 紧挨着文字。
+        View bar = new View(this);
+        bar.setTag(TAG_EXPLAIN_ICON);
+        bar.setBackground(quoteBar(Palette.c(C_TEXT2)));
+        // 左 8 + 线 2 + 间距 11 = 21dp：正文比工具行正文(30dp)略微凸出。
+        // 引用块本来就把边界放在正文外侧，这种悬垂缩进读起来才像"附注"，
+        // 硬对齐到 30dp 反而会让竖线远离文字、凭空多出一段空白。
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(dp(2), dp(22));
+        blp.leftMargin = dp(8);
+        blp.rightMargin = dp(11);
+        row.addView(bar, blp);
 
-        TextView t = new TextView(this);
+        // 用 ShimmerTextView：这一行既是“翻译行”也是“监控行”——
+        // 跑的时候光扫过文字（还活着），跑完光停、文字定格成翻译。
+        // 两件事一处占位，不必在气泡底部再挂一条重复的横幅
+        com.nebula.aichat.ui.ShimmerTextView t = new com.nebula.aichat.ui.ShimmerTextView(this);
+        t.setColors(0xFF9FB2C6, 0xFFCFE4F5);
         t.setTag(TAG_EXPLAIN_BODY);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        // 展开成多行时要好看：行距放宽一点，底色块之间不互相挤
-        t.setLineSpacing(dp(2), 1.25f);
+        // 12.5sp：比正文小半档，又不至于小到要凑近看。
+        // 解释文字是"读得快"的文字，字号偏小反而顺，关键是行距要松。
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        t.setLineSpacing(dp(3), 1.3f);
         // 单行固定高度：每一步都一样高，滚动时不会忽高忽低地"波动"；
         // 内容长就省略尾，想看全点行尾箭头松开行数
         t.setSingleLine(true);
         t.setEllipsize(TextUtils.TruncateAt.END);
-        t.setPadding(dp(0), dp(7), dp(6), dp(7));
-        t.setTextColor(Palette.c(0xFFC6D5E6));
+        t.setPadding(dp(0), dp(6), dp(7), dp(6));
+        t.setTextColor(Palette.c(0xFF9FB2C6));
         row.addView(t, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        // 行尾下拉箭头：点了把这一句中文从单行放成多行
+        // 耗时贴在最右端、箭头左边：和这句中文是同一次调用的产物，挨着放才对得上。
+        // 9.5sp 等宽 + 低对比色，读的时候是"存在但不打扰"。
+        TextView msTv = new TextView(this);
+        msTv.setTag(TAG_EXPLAIN_MS);
+        msTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        msTv.setTypeface(Typeface.MONOSPACE);
+        msTv.setTextColor(Palette.c(0xFF7C8A96));
+        msTv.setGravity(Gravity.CENTER_VERTICAL);
+        msTv.setPadding(dp(8), 0, dp(2), 0);
+        msTv.setVisibility(View.GONE);
+        row.addView(msTv, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // 行尾箭头：点一下把这一句中文从单行放成多行。
+        // 收到 15dp、压到 0xFF5A6775 —— 它是个"提示还有内容"的符号，不该有存在感
         ImageView ar = new ImageView(this);
         ar.setTag(TAG_EXPLAIN_ARROW);
-        ar.setImageDrawable(new ChevronDrawable(Palette.c(0xFF6E7C8E)));
+        ar.setImageDrawable(new ChevronDrawable(Palette.c(0xFF5A6775)));
         ar.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        LinearLayout.LayoutParams arlp = new LinearLayout.LayoutParams(dp(17), dp(17));
-        arlp.leftMargin = dp(2);
+        LinearLayout.LayoutParams arlp = new LinearLayout.LayoutParams(dp(15), dp(15));
+        arlp.leftMargin = dp(1);
         row.addView(ar, arlp);
 
         row.setOnClickListener(v -> toggleExplainExpand(row));
         return row;
     }
 
+    /** 翻译行左侧引线：两端透明、中段实色，上下自然淡出，不会像被硬切一刀 */
+    private android.graphics.drawable.Drawable quoteBar(int color) {
+        int rgb = color & 0x00FFFFFF;
+        int mid = rgb | (0xA0 << 24);
+        int end = rgb;
+        android.graphics.drawable.GradientDrawable gd =
+                new android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[]{end, mid, mid, mid, end});
+        return gd;
+    }
+
+    /** 点翻译行：单行 ⇄ 多行，箭头跟着翻 */
     /** 点翻译行：单行 ⇄ 多行，箭头跟着翻 */
     private void toggleExplainExpand(LinearLayout row) {
         if (row == null) return;
@@ -4410,19 +5757,61 @@ public class MainActivity extends AppCompatActivity {
             body.setMaxLines(1);
             body.setEllipsize(TextUtils.TruncateAt.END);
         }
-        if (arrow != null) arrow.animate().rotation(expand ? 180f : 0f).setDuration(180).start();
+        // 引线要跟着文字长，否则展开成一屏后只剩顶上短短一截，像断了。
+        // 高度取"文字块实测高度 - 两端的淡出段"，布局完成后再量一次最准。
+        final View bar = (View) row.findViewWithTag(TAG_EXPLAIN_ICON);
+        if (bar != null) {
+            if (expand) {
+                body.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        int h = body.getHeight();
+                        if (h <= dp(12)) return;
+                        LinearLayout.LayoutParams blp =
+                                (LinearLayout.LayoutParams) bar.getLayoutParams();
+                        blp.height = h - dp(6);
+                        blp.topMargin = dp(3);
+                        bar.setLayoutParams(blp);
+                    }
+                });
+            } else if (bar.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+                LinearLayout.LayoutParams blp = (LinearLayout.LayoutParams) bar.getLayoutParams();
+                blp.height = dp(22);
+                blp.topMargin = 0;
+                bar.setLayoutParams(blp);
+            }
+        }
+        row.setGravity(expand ? Gravity.TOP : Gravity.CENTER_VERTICAL);
+        if (arrow != null) arrow.animate().rotation(expand ? 180f : 0f).setDuration(200).start();
     }
 
     /** 找已经建好的详情区。不能按下标取——中间还隔着一行中文解析 */
-    private static LinearLayout findDetailArea(LinearLayout wrap) {
-        if (wrap == null) return null;
-        for (int i = 0; i < wrap.getChildCount(); i++) {
-            View v = wrap.getChildAt(i);
+    private static LinearLayout findDetailArea(View wrap) {
+        return wrap instanceof ViewGroup ? findDetailIn((ViewGroup) wrap) : null;
+    }
+
+    /** 展开区现在挂在卡片里，不再和头行平级，所以得往下找一层 */
+    private static LinearLayout findDetailIn(ViewGroup g) {
+        for (int i = 0; i < g.getChildCount(); i++) {
+            View v = g.getChildAt(i);
             if (v instanceof LinearLayout && v.getTag() instanceof Detail) {
                 return (LinearLayout) v;
             }
+            if (v instanceof ViewGroup) {
+                LinearLayout r = findDetailIn((ViewGroup) v);
+                if (r != null) return r;
+            }
         }
         return null;
+    }
+
+    /** 卡片本体：展开区要挂进卡片，不能挂到外框上，否则会压到左侧时间轴 */
+    private static ViewGroup cardOf(View wrap) {
+        if (wrap instanceof ViewGroup) {
+            View c = wrap.findViewWithTag(TAG_TOOL_CARD);
+            if (c instanceof ViewGroup) return (ViewGroup) c;
+        }
+        return wrap instanceof ViewGroup ? (ViewGroup) wrap : null;
     }
 
     /** 从参数 JSON 里挑一个字段值；取不到返回空串，绝不让解析层抛异常 */
@@ -4516,6 +5905,8 @@ public class MainActivity extends AppCompatActivity {
             case "build_apk":
                 what = "编译工程" + (project.trim().isEmpty() ? "" : "「" + cut(project, 18) + "」");
                 break;
+            case "bash_exec":
+            // 旧会话里的历史消息还叫 run_shell，得继续认得出来
             case "run_shell":
                 what = cmd.trim().isEmpty() ? "执行一条命令" : "执行 " + cut(cmd, 46);
                 break;
@@ -4607,7 +5998,9 @@ public class MainActivity extends AppCompatActivity {
         det.addView(sc, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         det.setTag(d);
-        wrap.addView(det, new LinearLayout.LayoutParams(
+        ViewGroup cardHost = cardOf(wrap);
+        if (cardHost == null) cardHost = wrap;
+        cardHost.addView(det, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return det;
     }
@@ -4812,7 +6205,8 @@ public class MainActivity extends AppCompatActivity {
 
     private LinearLayout ensureToolGroup() {
         if (toolGroupBox != null) return toolGroupBox;
-        LinearLayout host = streamContent != null ? streamContent : chatContainer;
+        LinearLayout host = toolHost != null ? toolHost
+                : (streamContent != null ? streamContent : chatContainer);
 
         final TextView head = new TextView(this);
         head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
@@ -4842,35 +6236,35 @@ public class MainActivity extends AppCompatActivity {
         return box;
     }
 
-    /** 一个组里只让最后一步露脸，其余 GONE；点一下提示行就全摊开 */
+    /** 思考块内部三件套的 tag：正文边想边长、标题承载秒数、扫光负责「还在思考」 */
+    /** 思考进行中的标题文案：和结束后的「思考内容」区分开 */
+    private static final String THINK_LIVE_TITLE = "思考中";
+    private static final String TAG_THINK_BODY = "think_body";
+    private static final String TAG_THINK_LABEL = "think_label";
+    private static final String TAG_THINK_SWEEP = "think_sweep";
+    private static final String TAG_THINK_CHEVRON = "think_chev";
+    /** 状态行与正文之间那条 1dp 渐隐分隔线：撤状态行时得连它一起撤 */
+    private static final String TAG_THINK_HAIR = "think_hair";
+
+    /**
+     * 平铺：组里每一步都露着。
+     *
+     * <p>以前这里只让最后一步露脸，其余收起来配一行「前面还有 N 步」，
+     * 想法是省地方。实际用下来，被收掉的正是「它到底做了哪些事」，
+     * 用户还得再点一次才看得见——干脆全展开，气泡里的过程按发生顺序
+     * 从上往下读，不用二次操作。</p>
+     *
+     * @param open 保留参数只为调用点不动；现在无论传什么都全展开
+     */
     private void applyToolGroup(LinearLayout box, TextView head, boolean open) {
         if (box == null) return;
         int n = box.getChildCount();
-        // 找出最后一绿框（工具行），它和紧跟其后的翻译框一起露脸
-        int lastTool = -1;
-        int tools = 0;
         for (int i = 0; i < n; i++) {
             View v = box.getChildAt(i);
-            if (!TAG_EXPLAIN.equals(v.getTag())) {
-                lastTool = i;
-                tools++;
-            }
+            if (v != null) v.setVisibility(View.VISIBLE);
         }
-        if (lastTool < 0) lastTool = n - 1;
-        for (int i = 0; i < n; i++) {
-            View v = box.getChildAt(i);
-            boolean show = open || i == lastTool
-                    || (i == lastTool + 1 && TAG_EXPLAIN.equals(v.getTag()));
-            v.setVisibility(show ? View.VISIBLE : View.GONE);
-        }
-        if (head == null) return;
-        if (tools <= 1) {
-            head.setVisibility(View.GONE);
-            return;
-        }
-        head.setVisibility(View.VISIBLE);
-        head.setText(open ? "收起上面的 " + (tools - 1) + " 步"
-                : "前面还有 " + (tools - 1) + " 步 · 点此展开");
+        // 「前面还有 N 步」这条提示行本身没有存在意义了
+        if (head != null) head.setVisibility(View.GONE);
     }
 
     private void refreshToolGroup() {
@@ -4886,6 +6280,31 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /** 正文接上了，这一组工具到此为止；后面的调用另起一组 */
+    /**
+     * 把"当前这段思考"落成一条 step。
+     *
+     * <p>实时界面里思考是分段显示的（每次调用前一段、最终回答前一段），
+     * 但过去只把整轮 reasoning 存成一整坨，重开会话就还原不出"哪段思考对应哪次调用"。
+     * 这里在"这段思考结束"的时刻把它按段存进时间线，历史回放才能和实时一样交错。
+     * 用 thinkSegStart 做游标，重复调用不会把一个字存两遍。</p>
+     */
+    private void takeThinkStep() {
+        if (tlSteps == null || thinkBuf == null) return;
+        int len = thinkBuf.length();
+        if (len <= thinkSegStart) return;
+        String part = thinkBuf.substring(thinkSegStart, len);
+        thinkSegStart = len;
+        if (part.trim().isEmpty()) return;
+        com.nebula.aichat.data.Message.Step st = new com.nebula.aichat.data.Message.Step();
+        st.type = com.nebula.aichat.data.Message.Step.THINK;
+        st.text = part;
+        long now = SystemClock.uptimeMillis();
+        long from = thinkSegAt > 0 ? thinkSegAt : thinkStartAt;
+        if (from > 0 && now > from) st.ms = now - from;
+        thinkSegAt = now;
+        tlSteps.add(st);
+    }
+
     private void closeToolGroup() {
         if (toolGroupBox != null) refreshToolGroup();
         toolGroupBox = null;
@@ -4894,92 +6313,127 @@ public class MainActivity extends AppCompatActivity {
 
     // ------------------------------------------------------------ 过程收纳
 
-    /** 过程区折叠头：一轮答完只剩这一行，点箭头才摊开过程 */
-    private static final String TAG_PROC_FOLD = "proc_fold";
+    /**
+     * 秒数的唯一落点：写在思考块的标题行上。
+     *
+     * <p>气泡里已经没有折叠头了——过程全部平铺，没有「一行标题」可以挂秒数，
+     * 于是回到最自然的位置：思考块自己的标题。一轮里也只有这一处，
+     * 不会出现两个数字打架。</p>
+     *
+     * @return 写进去了就 true；没有思考块（这轮没产生推理内容）就 false，交给调用方兜底
+     */
+    private boolean putThinkSecs(LinearLayout host, long thinkMs) {
+        if (thinkMs <= 0) return false;
+        TextView lb = null;
+        // 实时的思考块挂在气泡里、和正文内容区平级，从内容区往下找是找不到的
+        if (liveThinkBox != null) {
+            View v = liveThinkBox.findViewWithTag(TAG_THINK_LABEL);
+            if (v instanceof TextView) lb = (TextView) v;
+        }
+        if (lb == null && host != null) {
+            View v = host.findViewWithTag(TAG_THINK_LABEL);
+            if (v instanceof TextView) lb = (TextView) v;
+        }
+        if (lb == null) return false;
+        lb.setText("思考 \u00b7 " + fmtSecs(thinkMs));
+        return true;
+    }
+
+    /** 秒数文案：一分钟以内保留一位小数，超过换成「1 分 05 秒」 */
+    private static String fmtSecs(long ms) {
+        if (ms < 60000L) return String.format(Locale.US, "%.1f 秒", ms / 1000.0);
+        long s = Math.round(ms / 1000.0);
+        return (s / 60) + " 分 " + String.format(Locale.US, "%02d", s % 60) + " 秒";
+    }
+
+    /** 本轮答完：过程不再收起，只把秒数落到唯一该出现的位置 */
+    private void collapseStreamProcess() {
+        stopLiveThink();
+        if (streamContent == null) return;
+        // 有思考块就写在它标题上；没有（这轮压根没推理内容）退回状态行，
+        // 保证「一轮里总有一处能看出思考花了多久」
+        if (putThinkSecs(toolHost != null ? toolHost : streamContent, runThinkMs)) return;
+        if (statusText != null && runThinkMs > 0) {
+            statusText.setText("思考完成 \u00b7 用时 " + fmtSecs(runThinkMs));
+        }
+    }
+
+    // ------------------------------------------------------------ 实时思考块
 
     /**
-     * 把一组过程视图收进「思考完成 ▾」。
+     * 思考进行中就把块立起来：标题整行走光、正文边想边长。
      *
-     * <p>为什么收：工具行和翻译行是内联在正文流里的（不然看不到
-     * 「先说一句 → 跑个命令 → 接着说」这个顺序），代价是答案写完以后，
-     * 读者眼前还散着一堆执行记录。收起来之后气泡里就是干净的一段答案，
-     * 想复盘的人点开箭头，全都还在。</p>
-     *
-     * @param host   过程视图所在的容器（实时是 streamContent，历史是气泡内容区）
-     * @param groups 过程组，每项 = [组头(可空), 组容器]
-     * @param calls  本轮调用次数，写进折叠头给个量感
+     * <p>以前是等思考结束（首个正文到达）才一次性建块，中途界面上只剩状态行
+     * 一个转圈的小图标，看不出模型在干嘛。现在边收边显示，那道扫光就是
+     * 「正在思考」本身的可视化。</p>
      */
-    private void foldProcess(LinearLayout host, java.util.List<View[]> groups, int calls) {
-        if (host == null || groups == null || groups.isEmpty()) return;
-
-        // 组内先摊平并把状态位写回 tag：外层展开一次就能看全，也不会被后续 refresh 又收回去
-        for (View[] g : groups) {
-            if (g != null && g.length > 1 && g[1] instanceof LinearLayout) {
-                LinearLayout box = (LinearLayout) g[1];
-                box.setTag(Boolean.TRUE);
-                applyToolGroup(box, (TextView) g[0], true);
-            }
+    private void ensureLiveThink() {
+        if (liveThinkBox != null) return;
+        // 思考段挂进"过程流"（工具行那个容器）：本轮所有调用行都追加在它前面，
+        // 于是天然形成 调用 → 思考 → 调用 → 思考 的交替顺序。
+        // 单独搞一个 thinkHost 的结果是所有调用堆在顶部、所有思考挤在下面一块，
+        // 看不出对应关系，所以这里彻底并到同一个流里。
+        LinearLayout host = toolHost != null ? toolHost
+                : (streamContent != null ? streamContent : null);
+        if (host == null) return;
+        // 当前工具组先收口：下一次调用要另起一组，才会排在本文思考段之后
+        closeToolGroup();
+        View box = buildThinkBox("", null);
+        TextView lb = box.findViewWithTag(TAG_THINK_LABEL);
+        if (lb != null) lb.setText(THINK_LIVE_TITLE);
+        // 思考中这行文字横向滚动：一行装不下就一直滚，滚完这轮就轮到下一次调用
+        TextView b = thinkBodyOf(box);
+        if (b != null) {
+            b.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+            b.setMarqueeRepeatLimit(-1);
+            b.setHorizontallyScrolling(true);
+            b.setSelected(true);
         }
+        host.addView(box);
+        liveThinkBox = box;
+    }
 
-        // 同一气泡只留一个折叠头（重试或补渲染会再调一次）
-        View stale = host.findViewWithTag(TAG_PROC_FOLD);
-        if (stale != null) host.removeView(stale);
-
-        final TextView head = new TextView(this);
-        head.setTag(TAG_PROC_FOLD);
-        head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        head.setTextColor(Palette.c(0xFF8A9CB4));
-        head.setPadding(dp(2), dp(4), dp(2), dp(6));
-        head.setIncludeFontPadding(false);
-        head.setClickable(true);
-        head.setSelected(false);          // selected 兼作「已展开」状态位
-        head.setText(procFoldLabel(calls, false));
-        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        hlp.topMargin = dp(2);
-        hlp.bottomMargin = dp(2);
-
-        // 插到第一个过程视图之前：正文段不会被挤到折叠头上面去
-        int at = 0;
-        for (View[] g : groups) {
-            int i = (g != null && g.length > 1 && g[1] != null) ? host.indexOfChild(g[1]) : -1;
-            if (i >= 0) {
-                at = i;
-                break;
-            }
+    /** 思考片段到了就追加一行字；不再重复建块 */
+    private void appendLiveThink(String piece) {
+        if (piece == null || piece.isEmpty()) return;
+        ensureLiveThink();
+        if (liveThinkBox == null) return;
+        TextView body = thinkBodyOf(liveThinkBox);
+        if (body == null) return;
+        if (body.length() < 40000) body.append(piece);
+        // 一轮任务里模型会来回思考好几次（每次工具返回都可能再想一遍）：
+        // 标题要回到「思考中」，否则第二段思考看着像已经结束了
+        TextView lb = liveThinkBox.findViewWithTag(TAG_THINK_LABEL);
+        if (lb != null && !THINK_LIVE_TITLE.contentEquals(lb.getText())) {
+            lb.setText(THINK_LIVE_TITLE);
         }
-        host.addView(head, at, hlp);
-
-        final java.util.List<View[]> gs = groups;
-        head.setOnClickListener(v -> {
-            boolean open = !v.isSelected();
-            v.setSelected(open);
-            ((TextView) v).setText(procFoldLabel(calls, open));
-            for (View[] g : gs) setProcVisible(g, open);
-            if (!open) scrollToBottom(false);   // 收起后高度变矮，贴回底部不跳
-        });
-
-        // 默认收起：一轮答完，读者要看的是答案
-        for (View[] g : gs) setProcVisible(g, false);
+        // 展开看全文时内容会一直变长，视图要跟着走
+        if (body.getMaxLines() != 1) scrollToBottom(false);
     }
 
-    private static String procFoldLabel(int calls, boolean open) {
-        String arrow = open ? "\u25b4" : "\u25be";   // ▴ / ▾
-        return calls > 0 ? "思考完成 \u00b7 " + calls + " 次调用 " + arrow
-                : "思考完成 " + arrow;
+    /** 思考结束：这一行停止滚动、收回到一行，标题从「思考中」换回「思考」 */
+    private void stopLiveThink() {
+        if (liveThinkBox == null) return;
+        TextView lb = liveThinkBox.findViewWithTag(TAG_THINK_LABEL);
+        if (lb != null) lb.setText("思考");
+        TextView body = thinkBodyOf(liveThinkBox);
+        if (body != null && body.getMaxLines() == 1) {
+            body.setSelected(false);
+            body.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        }
     }
 
-    private void setProcVisible(View[] g, boolean visible) {
-        if (g == null || g.length < 2) return;
-        if (g[1] != null) g[1].setVisibility(visible ? View.VISIBLE : View.GONE);
-        // 组头（「前面还有 N 步」那条）收起时一并藏掉；展开时交回 applyToolGroup 决定
-        if (!visible && g[0] != null) g[0].setVisibility(View.GONE);
+    private TextView thinkBodyOf(View box) {
+        if (box == null) return null;
+        View v = box.findViewWithTag(TAG_THINK_BODY);
+        return v instanceof TextView ? (TextView) v : null;
     }
 
-    /** 本轮答完：把过程整体收进「思考完成 ▾」 */
-    private void collapseStreamProcess() {
-        if (streamContent == null || procGroups.isEmpty()) return;
-        foldProcess(streamContent, new java.util.ArrayList<>(procGroups), toolRows.size());
+    private com.nebula.aichat.ui.ShimmerSweep thinkSweepOf(View box) {
+        if (box == null) return null;
+        View v = box.findViewWithTag(TAG_THINK_SWEEP);
+        return v instanceof com.nebula.aichat.ui.ShimmerSweep
+                ? (com.nebula.aichat.ui.ShimmerSweep) v : null;
     }
 
     private TextView newToolRow() {
@@ -5104,6 +6558,31 @@ public class MainActivity extends AppCompatActivity {
      *     两行，白吃竖直空间。
      *  5. 不写解释型文案（"没卡住""现在已经停了"），那是提示条的语气，不是产品。
      */
+    /**
+     * 运行横幅 ——「扫描线」款。
+     *
+     * <p>只留三层信息：状态标签（执行中/完成）、一句话说清在干什么、耗时。
+     * 整条只有一处动效：底部一条同色光带以 2.2s 的节奏缓慢扫过。它表示"还在动"，
+     * 不表示进度。工具调用的耗时不可预测，任何匀速推进的动画都在暗示一个假进度，
+     * 跑完一圈又从头开始，看着比不动更焦虑——所以这里刻意不给进度感。</p>
+     *
+     * <p>去掉了胶囊底、兔子和并发动画。气泡底部本来就有工具行在报同样的工具名和耗时，
+     * 横幅要是再堆动效，就是两个东西在抢同一句话的解释权。</p>
+     */
+    /**
+     * 运行横幅 ——「流光」最终版。
+     *
+     * <p>整条只有一句话、一个标签、一个用时，和一个动效：光扫过文字。</p>
+     *
+     * <p>三条设计原则：</p>
+     * <ol>
+     *   <li><b>不假装进度。</b>工具调用的耗时不可预测，任何"跑满全宽"的动画都在暗示
+     *       一个假百分比。所以底部跑马灯去掉了，改由文字自己发一道光——它只说"还活着"。</li>
+     *   <li><b>说人话。</b>「读取 build.gradle」而不是 read_file，用户不需要认识工具名。</li>
+     *   <li><b>不做多余的呼吸。</b>竖条、标签、秒数全部静止。整条横只有一个运动物体，
+     *       视线才不会被三处动效拆散。</li>
+     * </ol>
+     */
     private LinearLayout buildRunBanner() {
         LinearLayout wrap = new LinearLayout(this);
         wrap.setOrientation(LinearLayout.VERTICAL);
@@ -5111,102 +6590,80 @@ public class MainActivity extends AppCompatActivity {
 
         final android.widget.FrameLayout bar = new android.widget.FrameLayout(this);
         bar.setVisibility(View.GONE);
-        bar.setClipChildren(true);          // 进度条滑出边界要裁掉
+        bar.setClipChildren(true);
         bar.setClipToPadding(false);
 
         LinearLayout inner = new LinearLayout(this);
         inner.setOrientation(LinearLayout.HORIZONTAL);
         inner.setGravity(Gravity.CENTER_VERTICAL);
-        // 底部留白 19dp 是给兔子跑道让出来的：兔子不再单独占一行，而是贴着底边和流光共线跑
-        inner.setPadding(dp(11), dp(6), dp(12), dp(19));
+        inner.setPadding(dp(9), dp(7), dp(9), dp(7));
 
-        // 左侧短竖条：2dp × 13dp，整条横幅唯一的色源
+        // 左侧 2dp 竖条：整条横幅唯一的色源。中段实色两端透明，像一根引线而不是分隔线
         runBannerRailBg = new View(this);
-        GradientDrawable railBg = new GradientDrawable();
-        railBg.setCornerRadius(dp(1));
-        railBg.setColor(Palette.c(C_RUN));
-        runBannerRailBg.setBackground(railBg);
-        inner.addView(runBannerRailBg, new LinearLayout.LayoutParams(dp(2), dp(13)));
+        runBannerRailBg.setBackground(fadeBar(Palette.c(C_RUN)));
+        inner.addView(runBannerRailBg, new LinearLayout.LayoutParams(dp(2), dp(15)));
 
-        // 主信息：运行时是工具名（等宽），结束时是中文结论
-        runBannerText = new TextView(this);
-        runBannerText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-        runBannerText.setTextColor(Palette.c(0xFFA9B7C9));
-        runBannerText.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
-        runBannerText.setIncludeFontPadding(false);
-        runBannerText.setSingleLine(true);
-        runBannerText.setEllipsize(TextUtils.TruncateAt.END);
+        // 状态标签在最前：先说"在执行"，再说"在干什么"。
+        // 原来是「执行 1.2s」把动词贴在秒数前，读起来成了时间的修饰语，本末倒置。
+        runBannerTimeTag = new TextView(this);
+        runBannerTimeTag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
+        runBannerTimeTag.setTextColor(Palette.c(0xFF5C6B7E));
+        runBannerTimeTag.setIncludeFontPadding(false);
+        runBannerTimeTag.setSingleLine(true);
+        // 小字加字距：排版上"看着高级"最省力的一招，几乎零成本
+        runBannerTimeTag.setLetterSpacing(0.1f);
+        LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tagLp.leftMargin = dp(9);
+        inner.addView(runBannerTimeTag, tagLp);
+
+        // 主信息：中文动作，带流光。
+        // 12.5sp 不加粗 —— 重量交给颜色和那道光，靠字重撑起来会显得笨。
+        com.nebula.aichat.ui.ShimmerTextView act = new com.nebula.aichat.ui.ShimmerTextView(this);
+        act.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        act.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        act.setIncludeFontPadding(false);
+        act.setSingleLine(true);
+        act.setEllipsize(TextUtils.TruncateAt.END);
+        act.setColors(0xFF6FCF97, 0xFFEAFFF4);
+        runBannerText = act;
         LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        nameLp.leftMargin = dp(10);
-        inner.addView(runBannerText, nameLp);
+        nameLp.leftMargin = dp(7);
+        inner.addView(act, nameLp);
 
-        // 并发计数：只有多个同时跑时才出现
+        // 并发计数：多个同时跑才出现，压到最弱的一档灰
         runBannerMeta = new TextView(this);
-        runBannerMeta.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-        runBannerMeta.setTextColor(Palette.c(0xFF66768A));
+        runBannerMeta.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
+        runBannerMeta.setTextColor(Palette.c(0xFF5A6A7D));
         runBannerMeta.setIncludeFontPadding(false);
         runBannerMeta.setSingleLine(true);
         runBannerMeta.setVisibility(View.GONE);
         LinearLayout.LayoutParams metaLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        metaLp.leftMargin = dp(8);
+        metaLp.leftMargin = dp(6);
         inner.addView(runBannerMeta, metaLp);
 
-        // 时间前缀：光秃秃一个「1.2s」看不出是还在跑还是已经停了，
-        // 前面补一个动词（执行 / 用时 / 停止），数字才有着落。
-        runBannerTimeTag = new TextView(this);
-        runBannerTimeTag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
-        runBannerTimeTag.setTextColor(Palette.c(0xFF8FA0B4));
-        runBannerTimeTag.setIncludeFontPadding(false);
-        runBannerTimeTag.setSingleLine(true);
-        runBannerTimeTag.setGravity(Gravity.END);
-        LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tagLp.leftMargin = dp(8);
-        inner.addView(runBannerTimeTag, tagLp);
-
-        // 计时：等宽 + 固定宽度，秒数刷新时不会左右跳
+        // 计时不加粗：工具名才该是最重的东西，秒数一加重，视线就先落在时间上。
+        // 固定 46dp + 等宽 + tnum，9.9 跳到 10.0 时右边缘不抖。
         runBannerTime = new TextView(this);
-        runBannerTime.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        runBannerTime.setTypeface(Typeface.create("monospace", Typeface.BOLD));
-        runBannerTime.setTextColor(Palette.c(0xFFEDF3FA));
+        runBannerTime.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        runBannerTime.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
+        runBannerTime.setTextColor(Palette.c(0xFF6E7D90));
         runBannerTime.setIncludeFontPadding(false);
         runBannerTime.setSingleLine(true);
         runBannerTime.setGravity(Gravity.END);
+        try {
+            runBannerTime.setFontFeatureSettings("tnum");
+        } catch (Throwable ignored) {
+        }
         LinearLayout.LayoutParams timeLp = new LinearLayout.LayoutParams(
-                dp(52), ViewGroup.LayoutParams.WRAP_CONTENT);
+                dp(46), ViewGroup.LayoutParams.WRAP_CONTENT);
         timeLp.leftMargin = dp(8);
         inner.addView(runBannerTime, timeLp);
 
         bar.addView(inner, new android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        // 底部细进度：一条两端渐隐的同色光，运行中匀速滑过
-        runBannerLineWrap = new android.widget.FrameLayout(this);
-        runBannerLineWrap.setClipChildren(true);
-        android.widget.FrameLayout.LayoutParams lwLp = new android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(2, dp(2)));
-        lwLp.gravity = Gravity.BOTTOM;
-        bar.addView(runBannerLineWrap, lwLp);
-
-        runBannerLine = new View(this);
-        runBannerLineWrap.addView(runBannerLine, new android.widget.FrameLayout.LayoutParams(
-                dp(60), ViewGroup.LayoutParams.MATCH_PARENT));
-        runBannerLine.setAlpha(0f);
-
-        // 兔子跑道：直接住在横幅里，贴着底边跟流光同一条线跑 —— 以前它在横幅下面单独占
-        // 15dp 一行，纯属浪费竖直空间。现在左右各内缩 11dp（正好躲开 10dp 圆角），
-        // 所以看着是从胶囊内壁出现、跑到另一端消失，而不是从屏幕外飘进来。
-        runRabbit = new com.nebula.aichat.ui.RabbitView(this);
-        runRabbit.setVisibility(View.GONE);
-        android.widget.FrameLayout.LayoutParams sqLp = new android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(14));
-        sqLp.gravity = Gravity.BOTTOM;
-        sqLp.bottomMargin = dp(2);        // 抬 2dp，脚正好踩在 2dp 流光线之上而不是压住它
-        sqLp.leftMargin = dp(11);
-        sqLp.rightMargin = dp(11);
-        bar.addView(runRabbit, sqLp);
 
         runBanner = bar;
         wrap.addView(bar, new LinearLayout.LayoutParams(
@@ -5214,11 +6671,19 @@ public class MainActivity extends AppCompatActivity {
         return wrap;
     }
 
-    /** 任务开跑：兔子上路。位移和帧切换都在 View 内部按 uptime 自己算，不用等布局量宽度 */
+    /** 竖条：中段实色、两端透明。一刀切的色块看着像分隔符，渐隐才像"引线" */
+    private android.graphics.drawable.Drawable fadeBar(int color) {
+        int rgb = color & 0x00FFFFFF;
+        return new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{rgb | 0x00000000, rgb | 0xE0000000,
+                        rgb | 0xE0000000, rgb | 0x00000000});
+    }
+
+    /** 兔子已从横幅撤下：它匀速横穿在暗示假进度。保留方法让旧调用点全部变成空操作 */
     private void startRabbit() {
         if (runRabbit == null) return;
         if (runRabbit.isRunning()) return;
-        runRabbit.setTintColor(Palette.c(0xFF93F2C4));   // 跟横幅"运行中"的文字同色
+        runRabbit.setTintColor(Palette.c(0xFF93F2C4));
         runRabbit.setVisibility(View.VISIBLE);
         runRabbit.start();
     }
@@ -5230,86 +6695,54 @@ public class MainActivity extends AppCompatActivity {
         runRabbit.setVisibility(View.GONE);
     }
 
-    /** 配色：玻璃底恒定为 5% 白，状态色只用于竖条与计时数字 */
+    /** 配色：状态色只出现在竖条和主文字上，其余全部中性 */
     private void paintBanner(int color, boolean running) {
         try {
-            int solid = color & 0x00FFFFFF;
-            GradientDrawable g = new GradientDrawable();
-            g.setCornerRadius(dp(10));
-            g.setColor(Palette.c(0x0DFFFFFF));
-            runBanner.setBackground(g);
+            runBanner.setBackground(null);
+            if (runBannerRailBg != null) runBannerRailBg.setBackground(fadeBar(color));
 
-            if (runBannerRailBg != null) {
-                GradientDrawable rail = new GradientDrawable();
-                rail.setCornerRadius(dp(1));
-                rail.setColor(solid | (running ? Palette.c(0xE6000000) : Palette.c(0xA6000000)));
-                runBannerRailBg.setBackground(rail);
+            if (runBannerText instanceof com.nebula.aichat.ui.ShimmerTextView) {
+                com.nebula.aichat.ui.ShimmerTextView st =
+                        (com.nebula.aichat.ui.ShimmerTextView) runBannerText;
+                if (running) {
+                    // 运行：中等亮度的绿做基色，近白的绿做高光。
+                    // 基色不能太亮，否则光扫过时高光没有对比，等于没扫
+                    st.setColors(0xFF6FCF97, 0xFFEAFFF4);
+                } else {
+                    // 收尾：定格成实色，高光只保留一点点，避免结束瞬间颜色突然变淡
+                    st.setColors(soften(color, 0.10f), soften(color, 0.58f));
+                }
+            } else if (runBannerText != null) {
+                runBannerText.setTextColor(running ? Palette.c(0xFF93F2C4) : soften(color, 0.18f));
             }
-            if (runBannerText != null) {
-                runBannerText.setTextColor(running ? Palette.c(0xFF93F2C4) : Palette.c(0xFFDCE6F2));
-            }
-            if (runBannerTime != null) {
-                runBannerTime.setTextColor(running ? Palette.c(0xFFC2F7DC) : (solid | 0xFF000000));
-            }
-            if (runBannerMeta != null) runBannerMeta.setTextColor(Palette.c(0xFF66768A));
-            if (runBannerLine != null) {
-                runBannerLine.setBackground(new GradientDrawable(
-                        GradientDrawable.Orientation.LEFT_RIGHT,
-                        new int[]{solid | 0x00000000, solid | Palette.c(0x66000000),
-                            solid | 0xFF000000, solid | Palette.c(0x66000000),
-                            solid | 0x00000000}));
-            }
+            if (runBannerMeta != null) runBannerMeta.setTextColor(Palette.c(0xFF5A6A7D));
         } catch (Throwable ignored) {
         }
     }
 
-    /** 进度条匀速滑过：运行时唯一在动的东西 */
+    /**
+     * 唯一动效：文字上扫过一道柔光。
+     * 周期 1.9s，其中约三分之一的时间光在字上，剩下的时间画面完全静止——
+     * 低频的动作比持续闪动更耐看，也更像"后台在干活"而不是"界面在表演"。
+     */
     private void startBannerAnim() {
-        if (runBannerLine == null || runBannerLineWrap == null) return;
-        if (lineAnim != null) return;
-        int w = runBannerLineWrap.getWidth();
-        if (w <= 0) {
-            if (flowRetry < 3) {
-                flowRetry++;
-                runBannerLineWrap.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        startBannerAnim();
-                    }
-                }, 80);
-            }
-            return;
+        if (runBannerText instanceof com.nebula.aichat.ui.ShimmerTextView) {
+            com.nebula.aichat.ui.ShimmerTextView st =
+                    (com.nebula.aichat.ui.ShimmerTextView) runBannerText;
+            if (st.isShimmering()) return;
+            st.startShimmer(1900);
         }
-        int lw = Math.max(dp(52), (int) (w * 0.42f));
-        ViewGroup.LayoutParams lp = runBannerLine.getLayoutParams();
-        lp.width = lw;
-        runBannerLine.setLayoutParams(lp);
-        runBannerLine.setAlpha(1f);
-        runBannerLine.setTranslationX((float) -lw);
-        lineAnim = ObjectAnimator.ofFloat(runBannerLine, View.TRANSLATION_X,
-                (float) -lw, (float) w);
-        lineAnim.setDuration(1200);
-        lineAnim.setRepeatCount(ObjectAnimator.INFINITE);
-        lineAnim.setInterpolator(new LinearInterpolator());
-        lineAnim.start();
     }
 
     private void stopBannerAnim() {
-        if (lineAnim != null) {
-            lineAnim.cancel();
-            lineAnim = null;
-        }
-        if (runBannerLine != null) {
-            runBannerLine.animate().cancel();
-            runBannerLine.animate().alpha(0f).setDuration(220).start();
+        if (runBannerText instanceof com.nebula.aichat.ui.ShimmerTextView) {
+            ((com.nebula.aichat.ui.ShimmerTextView) runBannerText).stopShimmer();
         }
         stopRabbit();
     }
 
     private void showRunBanner(String name, String meta, String time, int color, boolean running) {
         if (runBanner == null || runBannerText == null) return;
-        runBannerText.setTypeface(Typeface.create(
-                running ? "monospace" : "sans-serif", Typeface.NORMAL));
         runBannerText.setText(name);
         if (runBannerMeta != null) {
             boolean has = meta != null && meta.length() > 0;
@@ -5318,29 +6751,67 @@ public class MainActivity extends AppCompatActivity {
         }
         if (runBannerTime != null) runBannerTime.setText(time == null ? "" : time);
         if (runBannerTimeTag != null) {
-            // 三态各用一个动词：跑着=执行，正常收尾=用时，异常收尾=停止
-            String tag = running ? "执行" : (color == Palette.c(C_OK) ? "用时" : "停止");
+            // 标签只报状态，不再报"执行/用时/停止"这种半截动词
+            String tag;
+            if (running) {
+                tag = "执行中";
+            } else if (color == Palette.c(C_OK)) {
+                tag = "完成";
+            } else if (color == Palette.c(C_FAIL)) {
+                tag = "有失败";
+            } else {
+                tag = "已停止";
+            }
             runBannerTimeTag.setText(tag);
-            // 运行时动词保持弱化灰，结束态跟着状态色走（绿 / 红 / 灰）
-            runBannerTimeTag.setTextColor(running ? Palette.c(0xFF8FA0B4) : color);
+            runBannerTimeTag.setTextColor(running ? Palette.c(0xFF5C6B7E) : soften(color, 0.32f));
         }
         paintBanner(color, running);
         if (runBannerWrap != null) {
-            runBannerWrap.setAlpha(1f);
-            if (runBannerWrap.getVisibility() != View.VISIBLE) {
-                runBannerWrap.setVisibility(View.VISIBLE);
+            boolean firstShow = runBannerWrap.getVisibility() != View.VISIBLE;
+            runBannerWrap.setVisibility(View.VISIBLE);
+            if (firstShow) {
+                // 淡入而不是硬出现：这条横幅是"突然开始工作"的信号，硬切换像闪屏
+                runBannerWrap.setAlpha(0f);
+                runBannerWrap.animate().alpha(1f).setDuration(180)
+                        .setInterpolator(new DecelerateInterpolator()).start();
+            } else {
+                runBannerWrap.animate().cancel();
+                runBannerWrap.setAlpha(1f);
             }
         }
+        runBanner.setVisibility(View.VISIBLE);
         runBanner.setAlpha(1f);
-        if (runBanner.getVisibility() != View.VISIBLE) runBanner.setVisibility(View.VISIBLE);
-        // 兔子跟着状态走：跑着就上路，停下就收
         if (running) startRabbit();
         else stopRabbit();
     }
 
     /** 还有命令在跑：工具名 + 计时 + 底部细进度，信息密度高但不吵 */
+    /**
+     * 横幅上那句话。优先说人话——「读取 build.gradle」，而不是 read_file。
+     * 用户不需要知道工具叫什么，只需要知道它在干什么；取不到才退回工具名。
+     */
+    private String bannerAct() {
+        try {
+            int i = toolRows.size() - 1;
+            if (i >= 0) {
+                String nm = i < toolRowNames.size() ? toolRowNames.get(i) : "";
+                String arg = i < toolRowArgs.size() ? toolRowArgs.get(i) : "";
+                String ex = toolExplain(nm, arg, null, true);
+                if (ex != null) {
+                    int cut = ex.indexOf(" —— ");
+                    String act = (cut > 0 ? ex.substring(0, cut) : ex).trim();
+                    if (act.length() > 0) return act;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return lastToolName();
+    }
+
     private void updateRunBanner() {
-        if (runBanner == null || toolRows.isEmpty()) return;
+        // 横幅已拆，但顶部状态行还靠这里报“正在干什么”，
+        // 不能因为 runBanner 为空就把整段跳过（否则长回答滚动时顶栏不动了）
+        if (toolRows.isEmpty()) return;
         int pending = pendingToolCount();
         if (pending == 0) return;           // 终态交给 finishRunBanner
         long oldest = 0;
@@ -5352,21 +6823,33 @@ public class MainActivity extends AppCompatActivity {
         }
         long ms = oldest == 0 ? 0 : SystemClock.uptimeMillis() - oldest;
         String meta = pending > 1 ? "+" + (pending - 1) : "";
-        showRunBanner(lastToolName(), meta, dur(ms), Palette.c(C_RUN), true);
+        String act = bannerAct();
+        showRunBanner(act, meta, dur(ms), Palette.c(C_RUN), true);
         startBannerAnim();
-        // 顶部状态行同步秒数：长回答把气泡底部顶出屏幕时，抬头也能看到还在动
-        setStatusBusy(lastToolName() + " 执行中 " + dur(ms)
+        // 横幅那套视图早已拆掉（runBanner 恒为 null），所以真正让人"看见还在跑"的
+        // 只剩这条固定位置的运行条：环在转、秒数在跳、整条在呼吸
+        runUiBegin(reqStartAt);
+        // 顶部状态行报同一句话：长回答把气泡底部顶出屏幕时，抬头也能看到还在干什么。
+        // 两处文案必须一致：否则一个报 read_file、一个报“读取文件”，像两个系统在报同一件事
+        setStatusBusy(act + " · " + dur(ms)
                 + (pending > 1 ? " · 另有 " + (pending - 1) + " 个" : ""));
         if (statusText != null) statusText.setTextColor(Palette.c(C_RUN));
         setStatusTint(Palette.c(C_RUN));
     }
 
     /** 整轮结束：给结论 + 定格总用时，停留几秒后淡出 */
+    /** 运行条收尾：切完成/失败/中止态并停留几秒淡出，边缘光立刻熄灭 */
+    private void concludeRunBar(int mode, String txt) {
+        runUiConclude(mode, txt);
+    }
+
     private void finishRunBanner(boolean ok) {
         if (runBanner == null) return;
         if (toolRows.isEmpty()) {
             if (runBannerWrap != null) runBannerWrap.setVisibility(View.GONE);
-            else runBanner.setVisibility(View.GONE);
+            else if (runBanner != null) runBanner.setVisibility(View.GONE);
+            concludeRunBar(ok ? RUN_MODE_DONE
+                    : RUN_MODE_ABORT, "");
             return;
         }
         int fail = 0, abort = 0;
@@ -5391,20 +6874,19 @@ public class MainActivity extends AppCompatActivity {
         }
         stopBannerAnim();
         showRunBanner(name, "", dur(total), color, false);
+        int barMode = (!ok || abort > 0) ? RUN_MODE_ABORT
+                : (fail > 0 ? RUN_MODE_FAIL
+                : RUN_MODE_DONE);
+        concludeRunBar(barMode, toolRows.size() + " 次调用");
 
-        // 竖条「落定」：压一下再弹回，克制的一点回应
+        // 竖条「落定」：轻轻压一下再弹回。幅度比原来小一半，
+        // 高端感来自“几乎看不出来的动作”，弹太用力就变成了活泼。
+        // 整条横幅的 scale 弹跳已取消：不透明的胶囊才需要那一下，现在背景是空的，弹起来只会像抖了一下。
         if (runBannerRailBg != null) {
             runBannerRailBg.animate().cancel();
-            runBannerRailBg.setScaleY(0.42f);
-            runBannerRailBg.animate().scaleY(1f).setDuration(420)
-                    .setInterpolator(new OvershootInterpolator(2f)).start();
-        }
-        if (runBanner != null) {
-            runBanner.animate().cancel();
-            runBanner.setScaleX(0.994f);
-            runBanner.setScaleY(0.994f);
-            runBanner.animate().scaleX(1f).scaleY(1f).setDuration(240)
-                    .setInterpolator(new DecelerateInterpolator()).start();
+            runBannerRailBg.setScaleY(0.62f);
+            runBannerRailBg.animate().scaleY(1f).setDuration(320)
+                    .setInterpolator(new OvershootInterpolator(1.2f)).start();
         }
         final View b = runBannerWrap != null ? runBannerWrap : runBanner;
         ui.postDelayed(new Runnable() {
@@ -5419,7 +6901,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }).start();
             }
-        }, 3800);
+        }, 3200);
     }
 
     /** 每个工具行「上次刷新时的耗时秒数」：秒没变就不用重建文本，省掉大量无谓 invalidate */
@@ -5442,11 +6924,31 @@ public class MainActivity extends AppCompatActivity {
                     toolRowShownSec.set(i, sec);
                     fillToolRow(toolRows.get(i), ST_RUN, toolRowNames.get(i),
                             toolRowArgs.get(i), null, ms);
+                    // 每秒顶一条：窗口只有 3 行，新的进来旧的被挤走，
+                    // 看着就是终端在往下刷——这是"还活着"最硬的证据
+                    // 监控秒数现在跟在翻译行右端，跟工具行同一节拍
+                    setExplainMsOnRow(toolRows.get(i), ms, ST_RUN);
                 }
                 updateToolHead();
                 updateRunBanner();
-                if (pendingToolCount() > 0) ui.postDelayed(this, 500);
-                else toolTick = null;
+                int pending = pendingToolCount();
+                if (pending > 0) {
+                    ui.postDelayed(this, 500);
+                } else if (roundActive) {
+                    // 工具全跑完、模型在想下一步——这段最容易让人以为"卡住了"。
+                    // 状态行继续读秒；数字还在涨，就说明整轮还活着
+                    long el = SystemClock.uptimeMillis() - reqStartAt;
+                    if (statusText != null && el > 0) {
+                        statusText.setText("正在思考 · " + dur(el));
+                        statusText.setTextColor(Palette.c(C_RUN));
+                    }
+                    // 「工具跑完了但模型还在想/还在写」这段最像卡死：运行条切紫、
+                    // 秒数继续跳，边缘光继续呼吸，用户就不会把这段当成结束了
+                    runUiBegin(reqStartAt);
+                    ui.postDelayed(this, 1000);
+                } else {
+                    toolTick = null;
+                }
             }
         };
         ui.postDelayed(toolTick, 500);
@@ -5468,6 +6970,11 @@ public class MainActivity extends AppCompatActivity {
                 long ms = SystemClock.uptimeMillis() - toolRowStart.get(i);
                 fillToolRow(toolRows.get(i), ST_ABORT, toolRowNames.get(i),
                         toolRowArgs.get(i), null, ms);
+                // 不收这一下，那条“活翻译行”会一直扫光下去，
+                // 说明还在跑，而工具行已经标了已中止——两行互相矛盾
+                stopExplainShimmer(toolRows.get(i));
+                blinkCaret(toolRows.get(i), false);
+                setExplainMsOnRow(toolRows.get(i), ms <= 0 ? 1 : ms, ST_ABORT);
             }
         }
         updateToolHead();
@@ -5522,7 +7029,10 @@ public class MainActivity extends AppCompatActivity {
 
     private static String briefText(String s) {
         if (s == null) return "";
-        String t = s.replace("\r", " ").replace("\n", " ").trim();
+        // 成功码「退出码 0」是纯噪声：每条 shell 结果都带着它，永远不变，
+        // 却占掉摘要里本可以显示真实输出的位置。只吃 0 —— 失败码留着，那个才有信息。
+        String t = s.replaceAll("(?m)^\\s*\u9000\u51fa\u7801 0\\s*$", " ");
+        t = t.replace("\r", " ").replace("\n", " ").trim();
         while (t.contains("  ")) t = t.replace("  ", " ");
         return t.length() <= 160 ? t : t.substring(0, 160) + "…";
     }
@@ -5600,6 +7110,9 @@ public class MainActivity extends AppCompatActivity {
     /** 收尾时间线：把最后那段正文渲染完并登记，然后把整条时间线存进消息 */
     private void finalizeTimeline(String full) {
         if (streamContent == null) return;
+        // 兜底：最后一段思考还没落盘的话，必须排在尾部正文之前
+        takeThinkStep();
+        thinkSegStart = 0;
         String tail = (full != null && full.length() > tlSegStart)
                 ? stripListLines(ConclusionParser.visibleForStream(full.substring(tlSegStart))) : "";
         if (!tail.trim().isEmpty()) {
@@ -5631,7 +7144,7 @@ public class MainActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setText(msg);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        tv.setTextColor(Palette.c(0xFFFF9BA0));
+        tv.setTextColor(Palette.c(C_FAIL));
         tv.setPadding(dp(2), dp(7), dp(2), dp(3));
         streamContent.addView(tv, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -5721,6 +7234,14 @@ public class MainActivity extends AppCompatActivity {
     private void finishStream(boolean ok, String text, String error, MarkdownRenderer renderer) {
         // 已经收尾过（比如用户先点了停止，后台线程随后回调），直接忽略
         if (streamMessage == null) return;
+        // 整轮思考内容随消息落地：下一轮请求要把 reasoning_content 原样带回去，
+        // 少了这个字段，DeepSeek thinking 模式会直接 400（工具链跑到第二轮的典型死法）。
+        if (thinkAll != null && thinkAll.length() > 0) {
+            streamMessage.reasoning = thinkAll.toString();
+        }
+        // 思考耗时随消息落地：不存的话，重开会话时折叠头会从「用时 12.3 秒」
+        // 变成一个没有秒数的「思考完成」，和实时看到的不一样。
+        streamMessage.thinkMs = runThinkMs;
         // 任务结束：有常驻通知就退回空闲态，否则整个撤掉
         try {
             ui.removeCallbacks(keepAliveTick);
@@ -5730,6 +7251,12 @@ public class MainActivity extends AppCompatActivity {
         }
         busy = false;
         setSendState(false);
+        // 先摘光标再定稿：晚了会跟着定稿文本一起被 setText 冲掉，留下一条静止的竖线
+        try {
+            renderer.setStreaming(false);
+            StreamCursor.releaseAll();
+        } catch (Throwable ignored) {
+        }
         markThinkDone();
         // 请求结束时仍在「执行中」的行要明确标成中止，不能永远转下去
         abortPendingToolRows();
@@ -5878,7 +7405,7 @@ public class MainActivity extends AppCompatActivity {
      */
     /**
      * 工具轮次跑到上限、被强制转成收尾总结时，回答下面挂一个「继续跑下一段」。
-     * 这样长任务（解包 → 改包 → 重签）不会因为单次轮次上限用尽就彻底卡死。
+     * 这样长任务（解包 → 改包 → 重签）不会因为一次最多 40 轮就彻底卡死。
      */
     private void maybeAddToolLimitHint() {
         if (pendingToolLimit == null) return;
@@ -6183,6 +7710,101 @@ public class MainActivity extends AppCompatActivity {
         chatContainer.addView(row);
     }
 
+    // ===== 运行秒表：跑的时候贴在发送键正上方的一颗小胶囊 =====
+    // 三条：不占布局（浮层）、不闪（只有数字在跳）、点一下能停
+    private final Runnable runSecTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!runSecOn || runSec == null) return;
+            long sec = Math.max(0, SystemClock.uptimeMillis() - runSecStart) / 1000L;
+            runSec.setText("\u25CF " + sec + "s");
+            placeRunSec();
+            runSec.postDelayed(this, 250);
+        }
+    };
+
+    private final Runnable runSecFade = new Runnable() {
+        @Override
+        public void run() {
+            if (runSec != null) runSec.setVisibility(View.GONE);
+        }
+    };
+
+    private void runUiBegin(long startAt) {
+        if (runSec == null) return;
+        if (!runSecOn) {
+            runSecOn = true;
+            runSecStart = startAt;
+            runSec.setAlpha(1f);
+            runSec.setTextColor(0xFF35E0FF);
+            runSec.setText("\u25CF 0s");
+            runSec.setVisibility(View.VISIBLE);
+        }
+        runSec.removeCallbacks(runSecFade);
+        runSec.removeCallbacks(runSecTick);
+        // 先排一次定位：刚 setVisibility(VISIBLE) 时还没测量，宽高都是 0，
+        // 不等这一帧就会先闪在布局默认位置再跳过去
+        runSec.post(this::placeRunSec);
+        runSec.post(runSecTick);
+    }
+
+    private void runUiConclude(int mode, String txt) {
+        if (runSec == null) return;
+        long sec = Math.max(0, SystemClock.uptimeMillis() - runSecStart) / 1000L;
+        runSecOn = false;
+        runSec.removeCallbacks(runSecTick);
+        if (mode == RUN_MODE_DONE) {
+            runSec.setTextColor(0xFF3DDC84);
+            runSec.setText("\u2713 " + sec + "s");
+        } else if (mode == RUN_MODE_FAIL) {
+            runSec.setTextColor(0xFFFF6B6B);
+            runSec.setText("\u5931\u8d25 " + sec + "s");
+        } else {
+            runSec.setTextColor(0xFFFFA657);
+            runSec.setText("\u5df2\u505c " + sec + "s");
+        }
+        runSec.setVisibility(View.VISIBLE);
+        placeRunSec();
+        runSec.removeCallbacks(runSecFade);
+        runSec.postDelayed(runSecFade, 1600);
+    }
+
+    private void runUiHide() {
+        runSecOn = false;
+        if (runSec == null) return;
+        runSec.removeCallbacks(runSecTick);
+        runSec.removeCallbacks(runSecFade);
+        runSec.setVisibility(View.GONE);
+    }
+
+    /**
+     * 把秒表贴到发送键正上方。
+     * 发送键会跟着输入框行数、键盘高度上下走，所以每 250ms 重算一次位置；
+     * 写死一个 margin 的话，输入框一换行它就飘到别处去了。
+     */
+    private void placeRunSec() {
+        if (runSec == null || btnSend == null) return;
+        // 容器必须是 contentHost（整页），不能是消息区那个 FrameLayout：
+        // 后者底边就在输入框上方，算出来的 y 会落到容器外、被直接裁掉
+        android.view.View host = findViewById(R.id.contentHost);
+        if (host == null) return;
+        int w = runSec.getWidth();
+        int h = runSec.getHeight();
+        if (w <= 0 || h <= 0 || host.getWidth() <= 0) return;
+        int[] hw = new int[2];
+        int[] bw = new int[2];
+        host.getLocationInWindow(hw);
+        btnSend.getLocationInWindow(bw);
+        float bx = bw[0] - hw[0];
+        float by = bw[1] - hw[1];
+        float d = getResources().getDisplayMetrics().density;
+        // 贴在发送键左侧、与键同高。这块是输入框自己的草稿区、不是消息正文，
+        // 所以既不压内容，又正好落在用户盯着输入区的那片视线里。
+        // 键会随输入框行数和键盘高度上下走，所以每 250ms 跟着重算一次
+        runSec.setX(bx - w - 8 * d);
+        runSec.setY(by + (btnSend.getHeight() - h) / 2f);
+    }
+
     private void stopStreaming() {
         if (!busy) return;
         // 1) 置取消标志：网络流、工具轮次循环都会看到
@@ -6196,11 +7818,20 @@ public class MainActivity extends AppCompatActivity {
         if (streamMessage != null && streamRenderer != null) {
             finishStream(false, streamBuf == null ? "" : streamBuf.toString(), "已停止", streamRenderer);
         }
+        // 兜底：有些停止路径没有消息体可收尾，运行条会一直挂在输入框上方，
+        // 那就成了"明明停了却显示在跑"——比不显示更糟
+        concludeRunBar(RUN_MODE_ABORT, "已停止");
     }
 
     private void setSendState(boolean streaming) {
         btnSend.setImageResource(streaming ? R.drawable.ic_stop : R.drawable.ic_send);
-        btnSend.setBackgroundResource(streaming ? R.drawable.btn_round_stop : R.drawable.btn_round);
+        // 忙碌时发送键整颗转红：这是全屏最容易被余光扫到的一个点，
+        // 比在输入框里塞胶囊/秒表更省地方，也不会和输入区抢位置
+        btnSend.setBackgroundResource(streaming ? R.drawable.btn_round_run : R.drawable.btn_round);
+        // 红底必须配白图标。停止图标原本是主题色画的，压在实心红上会糊成一团，
+        // 反而看不出那是停止键；非运行态置 null 交还给主题原来的着色
+        btnSend.setImageTintList(streaming
+                ? android.content.res.ColorStateList.valueOf(0xFFFFFFFF) : null);
         btnSend.setPadding(dp(13), dp(13), dp(13), dp(13));
         etInput.setEnabled(!streaming);
     }
@@ -7567,9 +9198,7 @@ public class MainActivity extends AppCompatActivity {
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("对下一条提问生效；拉取到的模型会额外带上 reasoning_effort 参数。"
-                + "\n「极度」遇到自带推理的模型（reasoner / o1 / qwq 等）会自动按「中度」发送："
-                + "两套深度叠加会把输出额度烧光，反而不出正文。");
+        sub.setText("对下一条提问生效；拉取到的模型会额外带上 reasoning_effort 参数");
         sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         sub.setTextColor(Palette.c(0xFF7F8C9F));
         sub.setLineSpacing(dp(3), 1.3f);

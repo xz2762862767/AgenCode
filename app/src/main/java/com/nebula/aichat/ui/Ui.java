@@ -221,6 +221,30 @@ public class Ui {
         }
     }
 
+    /** 全格水波纹（不裁形状）：tab、列表行这类矩形点击区，深色下也看得清 */
+    public static android.graphics.drawable.Drawable ripple(Context c) {
+        if (android.os.Build.VERSION.SDK_INT < 21) return null;
+        try {
+            return new android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(Palette.c(0x33FFFFFF)), null, null);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 圆角水波纹：保留原背景，波纹裁进圆角内 */
+    public static android.graphics.drawable.Drawable ripple(Context c,
+            android.graphics.drawable.Drawable base, float radiusDp) {
+        if (android.os.Build.VERSION.SDK_INT < 21) return base;
+        try {
+            return new android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(Palette.c(0x33FFFFFF)),
+                    base, roundRect(c, 0xFFFFFFFF, 0, radiusDp));
+        } catch (Throwable t) {
+            return base;
+        }
+    }
+
     public static TextView ghostChip(Context c, String s, View.OnClickListener l) {
         return Palette.isLight(c)
                 ? chip(c, s, 0xFFEDF1F8, 0xFF3C4A5E, l)

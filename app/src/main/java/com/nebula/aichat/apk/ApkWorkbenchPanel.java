@@ -596,6 +596,9 @@ public class ApkWorkbenchPanel {
                                     act.runOnUiThread(new Runnable() {
                                         @Override
                                         public void run() {
+                                            // 装包是异步的，回来时页面可能已经被关掉了，
+                                            // 这时再 show 会抛 BadTokenException 直接崩
+                                            if (act.isFinishing() || act.isDestroyed()) return;
                                             new NebAlert.Builder(act)
                                                     .setTitle(ok ? "✅ 安装成功" : "❌ 装不上，原因在这里")
                                                     .setMessage(message)

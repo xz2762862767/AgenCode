@@ -56,6 +56,10 @@ public class MarkdownRenderer {
     private View lastBlockView;
     /** 已折叠过：结构被改过，下次渲染必须整体重来 */
     private boolean collapsedOnce = false;
+    /** 流式中：末尾挂呼吸光标，表达"还在写"（工具行另有光扫，两者不能混为一谈） */
+    private boolean streaming = false;
+    /** 最后一块的类型，决定光标能不能挂在它身上（确认卡片之类的容器不能挂） */
+    private String lastKind = null;
     private boolean doneCollapse = false;
 
     public MarkdownRenderer(Context ctx, LinearLayout container, float baseSp) {
@@ -83,6 +87,7 @@ public class MarkdownRenderer {
         applyBlocks(parseBlocks(md));
         // 完成态才折叠；流式期间 autoCollapse 为 false，不会打断阅读
         if (autoCollapse) applyCollapse();
+        if (streaming) applyCursor(); else dropCursor();
     }
 
     private void resetBlocks() {
@@ -538,6 +543,7 @@ public class MarkdownRenderer {
         for (int i = same; i < blocks.size(); i++) {
             Block b = blocks.get(i);
             lastBlockView = null;
+            lastKind = b.kind;
             renderBlock(b);
             if (lastBlockView == null) {
                 // 兜底：保证 key 与 view 一一对应，否则下次增量会错位
@@ -1203,6 +1209,91 @@ public class MarkdownRenderer {
         lp.bottomMargin = dp(marginBottomDp);
         if (marginTopDp > 0) lp.topMargin = dp(marginTopDp);
         container.addView(v, lp);
+    }
+
+    /** 流式开关：false 时顺手把光标擦掉，避免停在正文末尾当装饰 */
+    public void setStreaming(boolean on) {
+        if (streaming == on) return;
+        streaming = on;
+        if (!on) dropCursor();
+    }
+
+    /** 光标只挂在纯文本块上：确认卡片、文件卡片的子 View 不能当宿主 */
+    private boolean cursorOkOn(String kind) {
+        return "p".equals(kind) || "ul".equals(kind) || "ol".equals(kind)
+                || "h".equals(kind) || "q".equals(kind) || "table".equals(kind)
+                || "code".equals(kind);
+    }
+
+    private void applyCursor() {
+        if (!cursorOkOn(lastKind)) return;
+        TextView tv = lastTextTarget();
+        if (tv == null) return;
+        CharSequence cur = tv.getText();
+        // 内容没变时的重复渲染：光标还在原地，重新登记宿主即可，不要叠加
+        if (hasCursor(cur)) {
+            StreamCursor.host(tv);
+            return;
+        }
+        SpannableStringBuilder sb = asBuilder(cur);
+        stripCursor(sb);
+        sb.append('\u200B');
+        sb.setSpan(new StreamCursor(colorAccent, dp(2.4f)), sb.length() - 1, sb.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        tv.setText(sb);
+        StreamCursor.host(tv);
+    }
+
+    private void dropCursor() {
+        TextView tv = lastTextTarget();
+        // 找不到宿主就什么都不做：这里若 releaseAll，会把另一条还在流式的消息的呼吸一起掐停
+        if (tv == null) return;
+        CharSequence cur = tv.getText();
+        if (hasCursor(cur)) {
+            SpannableStringBuilder sb = asBuilder(cur);
+            stripCursor(sb);
+            tv.setText(sb);
+        }
+        StreamCursor.release(tv);
+    }
+
+    private static boolean hasCursor(CharSequence cs) {
+        if (cs == null) return false;
+        for (int i = cs.length() - 1; i >= 0; i--) {
+            if (cs.charAt(i) == '\u200B') return true;
+        }
+        return false;
+    }
+
+    private static SpannableStringBuilder asBuilder(CharSequence cs) {
+        if (cs instanceof SpannableStringBuilder) return (SpannableStringBuilder) cs;
+        return new SpannableStringBuilder(cs == null ? "" : cs);
+    }
+
+    /** 先摘 span 再删占位字符：顺序反了会越界 */
+    private static void stripCursor(SpannableStringBuilder sb) {
+        StreamCursor[] olds = sb.getSpans(0, sb.length(), StreamCursor.class);
+        for (StreamCursor s : olds) sb.removeSpan(s);
+        for (int i = sb.length() - 1; i >= 0; i--) {
+            if (sb.charAt(i) == '\u200B') sb.delete(i, i + 1);
+        }
+    }
+
+    /** 光标挂在最后一块的最后一个文本节点上：代码块是 TextView 套在横向滚动里，也要能找到 */
+    private TextView lastTextTarget() {
+        return lastBlockView == null ? null : lastTextIn(lastBlockView);
+    }
+
+    private TextView lastTextIn(View v) {
+        if (v instanceof TextView) return (TextView) v;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = g.getChildCount() - 1; i >= 0; i--) {
+                TextView tv = lastTextIn(g.getChildAt(i));
+                if (tv != null) return tv;
+            }
+        }
+        return null;
     }
 
     private int dp(float v) {

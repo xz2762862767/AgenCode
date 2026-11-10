@@ -39,6 +39,8 @@ public class ToolRegistry {
         BuildToolsProvider.register(this, ctx);
         SkillTools.register(this, ctx);
         WebToolsProvider.register(this, ctx);
+        // 记忆 / 计划：让模型能跨会话记住约定、也能把多步任务的进度摆到台面上
+        MemoryTools.register(this, ctx);
     }
 
     public void add(ToolDef d) {
@@ -170,7 +172,13 @@ public class ToolRegistry {
     /** 全部工具的 OpenAI schema */
     public JSONArray toSchema() {
         JSONArray all = new JSONArray();
-        for (ToolDef d : builtin) all.put(d.toOpenAi());
+        for (ToolDef d : builtin) {
+            // 分组过滤：一句话只可能用到一组工具，没必要把 18 份说明书全塞给模型。
+            // 「apk_*」13 个只在改包时有用，「build_*」2 个只在源码编译时有用，
+            // 平白挂着每次请求都要按 token 付钱，而且会稀释模型对核心工具的注意力。
+            if (!groupEnabled(d.name)) continue;
+            all.put(d.toOpenAi());
+        }
         JSONArray m = mcpSchema;
         if (m != null) {
             for (int i = 0; i < m.length(); i++) {
@@ -180,6 +188,34 @@ public class ToolRegistry {
         }
         return all;
     }
+
+    /** 工具分组位：改包 / 源码编译。核心工具（执行命令、联网、读技能）不受开关控制，永远下发 */
+    public static final int G_APK = 1;
+    public static final int G_BUILD = 2;
+
+    /**
+     * 当前请求放行的组。默认全开是安全网：万一某条调用路径没显式设置，
+     * 宁可多花几百 token，也不能让模型手里没工具、干看着任务做不了。
+     */
+    private volatile int activeGroups = G_APK | G_BUILD;
+
+    public void setActiveGroups(int groups) {
+        this.activeGroups = groups;
+    }
+
+    public int getActiveGroups() {
+        return activeGroups;
+    }
+
+    /** 这个工具这次要不要发给模型 */
+    private boolean groupEnabled(String name) {
+        if (name == null) return true;
+        int g = activeGroups;
+        if (name.startsWith("apk_")) return (g & G_APK) != 0;
+        if (name.startsWith("build_")) return (g & G_BUILD) != 0;
+        return true;
+    }
+
 
     /** 执行一个工具，返回文本结果 */
     public String call(String name, JSONObject args) throws Exception {
